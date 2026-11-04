@@ -1,0 +1,1 @@
+{"version": "1", "title": "Compare", "scenes": [{"beats": [{"component": "compare", "params": {"title": "Cats vs Dogs", "left": {"heading": "Cats", "bullets": ["meow"]}, "right": {"heading": "Dogs", "bullets": ["bark"]}}, "caption": "demo"}]}]}

@@ -17,6 +17,12 @@ Use this when asked to add a component, fix a storyboard, or improve an Animatic
 - Keep `docs/COMPONENTS.md` in sync — a test compares it against the registry.
 - If an acceptance command fails twice, stop and write what failed at the bottom of `docs/SESSION_TASKS.md`.
 
+## Agent JSON tools (no MCP server needed)
+- `animatica list-components` — JSON list of component names
+- `animatica component-schema <name>` — JSON params schema
+- `animatica validate storyboard.json` — JSON list of errors (empty = valid)
+- `animatica lint storyboard.json` — JSON {storyboard, notes} after deterministic lint
+
 ## Commands
 - `animatica make "prompt" -o out/ [--provider X --model Y --preview]` — full video
 - `animatica make --from storyboard.json -o out/` — re-render without any LLM

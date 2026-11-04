@@ -1,0 +1,18 @@
+# T8: 15 diverse eval prompts, one per line, covering every component
+make a title card about renewable energy
+explain the pythagorean theorem a^2 + b^2 = c^2
+show the equation for kinetic energy step by step
+graph of sin(x)
+graph of x^2 + 2x - 3
+bar chart of sales by quarter
+steps to bake a cake
+morph a circle into a square
+flow diagram from water to steam to turbine
+explain this python function line by line
+def f(x): return x * x
+show the fibonacci series with a ball bouncing on terms 0 to 10
+show the recursion call tree of fib(5)
+number line from 0 to 20 with jumps 0->7->15
+table of planets with diameter and mass
+timeline of the history of computers
+compare mitosis and meiosis side by side

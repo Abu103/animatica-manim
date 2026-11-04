@@ -15,6 +15,9 @@ Updated: 2026-11-04. Newest status on top. Any Claude session can resume from he
 - [x] Setup COMPLETE: self-contained bootstrap.{sh,ps1} (auto-installs uv, parallel uv+TeX zip, doctor verify, fallback to doctor --fix); GUIDE.md fast path documented; ffmpeg via imageio-ffmpeg; CI bakes tinytex-manim.zip. Remaining manual step: set ANIMATICA_GH_REPO/URL. Private repos supported: scripts try ANIMATICA_TINYTEX_URL (signed), then `gh release download` (user gh login), then GITHUB_TOKEN API; else fall back to doctor --fix.
 - [x] Setup docs: docs/SETUP.md documents env vars, bootstrap procedure, private-repo fetch order, fallbacks
 - [x] T2 recursion_tree (fib call tree, repeated calls highlighted, 31-node cap; scaffolded via new-component; 8/8 tests; suite 239 passed)
+- [x] T8 eval prompts (15, all components) + CI smoke workflow (.github/workflows/ci.yml)
+- [x] T3 array_viz, T5 timeline, T6 compare done (suite 257 passed, 5 env-only failures)
+- [x] P2 JSON-CLI agent tools: list-components / component-schema / validate / lint (tests/test_json_api.py 4/4; suite 261 passed)
 - [x] P1.1 two-stage generation: `generate_storyboard_two_stage` (outline -> per-scene fill, each retried alone) + `--two-stage` flag on `animatica make`; tests/test_two_stage.py 4/4
 - [x] Bug F fixed (scale note no longer collides with two-line captions) -- replayed in fresh sandbox
 - [x] T9 `animatica new-component NAME` scaffold implemented (src/animatica/scaffold.py + CLI + tests/test_scaffold.py); e2e verified: scaffold number_line in a project copy -> registry lists 10 components, generated tests pass

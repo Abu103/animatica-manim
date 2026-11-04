@@ -1,0 +1,1 @@
+{"version": "1", "title": "ArrayViz", "scenes": [{"beats": [{"component": "array_viz", "params": {"title": "Bubble sort step", "values": [3, 1, 2], "steps": [{"highlight": [0, 1]}, {"swap": [0, 1]}]}, "caption": "Swap out of order."}]}]}

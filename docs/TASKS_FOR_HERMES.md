@@ -12,22 +12,22 @@ Accept: `pytest -q tests/test_number_line.py` and `animatica make --from tests/c
 Params: title, fn ("fib"), n (2..6). Draw the call tree F(n) -> F(n-1), F(n-2), highlight repeated calls in red. Cap nodes at 31.
 Accept: same pattern; no overlapping nodes (use tidy-tree x positions, leaves evenly spaced).
 
-## T3 array_viz
+## T3 array_viz  [DONE 2026-11-04: array_viz component (boxes, highlight/swap steps; 5/5 tests)]
 Params: title, values[2..12], steps[] each {highlight:[idx], swap:[i,j]}. Boxes with values, animate swaps. Duration 2.0 + 0.8 per step.
 
 ## T4 table  [DONE 2026-11-04 by agent session; render check pending on a manim machine]
 Params: title, columns[], rows[][] (max 6x6). Rows fade in one by one.
 
-## T5 timeline
+## T5 timeline  [DONE 2026-11-04: timeline component (8 events max, alternating labels; 6/6 tests)]
 Params: title, events[{label, text}] (max 8). Dots on a line, labels alternate above/below.
 
-## T6 compare
+## T6 compare  [DONE 2026-11-04: compare component (two bullet columns; 5/5 tests)]
 Params: title, left{heading, bullets[]}, right{...}. Two columns, bullets fade in alternately.
 
 ## T7 log scale for bar_chart  [DONE 2026-11-04: scale param landed via P0.2]
 Add param `scale: "linear"|"sqrt"|"log"` (default linear) to bar_chart.py. Heights use scale, labels show real values, min height 0.08 so tiny bars show. Tests: heights monotonic, labels unchanged.
 
-## T8 reference prompts
+## T8 reference prompts  [DONE 2026-11-04: tests/reference_prompts_eval.txt, 15 prompts]
 Add 15 diverse prompts to tests/reference_prompts_eval.txt (not the existing file). Each one line, covering each component. No code.
 
 ## T9 new-component scaffold  [DONE 2026-11-04: `animatica new-component NAME`, tests/test_scaffold.py, e2e verified]

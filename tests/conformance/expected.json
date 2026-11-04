@@ -54,5 +54,17 @@
   "recursion_tree.json": {
     "scenes": 1,
     "duration": 5.2
+  },
+  "array_viz.json": {
+    "scenes": 1,
+    "duration": 3.6
+  },
+  "timeline.json": {
+    "scenes": 1,
+    "duration": 3.6
+  },
+  "compare.json": {
+    "scenes": 1,
+    "duration": 3.2
   }
 }

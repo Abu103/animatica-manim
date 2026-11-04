@@ -144,6 +144,58 @@ def eval_cmd(
     typer.echo(run_eval(prompts, prov, default_registry(), max_retries=max_retries, as_table=True))
 
 
+@app.command("list-components")
+def list_components() -> None:
+    """JSON list of registered component names (agent tool)."""
+    import json as _json
+
+    from animatica.components.registry import default_registry
+
+    typer.echo(_json.dumps(default_registry().names()))
+
+
+@app.command("component-schema")
+def component_schema(name: str) -> None:
+    """JSON schema of one component's params (agent tool)."""
+    import json as _json
+
+    from animatica.components.registry import default_registry
+
+    reg = default_registry()
+    if name not in reg.names():
+        typer.echo(f"Error: unknown component {name!r}")
+        raise typer.Exit(code=1)
+    typer.echo(_json.dumps(reg.get(name).Params.model_json_schema(), indent=2))
+
+
+@app.command()
+def validate(storyboard: Path = typer.Argument(..., help="storyboard.json to validate")) -> None:
+    """Validate a storyboard; prints a JSON list of errors (empty = valid)."""
+    import json as _json
+
+    from animatica.components.registry import default_registry
+    from animatica.storyboard.models import load_storyboard
+
+    try:
+        sb = load_storyboard(storyboard)
+    except Exception as exc:
+        typer.echo(_json.dumps([f"load error: {exc}"]))
+        raise typer.Exit(code=0)
+    typer.echo(_json.dumps(default_registry().validate(sb), indent=2))
+
+
+@app.command()
+def lint(storyboard: Path = typer.Argument(..., help="model-written storyboard.json to lint")) -> None:
+    """Lint a storyboard; prints JSON {storyboard, notes} (agent tool)."""
+    import json as _json
+
+    from animatica.storyboard.lint import lint_storyboard
+    from animatica.storyboard.models import load_storyboard
+
+    sb, notes = lint_storyboard(load_storyboard(storyboard))
+    typer.echo(_json.dumps({"storyboard": _json.loads(sb.model_dump_json()), "notes": notes}, indent=2))
+
+
 @app.command()
 def make(
     prompt: str = typer.Argument("", help="Prompt to render into a video"),

@@ -1,6 +1,8 @@
 # Changelog
 
 ## Unreleased
+- New: agent JSON-CLI tools `list-components`, `component-schema`, `validate`, `lint` (P2, Hermes can drive these directly).
+- New: `array_viz`, `timeline`, `compare` components -- task cards T3, T5, T6.
 - New: `recursion_tree` component (Fibonacci call tree, repeated calls in red, 31-node cap) -- task card T2.
 - Setup: parallel `scripts/bootstrap.{sh,ps1}` (~25-40s full quality) using `uv` + pre-baked TinyTeX release zip; ffmpeg now comes from the `imageio-ffmpeg` bundled binary when no system ffmpeg exists (doctor + encoder probe). CI workflow `build-tinytex.yml` bakes the zip.
 - New: `animatica bootstrap` one-command setup; `animatica doctor --fix` now auto-installs ffmpeg and TinyTeX + required TeX packages (standalone preview babel-english amsmath amsfonts dvisvgm).

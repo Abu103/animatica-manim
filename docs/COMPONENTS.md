@@ -19,6 +19,9 @@ sync with the code: the test suite compares this document against
 | `number_line` | `title`, TODO | 3.0 s |
 | `table` | `title`, TODO | 3.0 s |
 | `recursion_tree` | `title`, TODO | 3.0 s |
+| `array_viz` | `title`, TODO | 3.0 s |
+| `timeline` | `title`, TODO | 3.0 s |
+| `compare` | `title`, TODO | 3.0 s |
 | `bounce_sequence` | `title`, `values[]` (2-20), optional `scale` (auto/linear/sqrt/log), `labels[]` (optional) | 2.0 s + 0.8 s per term |
 
 Registered component names:
@@ -31,6 +34,9 @@ Registered component names:
 - diagram
 - code_highlight
 - bounce_sequence
+- compare
+- timeline
+- array_viz
 - recursion_tree
 - table
 - number_line

@@ -1,0 +1,1 @@
+{"version": "1", "title": "Timeline", "scenes": [{"beats": [{"component": "timeline", "params": {"title": "History", "events": [{"label": "1969", "text": "Moon landing"}, {"label": "1989", "text": "Web invented"}]}, "caption": "demo"}]}]}
