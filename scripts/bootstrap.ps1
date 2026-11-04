@@ -3,8 +3,18 @@
 # pre-baked TinyTeX zip IN PARALLEL, then verifies with animatica doctor.
 # Usage: irm <raw>/scripts/bootstrap.ps1 | iex
 $ErrorActionPreference = "Continue"
-Set-Location $PSScriptRoot\..
-$root = (Get-Location).Path
+$ghRepo = if ($env:ANIMATICA_GH_REPO) { $env:ANIMATICA_GH_REPO } else { "Abu103/animatica-manim" }
+# When piped via irm|iex, $PSScriptRoot is empty: clone into a fresh folder instead
+if ($PSScriptRoot -and (Test-Path "$PSScriptRoot\..\src\animatica")) {
+    Set-Location "$PSScriptRoot\.."
+    $root = (Get-Location).Path
+} else {
+    $root = Join-Path $env:USERPROFILE "animatica-manim"
+    if (-not (Test-Path "$root\src\animatica")) {
+        git clone "https://github.com/$ghRepo.git" $root
+    }
+    Set-Location $root
+}
 
 $tinytexUrl = $env:ANIMATICA_TINYTEX_URL
 $ghRepo = if ($env:ANIMATICA_GH_REPO) { $env:ANIMATICA_GH_REPO } else { "Abu103/animatica-manim" }

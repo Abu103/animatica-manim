@@ -4,10 +4,17 @@
 # pre-baked TinyTeX zip IN PARALLEL, then verifies with animatica doctor.
 # Usage: curl -fsSL <raw>/scripts/bootstrap.sh | bash
 set -euo pipefail
-cd "$(dirname "$0")/.."
+GH_REPO="${ANIMATICA_GH_REPO:-Abu103/animatica-manim}"
+if [ -n "${BASH_SOURCE[0]:-}" ] && [ -f "$(dirname "${BASH_SOURCE[0]}")/../src/animatica/__init__.py" ]; then
+  cd "$(dirname "${BASH_SOURCE[0]}")/.."
+else
+  # piped via curl|bash: clone into ~/animatica-manim
+  ROOT="$HOME/animatica-manim"
+  [ -f "$ROOT/src/animatica/__init__.py" ] || git clone "https://github.com/$GH_REPO.git" "$ROOT"
+  cd "$ROOT"
+fi
 ROOT="$PWD"
 TINYTEX_ZIP_URL="${ANIMATICA_TINYTEX_URL:-}"
-GH_REPO="${ANIMATICA_GH_REPO:-Abu103/animatica-manim}"   # used with `gh` for private repos
 TINYTEX_DIR="$ROOT/.tex"
 
 # --- 0. uv (10s if missing) ---
