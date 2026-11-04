@@ -162,8 +162,11 @@ def test_unexpected_error_has_no_traceback(monkeypatch, tmp_path):
 
 
 def test_setup_command_is_named_setup():
+    import re
+
     r = CliRunner().invoke(app, ["--help"])
-    assert " setup " in r.output and "setup-cmd" not in r.output
+    plain = re.sub(r"\x1b\[[0-9;]*m", "", r.output)  # strip ANSI formatting (CI terminals add it)
+    assert "setup" in plain and "setup-cmd" not in plain
 
 
 def test_http_error_names_model_and_hints_override(monkeypatch):
