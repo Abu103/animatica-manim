@@ -10,9 +10,9 @@ One command does everything in ~25-40s, full quality (real LaTeX + real ffmpeg),
 
 ```
 # Linux/macOS
-curl -fsSL <repo>/scripts/bootstrap.sh | bash
+curl -fsSL https://raw.githubusercontent.com/Abu103/animatica-manim/main/scripts/bootstrap.sh | bash
 # Windows
-irm <repo>/scripts/bootstrap.ps1 | iex
+irm https://raw.githubusercontent.com/Abu103/animatica-manim/main/scripts/bootstrap.ps1 | iex
 ```
 
 How it stays fast: `uv` installs manim + the bundled static ffmpeg wheel (`imageio-ffmpeg`,

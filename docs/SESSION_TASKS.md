@@ -2,7 +2,7 @@
 Updated: 2026-11-04. Newest status on top. Any Claude session can resume from here.
 
 ## Context
-- Repo: animatica-fixed (patched zip from last session: animatica-fixed-patched.zip, 216 tests pass)
+- Repo: https://github.com/Abu103/animatica-manim (released v0.1.1 with tinytex-manim.zip asset, sha256 83fde080..., download verified + LaTeX compile verified from sandbox 2026-11-04)
 - User runs on Windows, provider nim, model nvidia/nemotron-3.5-super-vl-120b-a12b
 - Goal: stable demo to show others; then features that weak/free models (nemotron 120b, "3 super 550b") can drive reliably
 
@@ -17,7 +17,7 @@ Updated: 2026-11-04. Newest status on top. Any Claude session can resume from he
 - [x] P1.1 two-stage generation: `generate_storyboard_two_stage` (outline -> per-scene fill, each retried alone) + `--two-stage` flag on `animatica make`; tests/test_two_stage.py 4/4
 - [x] Bug F fixed (scale note no longer collides with two-line captions) -- replayed in fresh sandbox
 - [x] T9 `animatica new-component NAME` scaffold implemented (src/animatica/scaffold.py + CLI + tests/test_scaffold.py); e2e verified: scaffold number_line in a project copy -> registry lists 10 components, generated tests pass
-- [x] Suite in this sandbox: 206 passed, 20 skipped (manim/latex/ffmpeg missing), 5 failed -- all 5 are ModuleNotFoundError: manim (environment-only, same as before)
+- [x] Suite in this sandbox: 231 passed, 20 skipped, 5 failed -- all 5 are ModuleNotFoundError: manim (environment-only). Setup prod-verified: release zip downloaded, checksum matched, latex+dvisvgm+tlmgr present, test formula compiled to SVG.
 - [x] Hermes handoff written: skills/animatica/SKILL.md + refreshed docs/TASKS_FOR_HERMES.md (T7, T9 marked done)
 
 ## Status
