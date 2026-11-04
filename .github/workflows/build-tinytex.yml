@@ -1,6 +1,3 @@
-# Builds the pre-baked TinyTeX zip (tinytex-manim.zip) and uploads it as a release asset.
-# Run manually (workflow_dispatch) or on release publish. Bootstrap scripts download this
-# artifact instead of running the TinyTeX installer + tlmgr on the user's machine.
 name: build-tinytex-artifact
 on:
   workflow_dispatch:
@@ -20,16 +17,14 @@ jobs:
       - name: Locate tlmgr (path varies by installer version)
         id: tlmgr
         run: |
-          TLMGR=$(find "$HOME" -name tlmgr -type f -path "*/bin/*" 2>/dev/null | head -1)
+          TLMGR=$(find "$HOME" -name tlmgr -path "*/bin/*" 2>/dev/null | head -1)
           if [ -z "$TLMGR" ]; then echo "tlmgr not found" >&2; exit 1; fi
           echo "path=$TLMGR" >> "$GITHUB_OUTPUT"
-          echo "$TLMGR" option repository https://tlnet.yihui.org
       - name: Install exactly the packages Manim needs
         run: ${{ steps.tlmgr.outputs.path }} install standalone preview babel-english amsmath amsfonts dvisvgm
       - name: Bake artifact
         run: |
           TEXDIR=$(dirname "$(dirname "$(dirname "${{ steps.tlmgr.outputs.path }}")")")
-          echo "zipping $TEXDIR"
           cd "$TEXDIR" && zip -qr "$GITHUB_WORKSPACE/tinytex-manim.zip" .
       - name: Upload to release
         uses: softprops/action-gh-release@v2
