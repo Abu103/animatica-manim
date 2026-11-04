@@ -1,53 +1,58 @@
-# Animatica fast full-quality bootstrap for Windows (~25-40s).
-# Self-contained: installs uv if missing, installs Python deps and downloads the
-# pre-baked TinyTeX zip IN PARALLEL, then verifies with animatica doctor.
-# Usage: irm <raw>/scripts/bootstrap.ps1 | iex
-$ErrorActionPreference = "Continue"
-$ghRepo = if ($env:ANIMATICA_GH_REPO) { $env:ANIMATICA_GH_REPO } else { "Abu103/animatica-manim" }
-# When piped via irm|iex, $PSScriptRoot is empty: clone into a fresh folder instead
-if ($PSScriptRoot -and (Test-Path "$PSScriptRoot\..\src\animatica")) {
-    Set-Location "$PSScriptRoot\.."
-    $root = (Get-Location).Path
+# Animatica fast full-quality bootstrap for Windows (~30-60s).
+# Self-contained: installs uv if missing, clones the repo, installs Python deps,
+# downloads the pre-baked TinyTeX zip, then verifies with animatica doctor.
+# Usage: irm https://raw.githubusercontent.com/Abu103/animatica-manim/main/scripts/bootstrap.ps1 | iex
+$ErrorActionPreference = "Stop"
+
+$ghRepo   = if ($env:ANIMATICA_GH_REPO) { $env:ANIMATICA_GH_REPO } else { "Abu103/animatica-manim" }
+$tinytexUrl = $env:ANIMATICA_TINYTEX_URL
+
+# Locate or clone the repo (works both from a clone and when piped via irm|iex)
+if ($PSScriptRoot -and (Test-Path (Join-Path $PSScriptRoot "..\src\animatica\__init__.py"))) {
+    $root = Split-Path $PSScriptRoot -Parent
 } else {
     $root = Join-Path $env:USERPROFILE "animatica-manim"
-    if (-not (Test-Path "$root\src\animatica")) {
+    if (-not (Test-Path (Join-Path $root "src\animatica\__init__.py"))) {
         git clone "https://github.com/$ghRepo.git" $root
     }
-    Set-Location $root
 }
+Set-Location $root
+Write-Host "Repo: $root"
 
-$tinytexUrl = $env:ANIMATICA_TINYTEX_URL
-$ghRepo = if ($env:ANIMATICA_GH_REPO) { $env:ANIMATICA_GH_REPO } else { "Abu103/animatica-manim" }
-$tinytexDir = Join-Path $root ".tex"
-
+# [0/3] uv
 if (-not (Get-Command uv -ErrorAction SilentlyContinue)) {
     Write-Host "[0/3] installing uv"
     irm https://astral.sh/uv/install.ps1 | iex
-    $env:PATH = "$env:LOCALAPPDATA\uv\bin;$env:PATH"
+    $env:PATH = "$env:LOCALAPPDATA\Programs\uv\bin;$env:PATH"
 }
 
-Write-Host "[1/3] python deps (uv, parallel with TeX download)"
-$py = Start-Process -PassThru -NoNewWindow -Wait:$false powershell -ArgumentList \
-    "uv venv '$root\.venv'; uv pip install --python '$root\.venv\Scripts\python.exe' -e '$root'"
-$texScript = @"
-if ('$tinytexUrl') { Invoke-WebRequest -Uri '$tinytexUrl' -OutFile '$env:TEMP\tinytex-manim.zip' }
-elseif (Get-Command gh -ErrorAction SilentlyContinue) {
-    gh release download --repo '$ghRepo' --pattern tinytex-manim.zip -O '$env:TEMP\tinytex-manim.zip'
-} else { exit 1 }
-"@
-$tex = Start-Process -PassThru -NoNewWindow -Wait:$false powershell -ArgumentList $texScript
-Wait-Process -Id $py.Id
-$texOk = (Wait-Process -Id $tex.Id -PassThru).ExitCode -eq 0
+# [1/3] python deps
+Write-Host "[1/3] python deps (uv)"
+uv venv .venv
+uv pip install --python .\.venv\Scripts\python.exe -e .
 
+# [2/3] pre-baked TinyTeX zip (gh handles private repos when logged in)
+Write-Host "[2/3] TinyTeX artifact"
+$texOk = $false
+$zip = Join-Path $env:TEMP "tinytex-manim.zip"
+if ($tinytexUrl) {
+    Invoke-WebRequest -Uri $tinytexUrl -OutFile $zip
+    $texOk = $true
+} elseif (Get-Command gh -ErrorAction SilentlyContinue) {
+    gh release download --repo $ghRepo --pattern tinytex-manim.zip -O $zip --clobber
+    if ($LASTEXITCODE -eq 0) { $texOk = $true }
+}
 if ($texOk) {
-    Expand-Archive -Force "$env:TEMP\tinytex-manim.zip" $tinytexDir
-    $texBin = (Get-ChildItem "$tinytexDir\bin" -Directory | Select-Object -First 1).FullName
-    Write-Host "[2/3] TinyTeX ready. For this session: `$env:PATH = '$texBin;`$env:PATH'"
+    $texDir = Join-Path $root ".tex"
+    Expand-Archive -Force $zip $texDir
+    $texBin = (Get-ChildItem (Join-Path $texDir "bin") -Directory | Select-Object -First 1).FullName
+    Write-Host "TinyTeX ready. For this session: `$env:PATH = '$texBin;' + `$env:PATH"
 } else {
-    Write-Host "[2/3] pre-baked TinyTeX zip unavailable -- falling back to doctor --fix"
-    & "$root\.venv\Scripts\animatica.exe" doctor --fix
+    Write-Host "TinyTeX artifact unavailable -- falling back to doctor --fix"
+    .\.venv\Scripts\animatica.exe doctor --fix
 }
 
+# [3/3] verify
 Write-Host "[3/3] verifying"
-& "$root\.venv\Scripts\animatica.exe" doctor
+.\.venv\Scripts\animatica.exe doctor
 Write-Host "Done. Then: .venv\Scripts\activate; animatica make 'graph of sin(x)' -o out/"
