@@ -1,0 +1,16 @@
+{
+  "version": "1",
+  "title": "Conformance Title Card",
+  "scenes": [
+    {
+      "beats": [
+        {
+          "component": "title_card",
+          "params": {"title": "Conformance"},
+          "caption": "A single title card."
+        }
+      ]
+    }
+  ]
+}
+

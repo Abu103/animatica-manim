@@ -1,0 +1,24 @@
+# Builds the pre-baked TinyTeX zip (tinytex-manim.zip) and uploads it as a release asset.
+# Run manually or on release. The bootstrap scripts download this artifact instead of
+# running the TinyTeX installer + tlmgr on the user's machine (~5-10s vs 2-4 min).
+name: build-tinytex-artifact
+on:
+  workflow_dispatch:
+  release:
+    types: [published]
+
+jobs:
+  tinytex:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install TinyTeX
+        run: curl -fsSL https://yihui.org/tinytex/install-unx.sh | sh
+      - name: Install exactly the packages Manim needs
+        run: ~/.TinyTeX/bin/*/tlmgr install standalone preview babel-english amsmath amsfonts dvisvgm
+      - name: Bake artifact
+        run: zip -qr tinytex-manim.zip ~/.TinyTeX
+      - name: Upload to release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: tinytex-manim.zip

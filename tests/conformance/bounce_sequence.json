@@ -1,0 +1,16 @@
+{
+  "version": "1",
+  "title": "Conformance Bounce",
+  "scenes": [
+    {
+      "beats": [
+        {
+          "component": "bounce_sequence",
+          "params": {"title": "Fibonacci", "values": [0, 1, 1, 2, 3]},
+          "caption": "A ball hops along the terms."
+        }
+      ]
+    }
+  ]
+}
+

@@ -1,0 +1,16 @@
+{
+  "version": "1",
+  "title": "Conformance Bar Chart",
+  "scenes": [
+    {
+      "beats": [
+        {
+          "component": "bar_chart",
+          "params": {"title": "Conformance", "labels": ["A", "B", "C", "D"], "values": [3, 5, 2, 7]},
+          "caption": "A bar chart."
+        }
+      ]
+    }
+  ]
+}
+

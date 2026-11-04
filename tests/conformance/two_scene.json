@@ -1,0 +1,25 @@
+{
+  "version": "1",
+  "title": "Conformance Two Scenes",
+  "scenes": [
+    {
+      "beats": [
+        {
+          "component": "title_card",
+          "params": {"title": "Scene One"},
+          "caption": "First scene."
+        }
+      ]
+    },
+    {
+      "beats": [
+        {
+          "component": "equation",
+          "params": {"mode": "reveal", "latex": ["E = mc^2"]},
+          "caption": "Second scene."
+        }
+      ]
+    }
+  ]
+}
+

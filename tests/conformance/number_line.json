@@ -1,0 +1,1 @@
+{"version": "1", "title": "NumberLine", "scenes": [{"beats": [{"component": "number_line", "params": {"title": "Demo line", "start": 0, "end": 10, "marks": [5], "jumps": [[0, 3], [3, 7]]}, "caption": "Jumps along the line."}]}]}

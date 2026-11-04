@@ -1,0 +1,54 @@
+{
+  "title_card.json": {
+    "scenes": 1,
+    "duration": 3.0
+  },
+  "equation.json": {
+    "scenes": 1,
+    "duration": 2.0
+  },
+  "equation_transform.json": {
+    "scenes": 1,
+    "duration": 4.0
+  },
+  "steps.json": {
+    "scenes": 1,
+    "duration": 5.5
+  },
+  "graph.json": {
+    "scenes": 1,
+    "duration": 4.0
+  },
+  "bar_chart.json": {
+    "scenes": 1,
+    "duration": 3.2
+  },
+  "shape_morph.json": {
+    "scenes": 1,
+    "duration": 3.0
+  },
+  "diagram.json": {
+    "scenes": 1,
+    "duration": 1.6
+  },
+  "code_highlight.json": {
+    "scenes": 1,
+    "duration": 4.0
+  },
+  "two_scene.json": {
+    "scenes": 2,
+    "duration": 5.0
+  },
+  "bounce_sequence.json": {
+    "scenes": 1,
+    "duration": 6.0
+  },
+  "number_line.json": {
+    "scenes": 1,
+    "duration": 3.4
+  },
+  "table.json": {
+    "scenes": 1,
+    "duration": 3.0
+  }
+}

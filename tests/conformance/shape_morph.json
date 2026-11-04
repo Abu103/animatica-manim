@@ -1,0 +1,16 @@
+{
+  "version": "1",
+  "title": "Conformance Shape Morph",
+  "scenes": [
+    {
+      "beats": [
+        {
+          "component": "shape_morph",
+          "params": {"from_shape": "circle", "to_shape": "square"},
+          "caption": "Circle morphs to square."
+        }
+      ]
+    }
+  ]
+}
+

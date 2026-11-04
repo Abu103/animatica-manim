@@ -1,0 +1,16 @@
+{
+  "version": "1",
+  "title": "Conformance Equation Transform",
+  "scenes": [
+    {
+      "beats": [
+        {
+          "component": "equation",
+          "params": {"mode": "transform", "latex": ["a^2 + b^2 = c^2", "c = \\sqrt{a^2+b^2}"]},
+          "caption": "Equation transform."
+        }
+      ]
+    }
+  ]
+}
+

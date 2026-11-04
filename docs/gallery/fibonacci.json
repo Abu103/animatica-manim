@@ -1,0 +1,5 @@
+{"version":"1","title":"Fibonacci","scenes":[
+{"beats":[{"component":"title_card","params":{"title":"The Fibonacci Series","subtitle":"A ball bounces through terms 0 to 15"},"caption":"Each number is the sum of the two before it."}]},
+{"beats":[{"component":"equation","params":{"mode":"reveal","latex":["F_0 = 0","F_1 = 1","F_n = F_{n-1} + F_{n-2}"]},"caption":"Start with 0 and 1, then keep adding the last two."}]},
+{"beats":[{"component":"bounce_sequence","params":{"title":"Terms 0 to 15","values":[0,1,1,2,3,5,8,13,21,34,55,89,144,233,377,610]},"caption":"The ball lands on each term; its pad grows with the number."}]}]}
+

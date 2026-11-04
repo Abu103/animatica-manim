@@ -1,0 +1,16 @@
+{
+  "version": "1",
+  "title": "Conformance Graph",
+  "scenes": [
+    {
+      "beats": [
+        {
+          "component": "graph",
+          "params": {"fn": "sin(x)", "x_range": [-6.28, 6.28], "y_range": [-1.5, 1.5], "label": "sine"},
+          "caption": "A sine graph."
+        }
+      ]
+    }
+  ]
+}
+

@@ -1,0 +1,4 @@
+{"version":"1","title":"Sine","scenes":[
+{"beats":[{"component":"title_card","params":{"title":"The Sine Wave","subtitle":"y = sin(x)"},"caption":"A smooth wave that repeats."}]},
+{"beats":[{"component":"graph","params":{"fn":"sin(x)","x_range":[-6.28,6.28],"y_range":[-1.5,1.5],"label":"y = sin(x)"},"caption":"Sine repeats every 2π."}]}]}
+

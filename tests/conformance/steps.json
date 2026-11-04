@@ -1,0 +1,16 @@
+{
+  "version": "1",
+  "title": "Conformance Steps",
+  "scenes": [
+    {
+      "beats": [
+        {
+          "component": "steps_list",
+          "params": {"items": ["Step one", "Step two", "Step three"]},
+          "caption": "Three steps."
+        }
+      ]
+    }
+  ]
+}
+

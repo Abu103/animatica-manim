@@ -1,0 +1,16 @@
+{
+  "version": "1",
+  "title": "Conformance Code Highlight",
+  "scenes": [
+    {
+      "beats": [
+        {
+          "component": "code_highlight",
+          "params": {"code": "print('hello')", "language": "python", "lines": [1]},
+          "caption": "Highlighted code."
+        }
+      ]
+    }
+  ]
+}
+

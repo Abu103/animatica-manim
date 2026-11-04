@@ -1,0 +1,4 @@
+{"version":"1","title":"Steps","scenes":[
+{"beats":[{"component":"title_card","params":{"title":"How to Boil an Egg"},"caption":"Four simple steps."}]},
+{"beats":[{"component":"steps_list","params":{"items":["Boil water","Lower the egg in","Wait 9 minutes","Cool in cold water"]},"caption":"Follow the steps in order."}]}]}
+

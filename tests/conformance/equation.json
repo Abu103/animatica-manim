@@ -1,0 +1,16 @@
+{
+  "version": "1",
+  "title": "Conformance Equation",
+  "scenes": [
+    {
+      "beats": [
+        {
+          "component": "equation",
+          "params": {"mode": "reveal", "latex": ["a^2 + b^2 = c^2"]},
+          "caption": "A single equation."
+        }
+      ]
+    }
+  ]
+}
+

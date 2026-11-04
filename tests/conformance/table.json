@@ -1,0 +1,1 @@
+{"version": "1", "title": "Table", "scenes": [{"beats": [{"component": "table", "params": {"title": "Demo table", "columns": ["A", "B"], "rows": [["1", "2"], ["3", "4"]]}, "caption": "Rows appear one by one."}]}]}

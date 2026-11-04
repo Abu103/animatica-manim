@@ -1,0 +1,4 @@
+{"version":"1","title":"Pythagoras","scenes":[
+{"beats":[{"component":"title_card","params":{"title":"Pythagorean Theorem","subtitle":"Right triangles"},"caption":"The longest side is tied to the other two."}]},
+{"beats":[{"component":"equation","params":{"mode":"transform","latex":["a^2 + b^2 = c^2","c = \\sqrt{a^2 + b^2}"]},"caption":"Solve for the hypotenuse."}]}]}
+

@@ -1,0 +1,16 @@
+{
+  "version": "1",
+  "title": "Conformance Diagram",
+  "scenes": [
+    {
+      "beats": [
+        {
+          "component": "diagram",
+          "params": {"nodes": ["A", "B"], "edges": [["A", "B"]]},
+          "caption": "A two-node diagram."
+        }
+      ]
+    }
+  ]
+}
+
