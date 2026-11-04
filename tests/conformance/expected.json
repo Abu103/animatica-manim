@@ -50,5 +50,9 @@
   "table.json": {
     "scenes": 1,
     "duration": 3.0
+  },
+  "recursion_tree.json": {
+    "scenes": 1,
+    "duration": 5.2
   }
 }

@@ -49,6 +49,7 @@ class ComponentRegistry:
 
 
 def _builtins() -> list[type[Component]]:
+    from animatica.components.recursion_tree import RecursionTree
     from animatica.components.table import Table
     from animatica.components.number_line import NumberLine
     from animatica.components.bar_chart import BarChart
@@ -61,6 +62,7 @@ def _builtins() -> list[type[Component]]:
     from animatica.components.steps_list import StepsList
     from animatica.components.title_card import TitleCard
     return [
+        RecursionTree,
         Table,
         NumberLine,
         TitleCard,

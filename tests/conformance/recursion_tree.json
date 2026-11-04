@@ -1,0 +1,1 @@
+{"version": "1", "title": "RecursionTree", "scenes": [{"beats": [{"component": "recursion_tree", "params": {"title": "Fibonacci call tree", "fn": "fib", "n": 5}, "caption": "Repeated calls shown in red."}]}]}

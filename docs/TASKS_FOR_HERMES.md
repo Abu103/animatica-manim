@@ -8,7 +8,7 @@ Params: title, start, end, marks[] (optional), jump_from/jump_to pairs. Show a l
 Files: components/number_line.py, registry.py, docs/COMPONENTS.md, tests/test_number_line.py, tests/conformance/number_line.json, expected.json.
 Accept: `pytest -q tests/test_number_line.py` and `animatica make --from tests/conformance/number_line.json -o /tmp/nl --quality preview` prints no Warning.
 
-## T2 recursion_tree
+## T2 recursion_tree  [DONE 2026-11-04 by agent session; 8/8 tests; render smoke pending on manim machine]
 Params: title, fn ("fib"), n (2..6). Draw the call tree F(n) -> F(n-1), F(n-2), highlight repeated calls in red. Cap nodes at 31.
 Accept: same pattern; no overlapping nodes (use tidy-tree x positions, leaves evenly spaced).
 

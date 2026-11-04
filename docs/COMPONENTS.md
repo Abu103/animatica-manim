@@ -18,6 +18,7 @@ sync with the code: the test suite compares this document against
 | `code_highlight` | `code` (<=1200 chars), `language`, `lines[]` | 3.0 s + 1.0 s per line |
 | `number_line` | `title`, TODO | 3.0 s |
 | `table` | `title`, TODO | 3.0 s |
+| `recursion_tree` | `title`, TODO | 3.0 s |
 | `bounce_sequence` | `title`, `values[]` (2-20), optional `scale` (auto/linear/sqrt/log), `labels[]` (optional) | 2.0 s + 0.8 s per term |
 
 Registered component names:
@@ -30,6 +31,7 @@ Registered component names:
 - diagram
 - code_highlight
 - bounce_sequence
+- recursion_tree
 - table
 - number_line
 
