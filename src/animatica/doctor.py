@@ -274,14 +274,14 @@ NEEDED_TEX_FILES = {
 }
 
 
-def _ensure_tex_files(tlmgr: str, run, which, exe: str, actions: list[str]) -> None:
-    """Verify each needed TeX file exists; install the owning package (found via tlmgr search) if not."""
+def _tex_tools(tlmgr: str, run, which, exe: str):
+    """Return (have(file) -> bool, tl(*args) -> str) bound to this TeX install, or (None, None) without kpsewhich."""
     kpse = which("kpsewhich")
     if not kpse:
         cand = Path(tlmgr).parent / f"kpsewhich{exe}"
         kpse = str(cand) if cand.is_file() else None
     if not kpse:
-        return
+        return None, None
 
     def have(name: str) -> bool:
         try:
@@ -296,6 +296,23 @@ def _ensure_tex_files(tlmgr: str, run, which, exe: str, actions: list[str]) -> N
             return f"{getattr(r, 'stdout', '') or ''}\n{getattr(r, 'stderr', '') or ''}"
         except Exception as exc:
             return f"(tlmgr failed: {exc})"
+
+    return have, tl
+
+
+def _missing_tex_files(tlmgr: str, run, which, exe: str) -> list[str] | None:
+    """Needed TeX files kpsewhich cannot find; None when that cannot be checked (no kpsewhich)."""
+    have, _ = _tex_tools(tlmgr, run, which, exe)
+    if have is None:
+        return None
+    return [f for f in NEEDED_TEX_FILES if not have(f)]
+
+
+def _ensure_tex_files(tlmgr: str, run, which, exe: str, actions: list[str]) -> None:
+    """Verify each needed TeX file exists; install the owning package (found via tlmgr search) if not."""
+    have, tl = _tex_tools(tlmgr, run, which, exe)
+    if have is None:
+        return
 
     for fname, pkg in NEEDED_TEX_FILES.items():
         if have(fname):
@@ -385,8 +402,17 @@ def fix_dependencies(run=subprocess.run, which=shutil.which, platform: str = sys
         _try("install dvisvgm via apt", _apt("dvisvgm"))
 
     # TinyTeX needs extra packages (dvisvgm, standalone, ...) via tlmgr. On Linux apt provides them.
-    if latex_missing and platform != "linux":
-        tlmgr = which("tlmgr")
+    # Repair when TeX was just installed/incomplete, OR when TeX is present but kpsewhich shows a file Manim
+    # needs is missing (seen on Windows: latex+dvisvgm present, babel-english missing, `doctor --fix` did
+    # nothing). A healthy install is left alone: no tlmgr self-update, no network, no surprises.
+    tlmgr = which("tlmgr") if platform != "linux" else None
+    needs_repair = latex_missing
+    if tlmgr and not latex_missing:
+        missing = _missing_tex_files(tlmgr, run, which, ".exe" if platform == "win32" else "")
+        needs_repair = bool(missing)
+        if missing:
+            actions.append("TeX is installed but these files are missing: " + ", ".join(missing))
+    if needs_repair and platform != "linux":
         if tlmgr:
             exe = ".exe" if platform == "win32" else ""
             # dvisvgm first and on its own: Manim cannot work without it, and one bad package name

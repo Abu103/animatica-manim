@@ -390,3 +390,50 @@ def test_probe_reports_a_log_excerpt_when_no_package_is_identified(tmp_path):
 
     ok, reason, pk = probe_latex(run=run)
     assert not ok and pk == [] and "Emergency stop" in reason and "job aborted" in reason
+
+
+# ---- audit 2026-11-05: repair a TeX that is present but incomplete, leave a healthy one alone ------------
+# Hermes made doctor --fix always run tlmgr on Windows/macOS (slow, touches working installs); the earlier
+# code never ran it when latex+dvisvgm existed (the real bug: babel-english missing, fix did nothing).
+# The rule now: ask kpsewhich; repair only what is actually missing.
+
+class _R:
+    def __init__(self, rc=0, out=""):
+        self.returncode, self.stdout, self.stderr = rc, out, ""
+
+
+def _fake_tex_env(missing=()):
+    calls = []
+
+    def run(cmd, **kw):
+        cmd = [str(c) for c in cmd]
+        calls.append(cmd)
+        if cmd[0].endswith("kpsewhich"):
+            name = cmd[1]
+            return _R(1, "") if name in missing else _R(0, f"/tex/{name}\n")
+        return _R(0, "")
+
+    paths = {"latex": "/tex/latex", "dvisvgm": "/tex/dvisvgm", "tlmgr": "/tex/tlmgr", "kpsewhich": "/tex/kpsewhich"}
+    return calls, run, paths.get
+
+
+def test_healthy_tex_is_left_untouched_on_windows():
+    from animatica.doctor import fix_dependencies
+    calls, run, which = _fake_tex_env(missing=())
+    fix_dependencies(run=run, which=which, platform="win32", bundled_ffmpeg=lambda: None)
+    assert not any(c[0].endswith("tlmgr") for c in calls), "a working TeX must not be modified"
+
+
+def test_present_but_incomplete_tex_is_repaired_on_windows():
+    from animatica.doctor import fix_dependencies
+    calls, run, which = _fake_tex_env(missing=("english.ldf",))
+    actions = fix_dependencies(run=run, which=which, platform="win32", bundled_ffmpeg=lambda: None)
+    assert any(c[0].endswith("tlmgr") and "install" in c and "babel-english" in c for c in calls)
+    assert any("english.ldf" in a for a in actions)
+
+
+def test_linux_never_calls_tlmgr_for_a_present_tex():
+    from animatica.doctor import fix_dependencies
+    calls, run, which = _fake_tex_env(missing=("english.ldf",))
+    fix_dependencies(run=run, which=which, platform="linux", bundled_ffmpeg=lambda: None)
+    assert not any(c[0].endswith("tlmgr") for c in calls), "on Linux apt owns TeX, not tlmgr"

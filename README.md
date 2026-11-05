@@ -6,7 +6,8 @@ Describe something, get an explainer video. Built on Manim; works with free AI m
 
 ## Install (Windows / Mac / Linux)
 
-One command does everything in ~25-40s, full quality (real LaTeX + real ffmpeg), deps installed in parallel:
+One command sets everything up with full quality (real LaTeX + real ffmpeg). Expect a few minutes the first time (downloading LaTeX is the slow part); later runs are quick. Supported and CI-tested: **Linux** and **Windows**; macOS is best-effort.
+
 
 ```
 # Linux/macOS
@@ -18,6 +19,8 @@ irm https://raw.githubusercontent.com/Abu103/animatica-manim/main/scripts/bootst
 How it stays fast: `uv` installs manim + the bundled static ffmpeg wheel (`imageio-ffmpeg`,
 no winget/brew needed), and LaTeX comes from a pre-baked `tinytex-manim.zip` release asset
 (no TinyTeX installer, no tlmgr). Equivalent manual path: `animatica bootstrap` / `animatica doctor --fix`.
+
+Not sure it worked? Run `animatica doctor` (it lists what is missing and how to fix it); `animatica doctor --fix --yes` repairs what it can.
 
 Manual equivalent:
 
