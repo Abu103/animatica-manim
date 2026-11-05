@@ -230,6 +230,7 @@ def make(
     debug: bool = typer.Option(False, "--debug", help="Show tracebacks on errors"),
     two_stage: bool = typer.Option(False, "--two-stage", help="Two-stage AI generation: outline, then fill each scene"),
     model: str | None = typer.Option(None, "--model", help="Override the AI model id for the chosen provider"),
+    backend: str = typer.Option("manim", "--backend", help="Renderer backend (manim, or any registered backend)"),
 ) -> None:
     """Turn a plain-language prompt into an explainer video."""
     if model:
@@ -245,6 +246,7 @@ def make(
             provider=provider,
             captions=captions,
             two_stage=two_stage,
+            backend=backend,
         )
         typer.echo(f"Video: {result.video}")
         for w in result.warnings:

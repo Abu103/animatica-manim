@@ -7,8 +7,9 @@ from pathlib import Path
 from animatica.ai.router import get_provider
 from animatica.ai.template import TemplateMatcher
 from animatica.ai.repair import generate_storyboard, generate_storyboard_two_stage
-from animatica.backends.base import RenderOptions
+from animatica.backends.base import RenderBackend, RenderOptions
 from animatica.backends.manim_backend import ManimBackend
+from animatica.backends import default_backends
 from animatica.components.registry import default_registry
 from animatica.config import load_config
 from animatica.encode.probe import pick_encoder, probe_encoders
@@ -55,6 +56,19 @@ def _write_captions(sb: Storyboard, registry, path: Path) -> None:
             lines.append(text)
             lines.append("")
     path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+
+def resolve_backend(name: str) -> RenderBackend:
+    """Resolve a render backend by name from ``default_backends()``.
+
+    Raises ``ValueError`` listing the available names when unknown so the CLI
+    can print a friendly message instead of a traceback (F6/F7, review focus #4).
+    """
+    backends = default_backends()
+    if name not in backends:
+        available = ", ".join(sorted(backends))
+        raise ValueError(f"unknown backend {name!r}; available: {available}")
+    return backends[name]
 
 
 def cache_variant(prov, two_stage: bool, registry) -> str:
@@ -132,11 +146,9 @@ def make_video(
     dump_storyboard(sb, out_dir / "storyboard.json")
 
     # ---- render ----
-    if backend != "manim":
-        raise ValueError(f"unknown backend {backend!r}")
+    render_backend = resolve_backend(backend)
     if preview:
         quality = "preview"
-    render_backend = ManimBackend()
     render_result = render_backend.render(
         sb, out_dir, RenderOptions(quality=quality, captions=captions)
     )
@@ -154,9 +166,14 @@ def make_video(
         if transcode_result.warning:
             warnings.append(f"transcode: {transcode_result.warning}")
 
-    # ---- captions + report ----
+    # ---- captions + report (single writer) ----
     _write_captions(sb, registry, out_dir / "captions.vtt")
-    write_report(out_dir / "report.json", render_result.stage_times, warnings)
+    write_report(
+        out_dir / "report.json",
+        render_result.stage_times,
+        warnings,
+        backend={"name": render_backend.name, "version": getattr(render_backend, "version", "unknown")},
+    )
 
     typer_print_provider(provider_used, encoder_used)
 

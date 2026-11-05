@@ -1,6 +1,6 @@
 import pytest
 
-from animatica.pipeline import cache_variant, make_video
+from animatica.pipeline import cache_variant, make_video, resolve_backend
 from types import SimpleNamespace
 
 
@@ -42,3 +42,45 @@ def test_failed_transcode_returns_the_real_video_and_keeps_the_warning(tmp_path,
     assert result.video.exists()
     assert result.video.name != "video_transcoded.mp4"
     assert any("transcode: boom" in w for w in result.warnings)
+
+
+def test_resolve_backend_unknown_lists_available():
+    with pytest.raises(ValueError, match=r"unknown backend 'nope'; available: .*manim"):
+        resolve_backend("nope")
+
+
+def test_report_records_backend(tmp_path):
+    from animatica.report import write_report
+    import json
+    write_report(tmp_path / "r.json", {"a": 1.0}, [], backend={"name": "manim", "version": "0.22.1"})
+    assert json.loads((tmp_path / "r.json").read_text())["backend"]["name"] == "manim"
+
+
+def test_make_video_uses_injected_backend_not_manim(monkeypatch, tmp_path):
+    """An injected fake backend (via monkeypatch on default_backends) is called instead of ManimBackend."""
+    import pathlib
+    import animatica.pipeline as pipeline
+    from animatica.backends.base import RenderResult
+
+    class FakeBackend:
+        name = "fake"
+        version = "9.9"
+
+        def render(self, sb, out_dir, opts):
+            out_dir = pathlib.Path(out_dir)
+            out_dir.mkdir(parents=True, exist_ok=True)
+            (out_dir / "video.mp4").write_bytes(b"x")
+            return RenderResult(
+                video=out_dir / "video.mp4",
+                durations=[1.0],
+                warnings=[],
+                stage_times={"total": 1.0},
+            )
+
+    def fake_default_backends():
+        return {"fake": FakeBackend()}
+    monkeypatch.setattr("animatica.pipeline.default_backends", fake_default_backends)
+    monkeypatch.setattr(pipeline, "ManimBackend", lambda: (_ for _ in ()).throw(AssertionError("ManimBackend must not be instantiated")))
+
+    result = pipeline.make_video("make a title card about Hello", out_dir=tmp_path, preview=True, backend="fake")
+    assert result.video.exists()

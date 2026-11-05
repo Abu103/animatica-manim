@@ -13,7 +13,7 @@ from animatica.backends.scheduler import concat_videos
 from animatica.components.registry import default_registry
 from animatica.components.theme import get_colors
 from animatica.paths import check_tex_safe, long_path
-from animatica.report import StageTimer, write_report
+from animatica.report import StageTimer
 from animatica.storyboard.models import Storyboard, dump_storyboard
 
 QUALITY_FLAG = {"preview": "l", "standard": "m", "high": "h"}
@@ -28,6 +28,12 @@ def _find_mp4(media_dir: Path, prefix: str) -> Path:
 
 class ManimBackend:
     name = "manim"
+
+    @property
+    def version(self) -> str:
+        import manim
+
+        return manim.__version__
 
     def render(self, sb: Storyboard, out_dir: Path, opts: RenderOptions) -> RenderResult:
         out_dir = Path(out_dir)
@@ -100,7 +106,6 @@ class ManimBackend:
             else:
                 concat_videos(scene_mp4s, video)
 
-        write_report(out_dir / "report.json", timer.stages, warnings)
         return RenderResult(
             video=video,
             durations=durations,

@@ -150,7 +150,7 @@ def test_provider_result_is_cached(monkeypatch, tmp_path):
         def render(self, *a, **k):
             raise RuntimeError("stop before render")
 
-    monkeypatch.setattr("animatica.pipeline.ManimBackend", Stop)
+    monkeypatch.setattr("animatica.pipeline.default_backends", lambda: {"manim": Stop()})
     for _ in range(2):
         r = CliRunner().invoke(app, ["make", "explain the taylor series", "-o", str(tmp_path)])
         assert "stop before render" in r.output
