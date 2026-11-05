@@ -272,3 +272,32 @@ def test_doctor_fix_text_is_specific_when_only_dvisvgm_is_missing():
                         deep_latex=False)
     latex = next(c for c in checks if c.name == "latex")
     assert not latex.ok and "dvisvgm" in latex.fix and "installed" in latex.fix
+
+
+# ---- fix4: tlmgr says "itself needs to be updated ... Terminating" and exits 0 ----
+
+def test_tlmgr_is_updated_before_packages_are_installed(tmp_path):
+    from animatica.doctor import fix_dependencies
+
+    bindir = tmp_path / "TinyTeX" / "bin" / "windows"
+    bindir.mkdir(parents=True)
+    tlmgr = str(bindir / "tlmgr.bat")
+    cmds = []
+    which = lambda n: tlmgr if n == "tlmgr" else ("C:/tex/latex" if n == "latex" else None)
+    fix_dependencies(run=_fake_run(cmds), which=which, platform="win32", bundled_ffmpeg=lambda: "x")
+    upd = cmds.index([tlmgr, "update", "--self"])
+    assert upd < cmds.index([tlmgr, "install", "dvisvgm"])
+    assert upd < cmds.index([tlmgr, "install", "standalone", "preview", "babel-english", "amsmath", "amsfonts", "dvisvgm"])
+
+
+def test_tlmgr_terminating_with_exit_zero_is_reported_as_failure(tmp_path):
+    from animatica.doctor import fix_dependencies
+
+    bindir = tmp_path / "TinyTeX" / "bin" / "windows"
+    bindir.mkdir(parents=True)
+    tlmgr = str(bindir / "tlmgr.bat")
+    out = "tlmgr itself needs to be updated.\ntlmgr.pl: Terminating; please see warning above!"
+    which = lambda n: tlmgr if n == "tlmgr" else ("C:/tex/latex" if n == "latex" else None)
+    actions = fix_dependencies(run=_fake_run([], stdout=out), which=which, platform="win32", bundled_ffmpeg=lambda: "x")
+    assert any(a.startswith("failed: install dvisvgm") for a in actions)
+    assert not any(a.startswith("done: install dvisvgm") for a in actions)

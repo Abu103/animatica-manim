@@ -253,6 +253,11 @@ def _locate_dvisvgm(tlmgr: str, exe: str, actions: list[str]) -> bool:
     return True
 
 
+# tlmgr can print one of these and still exit 0 (seen on a fresh Windows TinyTeX: "tlmgr itself needs
+# to be updated ... Terminating"), which makes every `tlmgr install` a silent no-op.
+TLMGR_ERROR_MARKERS = ("tlmgr itself needs to be updated", "Terminating; please see warning", "tlmgr: error")
+
+
 # Packages a fresh TinyTeX lacks but Animatica needs (the 2026-11-04 sessions hit exactly these).
 TEX_PACKAGES = ("standalone", "preview", "babel-english", "amsmath", "amsfonts", "dvisvgm")
 
@@ -265,12 +270,15 @@ def fix_dependencies(run=subprocess.run, which=shutil.which, platform: str = sys
     actions: list[str] = []
     last_tail: list[str] = [""]  # last lines of the most recent command's output, for failure reports
 
-    def _try(label: str, cmd: list[str], show_output: bool = False) -> bool:
+    def _try(label: str, cmd: list[str], show_output: bool = False, fail_on: tuple[str, ...] = ()) -> bool:
         try:
             result = run(cmd, capture_output=True, text=True)
             ok = getattr(result, "returncode", 0) == 0
             out = f"{getattr(result, 'stdout', '') or ''}\n{getattr(result, 'stderr', '') or ''}"
             last_tail[0] = "\n".join("    | " + ln for ln in str(out).strip().splitlines()[-15:])
+            if ok and any(m in str(out) for m in fail_on):
+                ok = False  # e.g. tlmgr prints "Terminating" but exits 0
+                result = type("R", (), {"returncode": "0, but its output reports an error"})()
         except Exception as exc:
             ok = False
             actions.append(f"failed: {label} ({exc})")
@@ -329,12 +337,15 @@ def fix_dependencies(run=subprocess.run, which=shutil.which, platform: str = sys
             # dvisvgm first and on its own: Manim cannot work without it, and one bad package name
             # elsewhere must not hide whether it installed. tlmgr output is shown even on success,
             # because tlmgr can print an error and still exit 0.
-            _try("install dvisvgm", [tlmgr, "install", "dvisvgm"], show_output=True)
-            _try("install required TeX packages", [tlmgr, "install", *TEX_PACKAGES], show_output=True)
+            # A fresh TinyTeX is older than its package repository, and tlmgr then refuses to install
+            # anything until it has updated itself. Do that first.
+            _try("update tlmgr itself", [tlmgr, "update", "--self"], show_output=True)
+            _try("install dvisvgm", [tlmgr, "install", "dvisvgm"], show_output=True, fail_on=TLMGR_ERROR_MARKERS)
+            _try("install required TeX packages", [tlmgr, "install", *TEX_PACKAGES], show_output=True, fail_on=TLMGR_ERROR_MARKERS)
             if not which("dvisvgm"):
                 _locate_dvisvgm(tlmgr, exe, actions)
             if not which("dvisvgm"):
-                _try("reinstall dvisvgm", [tlmgr, "install", "--reinstall", "dvisvgm"], show_output=True)
+                _try("reinstall dvisvgm", [tlmgr, "install", "--reinstall", "dvisvgm"], show_output=True, fail_on=TLMGR_ERROR_MARKERS)
                 _locate_dvisvgm(tlmgr, exe, actions)
             if not which("dvisvgm"):
                 bindir = Path(tlmgr).parent
