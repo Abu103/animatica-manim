@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import os
 import subprocess
-from concurrent.futures import ProcessPoolExecutor, as_completed
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 from typing import Callable
 
@@ -17,10 +17,14 @@ def render_scenes_parallel(
 ) -> list[Path]:
     """Render `n_scenes` scenes, returning paths in scene order.
 
-    Runs `render_one(i)` for each scene index. With `jobs > 1` uses a process
+    Runs `render_one(i)` for each scene index. With `jobs > 1` uses a thread
     pool; results are reordered back into scene index order. On the first
     failure, remaining renders are cancelled and a `RuntimeError` naming the
     failing scene index is raised.
+
+    Threads (not processes) are deliberate: each scene already shells out to a
+    manim subprocess, so a closure over local state needs no pickling and we
+    avoid the `fork()` deprecation warnings that a ProcessPoolExecutor raises.
     """
     if n_scenes <= 0:
         return []
@@ -35,7 +39,7 @@ def render_scenes_parallel(
             results[i] = render_one(i)
         return [r for r in results if r is not None]  # type: ignore[return-value]
 
-    with ProcessPoolExecutor(max_workers=jobs) as pool:
+    with ThreadPoolExecutor(max_workers=jobs) as pool:
         futures = {pool.submit(render_one, i): i for i in range(n_scenes)}
         for fut in as_completed(futures):
             idx = futures[fut]

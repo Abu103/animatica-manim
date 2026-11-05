@@ -77,3 +77,52 @@ def test_failed_scene_error_includes_manim_output(tmp_path, monkeypatch):
         ManimBackend().render(sb, tmp_path, RenderOptions(quality="preview", captions=False))
     assert "standalone.cls" in str(exc.value)
     assert "scene 0" in str(exc.value)
+
+
+@pytest.mark.render
+def test_render_scenes_in_order_with_jobs_2(tmp_path, monkeypatch):
+    """With jobs=2, two scenes render and concat in scene index order (subprocess.run faked)."""
+    import subprocess as _subprocess
+    import animatica.backends.manim_backend as mb
+    from animatica.backends.base import RenderOptions
+    from animatica.storyboard.models import Storyboard
+
+    sb = Storyboard.model_validate(
+        {
+            "version": "1",
+            "title": "Two",
+            "scenes": [
+                {"beats": [{"component": "title_card", "params": {"title": "One"}}]},
+                {"beats": [{"component": "title_card", "params": {"title": "Two"}}]},
+            ],
+        }
+    )
+
+    import re
+    import time
+
+    rendered: list[int] = []
+    concat_order: list[int] = []
+
+    def fake_run(cmd, **kw):
+        cmd = list(cmd)
+        if "--media_dir" in cmd:  # the per-scene manim render
+            idx = int(kw["env"]["ANIMATICA_SCENE_INDEX"])
+            if idx == 0:
+                time.sleep(0.3)  # scene 0 finishes last, so results arrive out of order
+            media_dir = Path(cmd[cmd.index("--media_dir") + 1])
+            media_dir.mkdir(parents=True, exist_ok=True)
+            (media_dir / f"scene_{idx}.mp4").write_bytes(b"x")
+            rendered.append(idx)
+        else:  # ffmpeg concat: record clip order from the list file, then write dst
+            listing = Path(cmd[cmd.index("-i") + 1]).read_text(encoding="utf-8")
+            concat_order.extend(int(m) for m in re.findall(r"scene_(\d+)\.mp4", listing))
+            Path(cmd[-1]).write_bytes(b"x")
+        return _subprocess.CompletedProcess(cmd, 0)
+
+    monkeypatch.setattr(mb.subprocess, "run", fake_run)  # monkeypatch restores it on teardown
+    result = mb.ManimBackend().render(sb, tmp_path, RenderOptions(quality="preview", jobs=2))
+
+    assert result.video.exists()
+    assert rendered == [1, 0], rendered  # out-of-order completion really happened
+    assert concat_order == [0, 1], concat_order  # ...yet concat is in scene index order

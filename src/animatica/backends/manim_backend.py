@@ -9,11 +9,11 @@ import sys
 from pathlib import Path
 
 from animatica.backends.base import RenderBackend, RenderOptions, RenderResult
-from animatica.backends.scheduler import concat_videos
+from animatica.backends.scheduler import concat_videos, render_scenes_parallel
 from animatica.components.registry import default_registry
 from animatica.components.theme import get_colors
 from animatica.paths import check_tex_safe, long_path
-from animatica.report import StageTimer, write_report
+from animatica.report import StageTimer
 from animatica.storyboard.models import Storyboard, dump_storyboard
 
 QUALITY_FLAG = {"preview": "l", "standard": "m", "high": "h"}
@@ -28,6 +28,12 @@ def _find_mp4(media_dir: Path, prefix: str) -> Path:
 
 class ManimBackend:
     name = "manim"
+
+    @property
+    def version(self) -> str:
+        import manim
+
+        return manim.__version__
 
     def render(self, sb: Storyboard, out_dir: Path, opts: RenderOptions) -> RenderResult:
         out_dir = Path(out_dir)
@@ -45,8 +51,10 @@ class ManimBackend:
         registry = default_registry()
         colors = get_colors(sb.theme)
 
-        scene_mp4s: list[Path] = []
-        for i, scene in enumerate(sb.scenes):
+        # Durations are pure functions of the storyboard: compute them serially so
+        # the list stays in scene index order regardless of render parallelism.
+        durations: list[float] = []
+        for scene in sb.scenes:
             scene_dur = 0.0
             for beat in scene.beats:
                 comp = registry.get(beat.component)
@@ -54,6 +62,7 @@ class ManimBackend:
                 scene_dur += comp.duration(params)
             durations.append(scene_dur)
 
+        def _render_scene(i: int) -> Path:
             with timer.stage(f"render_scene_{i}"):
                 env = dict(os.environ)
                 env.setdefault("PYTHONUTF8", "1")  # Windows defaults to cp1252; titles/captions may be Unicode
@@ -86,12 +95,16 @@ class ManimBackend:
                 except subprocess.CalledProcessError as exc:
                     tail = "\n".join(((exc.stderr or "") + "\n" + (exc.stdout or "")).strip().splitlines()[-25:])
                     raise RuntimeError(f"manim failed on scene {i} (exit {exc.returncode}):\n{tail}") from exc
-                scene_mp4s.append(_find_mp4(media_dir, f"scene_{i}"))
+                return _find_mp4(media_dir, f"scene_{i}")
 
-                wpath = sb_path.parent / f"warnings_{i}.json"
-                if wpath.exists():
-                    warnings.extend(json.loads(wpath.read_text(encoding="utf-8")))
-                    wpath.unlink()
+        scene_mp4s = render_scenes_parallel(_render_scene, len(sb.scenes), jobs=opts.jobs or 1)
+
+        # Per-scene warnings files already have unique names (warnings_{i}.json).
+        for i in range(len(sb.scenes)):
+            wpath = sb_path.parent / f"warnings_{i}.json"
+            if wpath.exists():
+                warnings.extend(json.loads(wpath.read_text(encoding="utf-8")))
+                wpath.unlink()
 
         with timer.stage("concat"):
             video = out_dir / "video.mp4"
@@ -100,7 +113,6 @@ class ManimBackend:
             else:
                 concat_videos(scene_mp4s, video)
 
-        write_report(out_dir / "report.json", timer.stages, warnings)
         return RenderResult(
             video=video,
             durations=durations,

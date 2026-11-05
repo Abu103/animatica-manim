@@ -1,6 +1,12 @@
 # Changelog
 
 ## Unreleased
+- Fix/F5-F7: stabilize renderer (F1-F4) and wire the backend seam (`--backend`, `--jobs`, single `report.json` writer); cache key now covers model + two-stage mode + registry fingerprint.
+- New: `--jobs` scene parallelism via threads (`render_scenes_parallel`); default stays `1` (timings: jobs 1 = 13.8s, jobs 4 = 15.8s on the fibonacci gallery — no gain at small scale, per spec 16.3).
+- Fix: `array_viz` swap moves both boxes simultaneously from original centers (was overlapping); `low`/`high`/`mid` now draw.
+- Fix: graph labels typeset as math with plain-text fallback when LaTeX is missing.
+- Fix: `--backend nope` exits non-zero listing valid names; `report.json` records backend name/version; `ManimBackend` no longer writes `report.json` (single writer in `make_video`).
+- Fix: `ProcessPoolExecutor` -> `ThreadPoolExecutor`; removes the `fork()` deprecation warnings; closures no longer need to be picklable.
 - Fix: `doctor --fix` repairs a TeX that is installed but incomplete (kpsewhich shows a needed file missing) and leaves a healthy one untouched.
 - Fix: GPU detection falls back to `Get-CimInstance` when `wmic` is gone (Windows 11 24H2+); one missing tool no longer hides the others; `probe_encoders(platform=)` is injectable so Linux CI can test Windows/macOS paths.
 - Change: NIM default model is `nvidia/nemotron-3.5-super-vl-120b-a12b` (code + providers.toml).

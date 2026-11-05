@@ -14,6 +14,29 @@ from animatica.storyboard.models import MAX_TEXT
 
 MAX_VALUES = 12
 
+Point = tuple[float, float, float]
+
+
+def swap_targets(centers: list[Point], i: int, j: int) -> list[tuple[int, Point]]:
+    """Move targets for swapping slots ``i`` and ``j``, read from the ORIGINAL
+    centers so both boxes move simultaneously to each other's slot.
+    Returns ``[]`` when ``i == j`` (a same-index swap is a no-op)."""
+    if i == j:
+        return []
+    return [(i, centers[j]), (j, centers[i])]
+
+
+def opacity_for(ix: int, low: int | None, high: int | None) -> float:
+    """Opacity for box ``ix`` given the active ``low``/``high`` range.
+    Full (1.0) inside the range or when no range is set; dimmed (0.25) outside."""
+    if low is None and high is None:
+        return 1.0
+    if low is not None and ix < low:
+        return 0.25
+    if high is not None and ix > high:
+        return 0.25
+    return 1.0
+
 
 class ArrayViz(Component):
     name: ClassVar[str] = "array_viz"
@@ -68,15 +91,33 @@ class ArrayViz(Component):
         clock.play(FadeIn(title), run_time=0.6)
         clock.play(FadeIn(boxes), run_time=0.9)
         for st in p.steps:  # type: ignore[attr-defined]
-            for ix in st.get("highlight") or []:
-                boxes[ix].set_color(colors.accent)
-                clock.play(FadeIn(boxes[ix]), run_time=0.4)
-                boxes[ix].set_color(colors.text)
+            centers = [tuple(b.get_center()) for b in boxes]
             sw = st.get("swap") or []
             if len(sw) == 2:
                 i, j = sw
-                clock.play(boxes[i].animate.move_to(boxes[j].get_center()), run_time=0.4)
-                clock.play(boxes[j].animate.move_to(boxes[i].get_center()), run_time=0.4)
+                clock.play(
+                    *[boxes[k].animate.move_to(pt) for k, pt in swap_targets(centers, i, j)],
+                    run_time=0.8,
+                )
                 boxes[i], boxes[j] = boxes[j], boxes[i]
+                clock.wait(0.0)
+                continue
+            low, high, mid = st.get("low"), st.get("high"), st.get("mid")
+            if low is not None or high is not None:
+                n = len(boxes)
+                for ix in range(n):
+                    clock.play(
+                        boxes[ix].animate.set_opacity(opacity_for(ix, low, high)),
+                        run_time=0.8 / n,
+                    )
+            if mid is not None:
+                boxes[mid].set_color(colors.accent)
+                clock.play(FadeIn(boxes[mid]), run_time=0.8)
+                boxes[mid].set_color(colors.text)
+            for ix in st.get("highlight") or []:
+                boxes[ix].set_color(colors.accent)
+                idxs = st.get("highlight") or []
+                clock.play(FadeIn(boxes[ix]), run_time=0.8 / max(1, len(idxs)))
+                boxes[ix].set_color(colors.text)
             clock.wait(0.0)
         clock.finish()

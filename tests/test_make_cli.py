@@ -2,6 +2,10 @@ from typer.testing import CliRunner
 
 from animatica.cli import app
 
+def test_cli_unknown_backend_exits_nonzero_without_traceback(tmp_path):
+    r = CliRunner().invoke(app, ["make", "graph of sin(x)", "--backend", "nope", "-o", str(tmp_path)])
+    assert r.exit_code != 0 and "Traceback" not in r.output and "available:" in r.output
+
 
 def test_make_template_prompt_zero_provider_calls(monkeypatch, tmp_path):
     calls = []
@@ -103,4 +107,9 @@ def test_explicit_provider_skips_offline_templates(monkeypatch, tmp_path):
     with pytest.raises(ValueError, match="stop here"):
         pipeline.make_video(prompt="explain the pythagorean theorem in depth", out_dir=tmp_path, provider="nim")
     assert called == ["nim"]
+
+
+def test_cli_jobs_zero_rejected():
+    r = CliRunner().invoke(app, ["make", "graph of sin(x)", "--jobs", "0"])
+    assert r.exit_code != 0
 

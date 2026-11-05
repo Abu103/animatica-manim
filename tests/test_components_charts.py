@@ -1,10 +1,14 @@
 import pytest
 from pydantic import ValidationError
+from types import SimpleNamespace
 
+from animatica.components._latex import latex_to_plain
 from animatica.components.bar_chart import BarChart
-from animatica.components.graph import Graph
+from animatica.components.graph import Graph, looks_like_math, make_label
 from animatica.components.registry import default_registry
+from animatica.components.theme import PALETTES
 from animatica.storyboard.safety import UnsafeInput
+from manim import Text
 
 G = dict(fn="sin(x)", x_range=(-6.28, 6.28), y_range=(-1.5, 1.5), label="sine")
 
@@ -63,4 +67,27 @@ def test_chart_renders_and_adds_mobjects(run_component, comp, params):
     assert warnings == []
     assert scene.renderer.num_plays >= 1
     assert scene.renderer.time == pytest.approx(comp.duration(params), abs=0.05)  # beat takes its declared time
+
+
+def test_looks_like_math():
+    assert looks_like_math("x^3/6")
+    assert looks_like_math("y = x^2")
+    assert looks_like_math(r"\sin(x)")
+    assert not looks_like_math("Sine wave")
+    assert not looks_like_math("Growth of terms")
+
+
+def test_make_label_falls_back_to_plain_text_when_latex_raises(monkeypatch):
+    """F3: when MathTex raises, make_label warns and returns Text(latex_to_plain(text))."""
+    import manim
+
+    def boom(text, *args, **kwargs):
+        raise RuntimeError("no LaTeX")
+
+    monkeypatch.setattr(manim, "MathTex", boom)
+    scene = SimpleNamespace(warnings=[])
+    label = make_label(scene, "x^3/6", PALETTES["dark-blue"])
+    assert isinstance(label, Text)
+    assert label.text == latex_to_plain("x^3/6")
+    assert len(scene.warnings) == 1
 
