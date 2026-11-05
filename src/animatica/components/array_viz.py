@@ -14,6 +14,17 @@ from animatica.storyboard.models import MAX_TEXT
 
 MAX_VALUES = 12
 
+Point = tuple[float, float, float]
+
+
+def swap_targets(centers: list[Point], i: int, j: int) -> list[tuple[int, Point]]:
+    """Move targets for swapping slots ``i`` and ``j``, read from the ORIGINAL
+    centers so both boxes move simultaneously to each other's slot.
+    Returns ``[]`` when ``i == j`` (a same-index swap is a no-op)."""
+    if i == j:
+        return []
+    return [(i, centers[j]), (j, centers[i])]
+
 
 class ArrayViz(Component):
     name: ClassVar[str] = "array_viz"
@@ -68,15 +79,19 @@ class ArrayViz(Component):
         clock.play(FadeIn(title), run_time=0.6)
         clock.play(FadeIn(boxes), run_time=0.9)
         for st in p.steps:  # type: ignore[attr-defined]
+            centers = [tuple(b.get_center()) for b in boxes]
             for ix in st.get("highlight") or []:
                 boxes[ix].set_color(colors.accent)
-                clock.play(FadeIn(boxes[ix]), run_time=0.4)
+                idxs = st.get("highlight") or []
+                clock.play(FadeIn(boxes[ix]), run_time=0.8 / max(1, len(idxs)))
                 boxes[ix].set_color(colors.text)
             sw = st.get("swap") or []
             if len(sw) == 2:
                 i, j = sw
-                clock.play(boxes[i].animate.move_to(boxes[j].get_center()), run_time=0.4)
-                clock.play(boxes[j].animate.move_to(boxes[i].get_center()), run_time=0.4)
+                clock.play(
+                    *[boxes[k].animate.move_to(pt) for k, pt in swap_targets(centers, i, j)],
+                    run_time=0.8,
+                )
                 boxes[i], boxes[j] = boxes[j], boxes[i]
             clock.wait(0.0)
         clock.finish()

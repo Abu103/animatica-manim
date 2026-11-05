@@ -1,6 +1,6 @@
 import pytest
 
-from animatica.components.array_viz import ArrayViz
+from animatica.components.array_viz import ArrayViz, swap_targets
 from animatica.components.registry import default_registry
 
 
@@ -27,3 +27,46 @@ def test_rejects_bad_params(bad):
 def test_fallback_text():
     p = ArrayViz.Params(title="Sort demo", values=[3, 1, 2])
     assert "3" in ArrayViz().fallback_text(p)
+
+
+def test_swap_targets_reads_original_centers():
+    c = [(-1.0, 0.0, 0.0), (0.0, 0.0, 0.0), (1.0, 0.0, 0.0)]
+    assert swap_targets(c, 0, 2) == [(0, (1.0, 0.0, 0.0)), (2, (-1.0, 0.0, 0.0))]
+
+
+def test_swap_same_index_is_noop():
+    assert swap_targets([(0.0, 0.0, 0.0), (1.0, 0.0, 0.0)], 1, 1) == []
+
+
+def test_swap_with_duplicate_values_uses_indices():
+    c = [(-1.0, 0.0, 0.0), (0.0, 0.0, 0.0), (1.0, 0.0, 0.0)]
+    assert [ix for ix, _ in swap_targets(c, 0, 1)] == [0, 1]
+
+
+@pytest.mark.render
+def test_swap_lands_boxes_on_original_centers(run_component, monkeypatch):
+    """F1: values [5, 9, 1], swap [0, 2] — boxes land on each other's ORIGINAL centers (never both at x=1.14)."""
+    import animatica.components.array_viz as av_mod
+
+    p = ArrayViz.Params(title="t", values=[5, 9, 1], steps=[{"swap": [0, 2]}])
+    captured: list[tuple[float, tuple]] = []
+    orig_play = av_mod.Clock.play
+
+    def spy(self, *anims, run_time):
+        captured.append((run_time, anims))
+        return orig_play(self, *anims, run_time=run_time)
+
+    monkeypatch.setattr(av_mod.Clock, "play", spy)
+    scene, warnings = run_component(ArrayViz(), p)
+
+    swap_plays = [c for c in captured if c[0] == 0.8 and len(c[1]) == 2]
+    assert len(swap_plays) == 1, captured
+    _, anims = swap_plays[0]
+    landed = {}
+    for anim in anims:
+        builder = anim.build() if hasattr(anim, "build") else anim
+        box = builder.mobject
+        landed[box.text] = box.target.get_center()[0]
+    assert set(landed) == {"5", "1"}, landed
+    assert landed["5"] > landed["1"], landed  # "5" (index 0) took index 2's right slot
+    assert landed["5"] - landed["1"] > 0.5, landed  # two distinct slots, not the collapsed 1.14 of the bug
