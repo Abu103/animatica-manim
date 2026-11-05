@@ -1,6 +1,7 @@
 """Component registry: registration, validation of storyboards, JSON schema generation."""
 from __future__ import annotations
 
+import hashlib
 from pydantic import ValidationError
 
 from animatica.components.base import API_VERSION, Component
@@ -26,6 +27,12 @@ class ComponentRegistry:
 
     def names(self) -> list[str]:
         return sorted(self._items)
+
+    def fingerprint(self) -> str:
+        """sha256 hex of sorted ``name:api_version`` pairs; changes when the
+        registry's components or their API versions change."""
+        pairs = sorted(f"{c.name}:{c.api_version}" for c in self._items.values())
+        return hashlib.sha256("\n".join(pairs).encode("utf-8")).hexdigest()
 
     def json_schema(self) -> dict:
         return {name: c.Params.model_json_schema() for name, c in sorted(self._items.items())}

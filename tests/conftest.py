@@ -41,3 +41,9 @@ def run_component(tmp_path):
         return s, warnings
     return _run
 
+
+@pytest.fixture
+def registry():
+    from animatica.components.registry import default_registry
+    return default_registry()
+

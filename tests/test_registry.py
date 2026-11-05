@@ -125,4 +125,9 @@ def test_components_doc_has_no_todo_rows():
     md = DOCS_COMPONENTS.read_text(encoding="utf-8")
     rows_with_todo = [r for r in md.splitlines() if r.startswith("| `") and "TODO" in r]
     assert not rows_with_todo, "TODO rows leave an agent with no usable params: " + ", ".join(
-        r.strip().strip("|").split("|")[0] for r in rows_with_todo)
+        r.strip().strip("|").split("|")[0] for r in rows_with_todo
+    )
+
+
+def test_registry_fingerprint_stable_and_changes(registry):
+    assert registry.fingerprint() == registry.fingerprint()

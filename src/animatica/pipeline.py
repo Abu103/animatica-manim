@@ -57,6 +57,13 @@ def _write_captions(sb: Storyboard, registry, path: Path) -> None:
     path.write_text("\n".join(lines) + "\n", encoding="utf-8")
 
 
+def cache_variant(prov, two_stage: bool, registry) -> str:
+    """Cache qualifier for a storyboard: provider+model, one/two-stage mode,
+    and the registry fingerprint — a model, mode, or component-schema change
+    never resumes another entry's cached storyboard."""
+    return f"{prov.name}:{prov.model}|{'two' if two_stage else 'one'}|{registry.fingerprint()}"
+
+
 def make_video(
     prompt: str | None = None,
     storyboard_path: Path | None = None,
@@ -102,7 +109,7 @@ def make_video(
                 raise ValueError("no AI provider available; run 'animatica setup'")
             provider_used = prov.name
             cache = StoryboardCache(out_dir / ".animatica_cache")
-            key = cache.key(prompt, prov.name, "1")
+            key = cache.key(prompt, cache_variant(prov, two_stage, registry), "1")
             try:
                 sb = cache.get(key)
             except Exception:  # corrupt/stale cache entry: regenerate

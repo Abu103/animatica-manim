@@ -28,6 +28,7 @@ GOOD = {
 
 class Recorder:
     name = "rec"
+    model = "rec"
 
     def __init__(self, replies):
         self.replies = list(replies)
@@ -87,6 +88,7 @@ def test_cli_shows_validation_errors_not_traceback(monkeypatch, tmp_path):
 
 class Raises:
     name = "r"
+    model = "r"
 
     def __init__(self, exc):
         self.exc = exc
