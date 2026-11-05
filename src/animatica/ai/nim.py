@@ -7,7 +7,7 @@ from animatica.config import load_key
 
 class NIMProvider(BaseProvider):
     name = "nim"
-    default_model = "meta/llama-3.1-8b-instruct"
+    default_model = "nvidia/nemotron-3.5-super-vl-120b-a12b"
 
     def generate(self, prompt: str, schema: dict) -> str:
         key = load_key("nim")
