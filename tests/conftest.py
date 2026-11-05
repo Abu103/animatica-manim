@@ -7,13 +7,13 @@ import pytest
 def _render_env_ok() -> bool:
     return (importlib.util.find_spec("manim") is not None
             and shutil.which("latex") is not None and shutil.which("dvisvgm") is not None
-            and shutil.which("ffmpeg") is not None)
+            and (shutil.which("ffmpeg") is not None or importlib.util.find_spec("imageio_ffmpeg") is not None))
 
 
 def pytest_collection_modifyitems(config, items):
     if _render_env_ok():
         return
-    skip = pytest.mark.skip(reason="needs manim + latex + dvisvgm + ffmpeg")
+    skip = pytest.mark.skip(reason="needs manim + latex + dvisvgm + ffmpeg (system or imageio-ffmpeg)")
     for item in items:
         if "render" in item.keywords:
             item.add_marker(skip)

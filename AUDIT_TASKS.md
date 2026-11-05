@@ -63,3 +63,36 @@ Started: 2026-11-04 · Trigger: `animatica make "explain the taylor series"` →
 - Suite: 168 passed, 17 skipped, 5 failed (sandbox lacks manim only).
 - Still unverified: full render on Windows after this fix (please run try5). Possible follow-ups if you see visual issues: per-scene render time (manim is slow on CPU; use `--preview` for 480p15 while iterating).
 
+
+## Audit 2026-11-05 (review of the Qwen and Hermes+Nemotron work, done on Linux; Windows not run)
+
+### Inputs
+- GitHub: `main` and `fix/windows-linux-stability` (tip `1450f8f`, "windows v2"). This is the trusted base: you pushed it and CI ran on it.
+- `animatica-manim.rar` (Hermes working tree on branch `fix/windows-setup-nim-model`, HEAD `639d26e`). Branched from `b1c1552`, so it already contained most of the stability work.
+
+### Findings
+| # | Severity | Finding | Status |
+|---|----------|---------|--------|
+| 12 | High | The RAR is damaged: 17 tracked files extract as 0 bytes (`docs/SETUP.md`, `CHANGELOG.md`, `lint.py`, 9 test files, ...), 33 files failed to unpack. Do not run it as is. Git HEAD still holds the real contents | [x] not used; base is the GitHub branch |
+| 13 | Medium | Uncommitted `storyboard/models.py` raises limits (`MAX_SCENES` 12->15, `MAX_BEATS` 8->12, `MAX_TEXT` 300->1000). Earlier audit measured test failures with it applied; it also weakens the guard that keeps weak models inside renderable sizes | [!] NOT merged. Decide deliberately; if wanted, change the tests and COMPONENTS.md together |
+| 14 | High | Hermes `doctor.py`: always runs tlmgr on Windows/macOS, even when TeX is healthy (slow, network, can break a working install) | [x] replaced by a kpsewhich gate: repair only when a needed file is missing. 3 tests, one red on the old code |
+| 15 | Medium | `probe.py`: `wmic` is removed in Windows 11 24H2, so GPU/encoder detection returned nothing there; one missing tool (e.g. `vainfo`) also discarded `nvidia-smi` results | [x] taken from Hermes (CIM fallback, per-tool isolation, injectable `platform`), tests pass |
+| 16 | Medium | NIM default model was a small llama; your tests use nemotron | [x] taken from Hermes (`nim.py`, `providers.toml`, test) |
+| 17 | Low | `docs/COMPONENTS.md` had `TODO` rows and claimed a test enforced it; no such test existed | [x] taken from Hermes (real params + 2 drift tests) |
+| 18 | Medium | README promised "~25-40s" full-quality install; SETUP.md and CI show minutes | [x] README corrected |
+| 19 | Low | RAR also carries junk: `wheel/`, `wheelv2/` render output, `__pycache__`, `.pytest_cache`, `.superpowers/` (untracked in git, but inflate the archive) | [x] none of it taken; `.gitignore` already covers most |
+
+### Verification (Linux, Python 3.12, real Manim 0.22.1 + LaTeX + ffmpeg)
+- `animatica doctor`: all checks pass.
+- Full suite: **345 passed** (baseline of the pushed branch: 330).
+- `scripts/ci_smoke.py`: real render OK, with spaces and non-ASCII (`ü`, `é`) in the output path.
+- `bash -n scripts/bootstrap.sh`: OK. PowerShell parse not run here (no `pwsh`); CI's Windows job does it.
+- NOT verified: anything on Windows (including your college PC result: you said it ran there, but I have no log), live NIM calls, the bootstrap one-liner end to end.
+
+### Next tasks (priority order)
+1. [ ] Push `integrate/audit-2026-11-05` and open a PR into `fix/windows-linux-stability`; wait for the Windows + Linux CI result.
+2. [ ] On Windows run `python -m animatica doctor`, then `python scripts/ci_smoke.py`; paste output if anything is red.
+3. [ ] Decide finding 13 (limits) on purpose, not by accident.
+4. [ ] Known quality issues from before: LaTeX shown as raw text in some videos, fibonacci bouncing-ball quality.
+5. [ ] Merge to `main` only after both OS jobs are green; then tag a release.
+6. [ ] Web UI only after that.

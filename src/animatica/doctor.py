@@ -1,10 +1,13 @@
 """Pre-flight dependency checks: `animatica doctor`."""
 from __future__ import annotations
 
+import os
+import re
 import shutil
 import subprocess
 import sys
 from dataclasses import dataclass
+from pathlib import Path
 
 from animatica.config import load_config, load_key
 
@@ -33,8 +36,14 @@ def _manim_fix() -> str:
 
 def _latex_fix() -> str:
     if sys.platform == "win32":
-        return "install TinyTeX from https://yihui.org/tinytex/ (then restart your terminal)"
+        return "run `animatica doctor --fix` (installs TinyTeX), or see https://yihui.org/tinytex/ ; then open a new terminal"
     return "install TinyTeX from https://yihui.org/tinytex/ (or `sudo apt install texlive texlive-latex-extra`)"
+
+
+def _dvisvgm_fix() -> str:
+    if sys.platform == "linux":
+        return "latex is installed but dvisvgm is not: `sudo apt install dvisvgm` (or run `animatica doctor --fix`)"
+    return "latex is installed but dvisvgm is not: run `tlmgr install dvisvgm` (or `animatica doctor --fix`)"
 
 
 def _ffmpeg_fix() -> str:
@@ -80,7 +89,7 @@ def run_checks(run=subprocess.run, which=shutil.which, deep_latex: bool = True) 
             "latex",
             latex_ok,
             f"latex={'yes' if latex_bin else 'no'} dvisvgm={'yes' if dvisvgm_bin else 'no'}",
-            "" if latex_ok else _latex_fix(),
+            "" if latex_ok else (_dvisvgm_fix() if latex_bin else _latex_fix()),
         )
     )
 
@@ -162,60 +171,275 @@ def run_checks(run=subprocess.run, which=shutil.which, deep_latex: bool = True) 
 
 
 
+# Official upstream Windows installer (verified to exist in rstudio/tinytex; the old
+# yihui.org/tinytex/install-windows.ps1 URL returns 404).
+TINYTEX_WIN_INSTALLER_URL = "https://raw.githubusercontent.com/rstudio/tinytex/main/tools/install-bin-windows.ps1"
+
+
+def tinytex_bin_dirs(platform: str = sys.platform, env=None) -> list[Path]:
+    """Places a TinyTeX `bin` directory may live, most likely first.
+
+    Windows: the upstream installer uses %TINYTEX_DIR%, else %APPDATA% (only when it is plain
+    ASCII), else %ProgramData%; Chocolatey uses C:\\tools\\tinytex.
+    """
+    env = os.environ if env is None else env
+    dirs: list[Path] = []
+    if platform == "win32":
+        for base in (env.get("TINYTEX_DIR"), env.get("APPDATA"), env.get("ProgramData")):
+            if base:
+                dirs.append(Path(base) / "TinyTeX" / "bin" / "windows")
+        dirs.append(Path("C:/tools/tinytex/bin/windows"))
+    else:
+        home = Path(env.get("HOME") or Path.home())
+        for root in (home / ".TinyTeX" / "bin", home / "Library" / "TinyTeX" / "bin"):
+            if root.is_dir():
+                dirs.extend(sorted(p for p in root.iterdir() if p.is_dir()))
+    return dirs
+
+
+def ensure_tex_on_path(platform: str = sys.platform, env=None, is_ok=None) -> Path | None:
+    """If latex/dvisvgm are not on PATH but a TinyTeX install exists, put it on THIS process's PATH.
+
+    A fresh TinyTeX has `latex` and `tlmgr` but NOT `dvisvgm` (tlmgr installs that afterwards), so a
+    bin dir counts as found when it has `latex`; requiring dvisvgm too would hide tlmgr and make the
+    package install impossible.
+
+    A child process can never change its parent shell's PATH, so Animatica makes TeX visible to
+    itself (and to the Manim/LaTeX subprocesses it spawns) instead of relying on a restarted terminal.
+    Returns the bin dir that was added, or None.
+    """
+    env = os.environ if env is None else env
+    exe = ".exe" if platform == "win32" else ""
+    if is_ok is None:
+        def is_ok(d: Path) -> bool:
+            return (d / f"latex{exe}").is_file()
+    if shutil.which("latex", path=env.get("PATH")) and shutil.which("dvisvgm", path=env.get("PATH")):
+        return None
+    for d in tinytex_bin_dirs(platform, env):
+        if is_ok(d):
+            env["PATH"] = str(d) + os.pathsep + env.get("PATH", "")
+            return d
+    return None
+
+
+def describe_tex_search(platform: str = sys.platform, env=None) -> str:
+    """Human-readable list of where we looked for TinyTeX (for failure messages / CI logs)."""
+    lines = [f"  {'FOUND  ' if d.is_dir() else 'missing'} {d}" for d in tinytex_bin_dirs(platform, env)]
+    return "searched for TinyTeX in:\n" + ("\n".join(lines) if lines else "  (no candidate folders)")
+
+
+def _bundled_ffmpeg():
+    """Path of the static ffmpeg shipped in the imageio-ffmpeg wheel, or None."""
+    try:
+        import imageio_ffmpeg
+
+        return imageio_ffmpeg.get_ffmpeg_exe()
+    except Exception:
+        return None
+
+
+def _locate_dvisvgm(tlmgr: str, exe: str, actions: list[str]) -> bool:
+    """dvisvgm was installed but is not on PATH: look through the TinyTeX tree and use its folder."""
+    bindir = Path(tlmgr).parent
+    try:
+        root = bindir.parents[1]  # <TinyTeX>/bin/<arch> -> <TinyTeX>
+        hits = [h for h in root.rglob(f"dvisvgm{exe}") if h.is_file()]
+    except (OSError, IndexError):
+        return False
+    if not hits:
+        return False
+    d = hits[0].parent
+    os.environ["PATH"] = str(d) + os.pathsep + os.environ.get("PATH", "")
+    actions.append(f"dvisvgm found at {d}; added to PATH for Animatica")
+    return True
+
+
+# tlmgr can print one of these and still exit 0 (seen on a fresh Windows TinyTeX: "tlmgr itself needs
+# to be updated ... Terminating"), which makes every `tlmgr install` a silent no-op.
+TLMGR_ERROR_MARKERS = ("tlmgr itself needs to be updated", "Terminating; please see warning", "tlmgr: error")
+
+
 # Packages a fresh TinyTeX lacks but Animatica needs (the 2026-11-04 sessions hit exactly these).
-TEX_PACKAGES = ("standalone", "preview", "babel-english", "amsmath", "amsfonts", "dvisvgm")
+TEX_PACKAGES = ("standalone", "preview", "babel-english", "amsmath", "amsfonts", "dvisvgm", "xkeyval")
+
+# Files Manim's default template needs -> the package that provides them. Checked with kpsewhich after
+# installing, because tlmgr's exit code and messages are not reliable (it can "succeed" and install nothing).
+NEEDED_TEX_FILES = {
+    "standalone.cls": "standalone",
+    "preview.sty": "preview",
+    "xkeyval.sty": "xkeyval",
+    "english.ldf": "babel-english",
+    "amsmath.sty": "amsmath",
+    "amssymb.sty": "amsfonts",
+}
 
 
-def fix_dependencies(run=subprocess.run, which=shutil.which, platform: str = sys.platform) -> list[str]:
+def _tex_tools(tlmgr: str, run, which, exe: str):
+    """Return (have(file) -> bool, tl(*args) -> str) bound to this TeX install, or (None, None) without kpsewhich."""
+    kpse = which("kpsewhich")
+    if not kpse:
+        cand = Path(tlmgr).parent / f"kpsewhich{exe}"
+        kpse = str(cand) if cand.is_file() else None
+    if not kpse:
+        return None, None
+
+    def have(name: str) -> bool:
+        try:
+            r = run([kpse, name], capture_output=True, text=True)
+            return getattr(r, "returncode", 1) == 0 and bool((getattr(r, "stdout", "") or "").strip())
+        except Exception:
+            return False
+
+    def tl(*args: str) -> str:
+        try:
+            r = run([tlmgr, *args], capture_output=True, text=True)
+            return f"{getattr(r, 'stdout', '') or ''}\n{getattr(r, 'stderr', '') or ''}"
+        except Exception as exc:
+            return f"(tlmgr failed: {exc})"
+
+    return have, tl
+
+
+def _missing_tex_files(tlmgr: str, run, which, exe: str) -> list[str] | None:
+    """Needed TeX files kpsewhich cannot find; None when that cannot be checked (no kpsewhich)."""
+    have, _ = _tex_tools(tlmgr, run, which, exe)
+    if have is None:
+        return None
+    return [f for f in NEEDED_TEX_FILES if not have(f)]
+
+
+def _ensure_tex_files(tlmgr: str, run, which, exe: str, actions: list[str]) -> None:
+    """Verify each needed TeX file exists; install the owning package (found via tlmgr search) if not."""
+    have, tl = _tex_tools(tlmgr, run, which, exe)
+    if have is None:
+        return
+
+    for fname, pkg in NEEDED_TEX_FILES.items():
+        if have(fname):
+            continue
+        out = tl("install", pkg)
+        if not have(fname):
+            # the guessed package name may be wrong for this TeX Live: ask tlmgr who owns the file
+            found = re.findall(r"^([A-Za-z0-9_.+-]+):\s*$", tl("search", "--file", "--global", f"/{fname}"), re.M)
+            for owner in dict.fromkeys(found):
+                if owner != pkg:
+                    out += "\n" + tl("install", owner)
+                if have(fname):
+                    break
+        if have(fname):
+            actions.append(f"done: TeX file {fname} is now available (package {pkg})")
+        else:
+            tail = "\n".join("    | " + ln for ln in out.strip().splitlines()[-8:])
+            actions.append(f"failed: TeX file {fname} still missing after installing {pkg}\n{tail}")
+
+
+
+def fix_dependencies(run=subprocess.run, which=shutil.which, platform: str = sys.platform, bundled_ffmpeg=_bundled_ffmpeg) -> list[str]:
     """Actually install missing deps (doctor --fix). Returns human-readable actions taken.
 
     Never aborts on one failure: every step is attempted and reported.
     """
     actions: list[str] = []
+    last_tail: list[str] = [""]  # last lines of the most recent command's output, for failure reports
 
-    def _try(label: str, cmd: list[str]) -> bool:
+    def _try(label: str, cmd: list[str], show_output: bool = False, fail_on: tuple[str, ...] = ()) -> bool:
         try:
             result = run(cmd, capture_output=True, text=True)
             ok = getattr(result, "returncode", 0) == 0
+            out = f"{getattr(result, 'stdout', '') or ''}\n{getattr(result, 'stderr', '') or ''}"
+            last_tail[0] = "\n".join("    | " + ln for ln in str(out).strip().splitlines()[-15:])
+            if ok and any(m in str(out) for m in fail_on):
+                ok = False  # e.g. tlmgr prints "Terminating" but exits 0
+                result = type("R", (), {"returncode": "0, but its output reports an error"})()
         except Exception as exc:
             ok = False
             actions.append(f"failed: {label} ({exc})")
             return False
         if ok:
-            actions.append(f"done: {label}")
+            actions.append(f"done: {label}" + (f"\n{last_tail[0]}" if show_output and last_tail[0].strip() else ""))
         else:
-            actions.append(f"failed: {label} (exit {getattr(result, 'returncode', '?')})")
+            actions.append(f"failed: {label} (exit {getattr(result, 'returncode', '?')})" + (f"\n{last_tail[0]}" if last_tail[0].strip() else ""))
         return ok
 
-    # ffmpeg
-    if not which("ffmpeg"):
+    def _apt(*pkgs: str) -> list[str]:
+        is_root = hasattr(os, "geteuid") and os.geteuid() == 0
+        return ([] if is_root or not which("sudo") else ["sudo"]) + ["apt", "install", "-y", *pkgs]
+
+    # ffmpeg: the bundled imageio-ffmpeg binary is enough, so only install a system one if neither exists
+    if not which("ffmpeg") and not bundled_ffmpeg():
         if platform == "win32":
             _try("install ffmpeg via winget", ["winget", "install", "--id", "Gyan.FFmpeg", "-e", "--accept-source-agreements", "--accept-package-agreements"])
         elif platform == "darwin":
             _try("install ffmpeg via brew", ["brew", "install", "ffmpeg"])
         else:
-            _try("install ffmpeg via apt", ["sudo", "apt", "install", "-y", "ffmpeg"])
+            _try("install ffmpeg via apt", _apt("ffmpeg"))
         actions.append("restart your terminal so the new PATH applies" if which("ffmpeg") else "ffmpeg still not on PATH after install -- restart your terminal and re-run 'animatica doctor'")
 
     # LaTeX / TinyTeX
-    latex_missing = not (which("latex") and which("dvisvgm"))
-    if latex_missing:
+    ensure_tex_on_path(platform)  # already installed but not on PATH? just use it
+    have_latex = bool(which("latex"))
+    latex_missing = not (have_latex and which("dvisvgm"))
+    if not have_latex:
         if platform == "win32":
             _try(
-                "install TinyTeX",
+                "install TinyTeX (official rstudio/tinytex Windows installer)",
                 ["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-Command",
-                 "irm https://yihui.org/tinytex/install-windows.ps1 | iex"],
+                 f"$ProgressPreference='SilentlyContinue'; irm {TINYTEX_WIN_INSTALLER_URL} | iex"],
             )
+            added = ensure_tex_on_path(platform)
+            if added:
+                actions.append(f"TinyTeX found at {added}; added to PATH for Animatica (new terminals get it via 'tlmgr path add')")
+            else:
+                actions.append("TinyTeX installer ran but latex.exe was not found.\n" + describe_tex_search(platform)
+                               + (f"\ninstaller output (last lines):\n{last_tail[0]}" if last_tail[0].strip() else ""))
         elif platform == "darwin":
             _try("install TinyTeX", ["bash", "-c", "curl -fsSL https://yihui.org/tinytex/install-unx.sh | sh"])
+            ensure_tex_on_path(platform)
         else:
-            _try("install TeX Live", ["sudo", "apt", "install", "-y", "texlive", "texlive-latex-extra"])
-        actions.append("add the TinyTeX bin dir to PATH (Windows: C:\\tools\\tinytex\\bin\\windows) and restart your terminal")
+            _try("install TeX Live", _apt("texlive", "texlive-latex-extra", "dvisvgm"))
+    elif latex_missing and platform == "linux":
+        # latex exists but dvisvgm does not (e.g. a bare texlive-base): apt can add just that
+        _try("install dvisvgm via apt", _apt("dvisvgm"))
 
-    # TinyTeX packages (only when we just installed TeX and tlmgr is now on PATH)
-    if latex_missing and which("tlmgr"):
-        _try("install required TeX packages", ["tlmgr", "install", *TEX_PACKAGES])
-    elif latex_missing:
-        actions.append("tlmgr not found; if you installed TinyTeX, restart your terminal, then run: tlmgr install " + " ".join(TEX_PACKAGES))
+    # TinyTeX needs extra packages (dvisvgm, standalone, ...) via tlmgr. On Linux apt provides them.
+    # Repair when TeX was just installed/incomplete, OR when TeX is present but kpsewhich shows a file Manim
+    # needs is missing (seen on Windows: latex+dvisvgm present, babel-english missing, `doctor --fix` did
+    # nothing). A healthy install is left alone: no tlmgr self-update, no network, no surprises.
+    tlmgr = which("tlmgr") if platform != "linux" else None
+    needs_repair = latex_missing
+    if tlmgr and not latex_missing:
+        missing = _missing_tex_files(tlmgr, run, which, ".exe" if platform == "win32" else "")
+        needs_repair = bool(missing)
+        if missing:
+            actions.append("TeX is installed but these files are missing: " + ", ".join(missing))
+    if needs_repair and platform != "linux":
+        if tlmgr:
+            exe = ".exe" if platform == "win32" else ""
+            # dvisvgm first and on its own: Manim cannot work without it, and one bad package name
+            # elsewhere must not hide whether it installed. tlmgr output is shown even on success,
+            # because tlmgr can print an error and still exit 0.
+            # A fresh TinyTeX is older than its package repository, and tlmgr then refuses to install
+            # anything until it has updated itself. Do that first.
+            _try("update tlmgr itself", [tlmgr, "update", "--self"], show_output=True)
+            _try("install dvisvgm", [tlmgr, "install", "dvisvgm"], show_output=True, fail_on=TLMGR_ERROR_MARKERS)
+            _try("install required TeX packages", [tlmgr, "install", *TEX_PACKAGES], show_output=True, fail_on=TLMGR_ERROR_MARKERS)
+            _ensure_tex_files(tlmgr, run, which, exe, actions)
+            if not which("dvisvgm"):
+                _locate_dvisvgm(tlmgr, exe, actions)
+            if not which("dvisvgm"):
+                _try("reinstall dvisvgm", [tlmgr, "install", "--reinstall", "dvisvgm"], show_output=True, fail_on=TLMGR_ERROR_MARKERS)
+                _locate_dvisvgm(tlmgr, exe, actions)
+            if not which("dvisvgm"):
+                bindir = Path(tlmgr).parent
+                try:
+                    near = sorted(p.name for p in bindir.glob("dvi*"))
+                except OSError:
+                    near = []
+                actions.append("dvisvgm is still not found after tlmgr install. Diagnostics:")
+                actions.append(f"  dvi* files in {bindir}: {near or 'none'}")
+                _try("tlmgr info dvisvgm", [tlmgr, "info", "dvisvgm"], show_output=True)
+                _try("tlmgr repository", [tlmgr, "option", "repository"], show_output=True)
+        else:
+            actions.append("tlmgr not found; open a new terminal, then run: tlmgr install " + " ".join(TEX_PACKAGES))
 
     return actions

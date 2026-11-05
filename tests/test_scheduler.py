@@ -130,7 +130,7 @@ def test_concat_list_uses_absolute_posix_paths_even_for_relative_output(tmp_path
     seen = {}
 
     def fake_run(args, **kwargs):
-        seen["list"] = Path(args[args.index("-i") + 1]).read_text()
+        seen["list"] = Path(args[args.index("-i") + 1]).read_text(encoding="utf-8")
         Path(args[-1]).touch()
 
     monkeypatch.setattr("animatica.backends.scheduler.subprocess.run", fake_run)

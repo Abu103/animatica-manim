@@ -37,6 +37,8 @@ def extract_json(text: str) -> dict:
     Handles markdown fences (with or without the ``json`` tag), leading/trailing
     prose, and the first balanced `{...}` block. Raises `ValueError` if none.
     """
+    if not isinstance(text, str):
+        raise ValueError(f"provider output must be a string, got {type(text).__name__}")
     m = _FENCE.search(text)
     if m:
         return json.loads(m.group(1))

@@ -6,6 +6,7 @@ import sys
 import tempfile
 from pathlib import Path
 
+from animatica.paths import long_path
 from animatica.components._latex import _tail_reason, install_hint
 
 _PROBE = (
@@ -17,9 +18,19 @@ _PROBE = (
 )
 
 
+def log_excerpt(text: str, lines: int = 8) -> str:
+    """The first TeX error with a little context, on one line (for doctor output / CI logs)."""
+    rows = text.splitlines()
+    for i, row in enumerate(rows):
+        if row.startswith("!"):
+            return " / ".join(r.strip() for r in rows[i : i + lines] if r.strip())[:600]
+    return " / ".join(r.strip() for r in rows[-lines:] if r.strip())[:600]
+
+
 def probe_latex(run=subprocess.run, timeout: int = 120) -> tuple[bool, str, list[str]]:
     """Return (ok, reason, missing_packages). Never raises."""
-    with tempfile.TemporaryDirectory(prefix="animatica_tex_") as tmp:
+    with tempfile.TemporaryDirectory(prefix="animatica_tex_") as short_tmp:
+        tmp = str(long_path(short_tmp))  # 8.3 names like RUNNER~1 make latex abort ("~" is active)
         try:
             proc = run([sys.executable, "-c", _PROBE, tmp], capture_output=True, text=True, timeout=timeout)
         except Exception as exc:  # timeout, missing interpreter...
@@ -28,7 +39,10 @@ def probe_latex(run=subprocess.run, timeout: int = 120) -> tuple[bool, str, list
             return True, "a test formula compiled", []
         logs = sorted(Path(tmp).rglob("*.log"), key=lambda p: p.stat().st_mtime)
         if logs:
-            reason, packages = _tail_reason(logs[-1].read_text(encoding="utf-8", errors="replace"))
+            text = logs[-1].read_text(encoding="utf-8", errors="replace")
+            reason, packages = _tail_reason(text)
+            if not packages:
+                reason = f"{reason} [log: {log_excerpt(text)}]"
             return False, reason, packages
         last = (proc.stderr or "").strip().splitlines()
         return False, (last[-1][:160] if last else "LaTeX test compile failed"), []

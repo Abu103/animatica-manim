@@ -34,7 +34,7 @@ class CodeHighlight(Component):
         return 3.0 + 1.0 * len(p.lines)  # type: ignore[attr-defined]
 
     def fallback_text(self, p: BaseModel) -> str:
-        return wrap(self.code, 40)  # type: ignore[attr-defined]
+        return wrap(p.code, 40)  # type: ignore[attr-defined]
 
     def play(self, scene, p, colors: ThemeColors) -> None:
         from manim import Code, FadeIn

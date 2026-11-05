@@ -13,6 +13,7 @@ from animatica.components.registry import default_registry
 from animatica.config import load_config
 from animatica.encode.probe import pick_encoder, probe_encoders
 from animatica.encode.transcode import transcode
+from animatica.paths import long_path
 from animatica.report import write_report
 from animatica.storyboard.cache import StoryboardCache
 from animatica.storyboard.lint import lint_storyboard
@@ -71,6 +72,7 @@ def make_video(
 ) -> MakeResult:
     out_dir = Path(out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
+    out_dir = long_path(out_dir)
     registry = default_registry()
     warnings: list[str] = []
 
@@ -140,8 +142,10 @@ def make_video(
         enc_infos = probe_encoders()
         enc = pick_encoder(encoder, enc_infos)
         encoder_used = enc.name
-        transcode(video, out_dir / "video_transcoded.mp4", enc)
-        video = out_dir / "video_transcoded.mp4"
+        transcode_result = transcode(video, out_dir / "video_transcoded.mp4", enc)
+        video = transcode_result.path
+        if transcode_result.warning:
+            warnings.append(f"transcode: {transcode_result.warning}")
 
     # ---- captions + report ----
     _write_captions(sb, registry, out_dir / "captions.vtt")

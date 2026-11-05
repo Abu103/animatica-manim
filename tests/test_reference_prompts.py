@@ -5,7 +5,7 @@ from animatica.components.registry import default_registry
 
 PROMPTS = [
     line.strip()
-    for line in (Path(__file__).parent / "reference_prompts.txt").read_text().splitlines()
+    for line in (Path(__file__).parent / "reference_prompts.txt").read_text(encoding="utf-8").splitlines()
     if line.strip()
 ]
 

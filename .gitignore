@@ -6,3 +6,6 @@ media/
 .animatica_cache/
 *.mp4
 
+
+# local TinyTeX runtime from bootstrap
+.tex/

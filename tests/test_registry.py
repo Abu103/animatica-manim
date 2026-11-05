@@ -94,3 +94,35 @@ def test_load_entry_points_empty_group():
 def test_default_registry_is_a_registry():
     assert isinstance(default_registry(), ComponentRegistry)
 
+
+
+# --- docs/COMPONENTS.md is the contract agents and weak models read; it must not drift -------------
+# The document claims "the test suite compares this document against default_registry().names()".
+# Until these tests existed, that claim was false.
+
+DOCS_COMPONENTS = __import__("pathlib").Path(__file__).resolve().parents[1] / "docs" / "COMPONENTS.md"
+
+
+def _doc_component_names(md: str) -> list[str]:
+    tail = md.split("Registered component names:")[1]
+    return [ln.lstrip("- ").strip() for ln in tail.splitlines() if ln.startswith("- ")]
+
+
+def _doc_table_names(md: str) -> list[str]:
+    return [row.strip().strip("|").split("|")[0].strip().strip("`")
+            for row in md.splitlines() if row.startswith("| `")]
+
+
+def test_components_doc_lists_exactly_the_registry():
+    md = DOCS_COMPONENTS.read_text(encoding="utf-8")
+    names = sorted(default_registry().names())
+    assert names, "registry is empty: this test would pass vacuously"
+    assert sorted(_doc_component_names(md)) == names
+    assert sorted(_doc_table_names(md)) == names, "the params table must cover every component, no extras"
+
+
+def test_components_doc_has_no_todo_rows():
+    md = DOCS_COMPONENTS.read_text(encoding="utf-8")
+    rows_with_todo = [r for r in md.splitlines() if r.startswith("| `") and "TODO" in r]
+    assert not rows_with_todo, "TODO rows leave an agent with no usable params: " + ", ".join(
+        r.strip().strip("|").split("|")[0] for r in rows_with_todo)

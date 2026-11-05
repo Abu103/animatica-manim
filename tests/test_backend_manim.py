@@ -26,19 +26,11 @@ BAD_LATEX_SB = Storyboard.model_validate(
 
 
 def _ffprobe_duration(path: Path) -> float:
-    out = subprocess.run(
-        [
-            "ffprobe", "-v", "error",
-            "-show_entries", "format=duration",
-            "-of", "default=noprint_wrappers=1:nokey=1",
-            str(path),
-        ],
-        capture_output=True,
-        text=True,
-        timeout=60,
-    )
-    assert out.returncode == 0, out.stderr
-    return float(out.stdout.strip())
+    """Container duration via PyAV (a Manim dependency): ffprobe is not available on every platform."""
+    import av
+
+    with av.open(str(path)) as c:
+        return float(c.duration) / av.time_base
 
 
 @pytest.mark.render
@@ -62,3 +54,26 @@ def test_manim_backend_bad_latex_degrades_with_warning(tmp_path):
     assert result.warnings, "expected at least one warning for bad latex"
     assert "equation" in result.warnings[0]
 
+
+
+def test_failed_scene_error_includes_manim_output(tmp_path, monkeypatch):
+    """A failing scene must say WHY (manim's stderr), not just 'non-zero exit status'."""
+    import subprocess
+
+    import pytest
+
+    from animatica.backends.base import RenderOptions
+    from animatica.backends.manim_backend import ManimBackend
+    from animatica.storyboard.models import load_storyboard  # noqa: F401
+    from animatica.ai.template import TemplateMatcher
+
+    sb = TemplateMatcher().match("make a title card about Hello")
+
+    def boom(cmd, **kw):
+        raise subprocess.CalledProcessError(1, cmd, output="", stderr="LaTeX Error: File `standalone.cls' not found")
+
+    monkeypatch.setattr("animatica.backends.manim_backend.subprocess.run", boom)
+    with pytest.raises(RuntimeError) as exc:
+        ManimBackend().render(sb, tmp_path, RenderOptions(quality="preview", captions=False))
+    assert "standalone.cls" in str(exc.value)
+    assert "scene 0" in str(exc.value)

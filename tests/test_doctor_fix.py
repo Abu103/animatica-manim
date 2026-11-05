@@ -26,7 +26,7 @@ def test_tex_packages_include_the_ones_that_bit_us():
 def test_fix_installs_tinytex_and_packages_on_windows():
     run = FakeRun()
     which = lambda name: "/bin/tlmgr" if name == "tlmgr" else None
-    actions = fix_dependencies(run=run, which=which, platform="win32")
+    actions = fix_dependencies(run=run, which=which, platform="win32", bundled_ffmpeg=lambda: None)
     assert any("ffmpeg" in c.lower() and "winget" in c for c in run.commands)
     assert any("tinytex" in c.lower() for c in run.commands)
     assert any("tlmgr" in c and " ".join(TEX_PACKAGES) in c for c in run.commands)
@@ -35,7 +35,7 @@ def test_fix_installs_tinytex_and_packages_on_windows():
 
 def test_fix_linux_uses_apt_and_texlive():
     run = FakeRun()
-    fix_dependencies(run=run, which=lambda name: None, platform="linux")
+    fix_dependencies(run=run, which=lambda name: None, platform="linux", bundled_ffmpeg=lambda: None)
     assert any("apt" in c and "ffmpeg" in c for c in run.commands)
     assert any("apt" in c and "texlive" in c for c in run.commands)
 
@@ -49,7 +49,7 @@ def test_fix_skips_what_is_already_present():
 def test_fix_continues_past_a_failing_command():
     run = FakeRun(fail_on=["winget"])
     which = lambda name: "/bin/tlmgr" if name == "tlmgr" else None
-    actions = fix_dependencies(run=run, which=which, platform="win32")
+    actions = fix_dependencies(run=run, which=which, platform="win32", bundled_ffmpeg=lambda: None)
     # ffmpeg failed, but TinyTeX + tlmgr still attempted
     assert any("tinytex" in c.lower() for c in run.commands)
     assert any("tlmgr" in c for c in run.commands)

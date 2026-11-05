@@ -43,23 +43,23 @@ def test_scaffold_creates_all_files(tmp_path):
     for p in created:
         assert p.exists(), p
 
-    mod = (tmp_path / "src" / "animatica" / "components" / "number_line.py").read_text()
+    mod = (tmp_path / "src" / "animatica" / "components" / "number_line.py").read_text(encoding="utf-8")
     assert 'name: ClassVar[str] = "number_line"' in mod
     assert "class NumberLine(Component)" in mod
     py_compile.compile(str(tmp_path / "src" / "animatica" / "components" / "number_line.py"), doraise=True)
     py_compile.compile(str(tmp_path / "tests" / "test_number_line.py"), doraise=True)
 
-    reg = (tmp_path / "src" / "animatica" / "components" / "registry.py").read_text()
+    reg = (tmp_path / "src" / "animatica" / "components" / "registry.py").read_text(encoding="utf-8")
     assert "from animatica.components.number_line import NumberLine" in reg
     assert "NumberLine," in reg
 
-    doc = (tmp_path / "docs" / "COMPONENTS.md").read_text()
+    doc = (tmp_path / "docs" / "COMPONENTS.md").read_text(encoding="utf-8")
     assert "`number_line`" in doc and "- number_line" in doc
 
-    expected = json.loads((tmp_path / "tests" / "conformance" / "expected.json").read_text())
+    expected = json.loads((tmp_path / "tests" / "conformance" / "expected.json").read_text(encoding="utf-8"))
     assert expected["number_line.json"]["scenes"] == 1
 
-    sb = json.loads((tmp_path / "tests" / "conformance" / "number_line.json").read_text())
+    sb = json.loads((tmp_path / "tests" / "conformance" / "number_line.json").read_text(encoding="utf-8"))
     assert sb["scenes"][0]["beats"][0]["component"] == "number_line"
 
 

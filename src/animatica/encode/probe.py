@@ -69,36 +69,55 @@ def _candidates(platform: str) -> list[str]:
     return base
 
 
-def detect_devices(run: Callable = subprocess.run, platform: str = sys.platform) -> list[DeviceInfo]:
-    """Detect GPU devices. Never raises; returns [] when tools are absent."""
-    devices: list[DeviceInfo] = []
+def _run_quiet(run: Callable, cmd: list[str]) -> str | None:
+    """stdout of `cmd` when it succeeds, None on any failure. Never raises.
+
+    Each tool is isolated on purpose: one missing binary used to abort the whole platform branch, so a
+    machine without `vainfo` also lost its `nvidia-smi` GPUs.
+    """
     try:
-        if platform == "linux":
-            out = run(["nvidia-smi", "--query-gpu=name", "--format=csv,noheader"],
-                      capture_output=True, text=True, timeout=10)
-            for line in out.stdout.splitlines():
-                line = line.strip()
-                if line:
-                    devices.append(DeviceInfo("nvidia", line))
-            out = run(["vainfo"], capture_output=True, text=True, timeout=10)
-            for line in out.stdout.splitlines():
-                if "VA Profile" in line:
-                    devices.append(DeviceInfo("vaapi", line.strip()))
-        elif platform == "win32":
-            out = run(["wmic", "path", "win32_VideoController", "get", "name"],
-                      capture_output=True, text=True, timeout=10)
-            for line in out.stdout.splitlines()[1:]:
-                line = line.strip()
-                if line:
-                    devices.append(DeviceInfo("windows", line))
-        elif platform == "darwin":
-            out = run(["system_profiler", "SPDisplaysDataType"],
-                      capture_output=True, text=True, timeout=10)
-            for line in out.stdout.splitlines():
-                if "Chipset:" in line or "GPU" in line:
-                    devices.append(DeviceInfo("apple", line.strip()))
+        out = run(cmd, capture_output=True, text=True, timeout=10)
     except Exception:
-        pass
+        return None
+    if getattr(out, "returncode", 0) != 0:
+        return None
+    return getattr(out, "stdout", "") or ""
+
+
+def _lines(text: str | None, skip_header: bool = False) -> list[str]:
+    if not text:
+        return []
+    rows = text.splitlines()
+    if skip_header:
+        rows = rows[1:]
+    return [r.strip() for r in rows if r.strip()]
+
+
+# wmic.exe is removed from supported Windows 11 (24H2/25H2) and from GitHub's windows-2025 runner
+# images; Get-CimInstance is Microsoft's documented replacement and needs no extra install.
+_WIN_GPU_CIM = "Get-CimInstance -ClassName Win32_VideoController | Select-Object -ExpandProperty Name"
+
+
+def detect_devices(run: Callable = subprocess.run, platform: str = sys.platform) -> list[DeviceInfo]:
+    """Detect GPU devices. Never raises; returns [] when the tools are absent."""
+    devices: list[DeviceInfo] = []
+    if platform == "linux":
+        for name in _lines(_run_quiet(run, ["nvidia-smi", "--query-gpu=name", "--format=csv,noheader"])):
+            devices.append(DeviceInfo("nvidia", name))
+        for line in _lines(_run_quiet(run, ["vainfo"])):
+            if "VA Profile" in line:
+                devices.append(DeviceInfo("vaapi", line))
+    elif platform == "win32":
+        out = _run_quiet(run, ["wmic", "path", "win32_VideoController", "get", "name"])
+        names = _lines(out, skip_header=True) if out is not None else []
+        if not names:  # wmic missing, or it printed only the "Name" header
+            names = _lines(_run_quiet(run, ["powershell", "-NoProfile", "-NonInteractive", "-Command", _WIN_GPU_CIM]))
+        for name in names:
+            devices.append(DeviceInfo("windows", name))
+    elif platform == "darwin":
+        for line in _lines(_run_quiet(run, ["system_profiler", "SPDisplaysDataType"])):
+            if "Chipset:" in line or "GPU" in line:
+                devices.append(DeviceInfo("apple", line))
     return devices
 
 
@@ -134,8 +153,14 @@ def probe_encoders(
     ffmpeg: str | None = None,
     run: Callable = subprocess.run,
     cache_dir: Path | None = None,
+    platform: str = sys.platform,
 ) -> list[EncoderInfo]:
-    """Return encoder infos in preference order, each verified by a test encode."""
+    """Return encoder infos in preference order, each verified by a test encode.
+
+    `platform` is injectable so a Linux CI can prove the Windows/macOS code paths: device detection and
+    the candidate order both differ per OS, and a test that hard-codes one of them is only ever green on
+    the machine it was written on.
+    """
     if ffmpeg is None:
         ffmpeg = _default_ffmpeg()
     try:
@@ -144,7 +169,7 @@ def probe_encoders(
     except Exception:
         return [EncoderInfo("libx264", "libx264", False, "ffmpeg not found or unusable")]
 
-    devices = detect_devices(run=run)
+    devices = detect_devices(run=run, platform=platform)
     key = _cache_key(version, devices)
 
     cached = _ENCODER_CACHE.get(key)
@@ -174,7 +199,7 @@ def probe_encoders(
             available.add(tok)
 
     result: list[EncoderInfo] = []
-    for cand in _candidates(sys.platform):
+    for cand in _candidates(platform):
         if cand != "libx264" and cand not in available:
             continue
         verified, reason = _test_encode(ffmpeg, cand, run)

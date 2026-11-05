@@ -12,6 +12,7 @@ from animatica.backends.base import RenderBackend, RenderOptions, RenderResult
 from animatica.backends.scheduler import concat_videos
 from animatica.components.registry import default_registry
 from animatica.components.theme import get_colors
+from animatica.paths import check_tex_safe, long_path
 from animatica.report import StageTimer, write_report
 from animatica.storyboard.models import Storyboard, dump_storyboard
 
@@ -31,6 +32,8 @@ class ManimBackend:
     def render(self, sb: Storyboard, out_dir: Path, opts: RenderOptions) -> RenderResult:
         out_dir = Path(out_dir)
         out_dir.mkdir(parents=True, exist_ok=True)
+        out_dir = long_path(out_dir)  # RUNNER~1 -> runneradmin: TeX treats "~" as a command
+        check_tex_safe(out_dir)
         timer = StageTimer()
         warnings: list[str] = []
         durations: list[float] = []
@@ -53,6 +56,7 @@ class ManimBackend:
 
             with timer.stage(f"render_scene_{i}"):
                 env = dict(os.environ)
+                env.setdefault("PYTHONUTF8", "1")  # Windows defaults to cp1252; titles/captions may be Unicode
                 env["ANIMATICA_STORYBOARD"] = str(sb_path)
                 env["ANIMATICA_SCENE_INDEX"] = str(i)
                 env["ANIMATICA_CAPTIONS"] = "1" if opts.captions else "0"
@@ -76,7 +80,12 @@ class ManimBackend:
                     "--verbosity",
                     "ERROR",
                 ]
-                subprocess.run(cmd, env=env, check=True, capture_output=True, timeout=900)
+                try:
+                    subprocess.run(cmd, env=env, check=True, capture_output=True, text=True,
+                                   encoding="utf-8", errors="replace", timeout=900)
+                except subprocess.CalledProcessError as exc:
+                    tail = "\n".join(((exc.stderr or "") + "\n" + (exc.stdout or "")).strip().splitlines()[-25:])
+                    raise RuntimeError(f"manim failed on scene {i} (exit {exc.returncode}):\n{tail}") from exc
                 scene_mp4s.append(_find_mp4(media_dir, f"scene_{i}"))
 
                 wpath = sb_path.parent / f"warnings_{i}.json"

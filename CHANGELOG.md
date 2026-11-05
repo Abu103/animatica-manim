@@ -1,6 +1,11 @@
 # Changelog
 
 ## Unreleased
+- Fix: `doctor --fix` repairs a TeX that is installed but incomplete (kpsewhich shows a needed file missing) and leaves a healthy one untouched.
+- Fix: GPU detection falls back to `Get-CimInstance` when `wmic` is gone (Windows 11 24H2+); one missing tool no longer hides the others; `probe_encoders(platform=)` is injectable so Linux CI can test Windows/macOS paths.
+- Change: NIM default model is `nvidia/nemotron-3.5-super-vl-120b-a12b` (code + providers.toml).
+- Docs: `docs/COMPONENTS.md` TODO rows replaced with real params; tests now fail if the doc drifts from the registry.
+- Docs: README no longer promises a 25-40s install.
 - New: agent JSON-CLI tools `list-components`, `component-schema`, `validate`, `lint` (P2, Hermes can drive these directly).
 - New: `array_viz`, `timeline`, `compare` components -- task cards T3, T5, T6.
 - New: `recursion_tree` component (Fibonacci call tree, repeated calls in red, 31-node cap) -- task card T2.
