@@ -113,8 +113,8 @@ def test_render_scenes_in_order_with_jobs_2(tmp_path, monkeypatch):
             if idx is not None:
                 media_dir = Path(cmd[cmd.index("--media_dir") + 1])
                 media_dir.mkdir(parents=True, exist_ok=True)
-                (media_dir / "scene_0.mp4").write_bytes(b"x")
-            seen.append(idx or -1)
+                (media_dir / f"scene_{idx}.mp4").write_bytes(b"x")
+            seen.append(idx if idx is not None else -1)
         return _subprocess.CompletedProcess(cmd, 0)
 
     monkeypatch.setattr(mb.subprocess, "run", fake_run)
