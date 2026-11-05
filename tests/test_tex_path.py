@@ -177,3 +177,98 @@ def test_only_dvisvgm_missing_installs_packages_without_reinstalling_tinytex():
     fix_dependencies(run=run, which=which, platform="win32", bundled_ffmpeg=lambda: "x")
     assert any("tlmgr" in c and "dvisvgm" in c for c in cmds)
     assert not any("install-bin-windows" in c for c in cmds)  # TeX not reinstalled
+
+
+# ---- fix3: dvisvgm still missing after `tlmgr install` on a fresh Windows TinyTeX ----
+
+def _fake_run(cmds, stdout="tlmgr: some output line"):
+    def run(cmd, **kw):
+        cmds.append(list(cmd))
+
+        class R:
+            returncode = 0
+            stderr = ""
+
+        R.stdout = stdout
+        return R()
+
+    return run
+
+
+def test_dvisvgm_is_installed_on_its_own_and_output_is_reported(tmp_path):
+    """dvisvgm gets its own tlmgr call; if it is still missing the log says what tlmgr and the bin dir know."""
+    from animatica.doctor import fix_dependencies
+
+    bindir = tmp_path / "TinyTeX" / "bin" / "windows"
+    bindir.mkdir(parents=True)
+    (bindir / "dvipdfmx.exe").write_text("")
+    tlmgr = str(bindir / "tlmgr.bat")
+    cmds = []
+    which = lambda n: tlmgr if n == "tlmgr" else ("C:/tex/latex" if n == "latex" else None)  # dvisvgm never appears
+    actions = fix_dependencies(run=_fake_run(cmds), which=which, platform="win32", bundled_ffmpeg=lambda: "x")
+    assert [tlmgr, "install", "dvisvgm"] in cmds
+    assert [tlmgr, "install", "--reinstall", "dvisvgm"] in cmds  # one retry before giving up
+    assert [tlmgr, "info", "dvisvgm"] in cmds
+    text = "\n".join(actions)
+    assert "still not found" in text
+    assert "dvipdfmx.exe" in text
+    assert "tlmgr: some output line" in text
+
+
+def test_dvisvgm_found_off_path_is_added_to_path(tmp_path, monkeypatch):
+    """tlmgr installed it somewhere not on PATH: Animatica finds it in the TinyTeX tree and uses it."""
+    from animatica.doctor import fix_dependencies
+
+    bindir = tmp_path / "TinyTeX" / "bin" / "windows"
+    other = tmp_path / "TinyTeX" / "bin" / "win64"
+    bindir.mkdir(parents=True)
+    other.mkdir(parents=True)
+    (other / "dvisvgm.exe").write_text("")
+    monkeypatch.setenv("PATH", "/nonexistent")
+    tlmgr = str(bindir / "tlmgr.bat")
+    import os
+
+    def which(n):
+        if n == "tlmgr":
+            return tlmgr
+        if n == "latex":
+            return "C:/tex/latex"
+        if n == "dvisvgm":
+            return str(other / "dvisvgm.exe") if str(other) in os.environ["PATH"] else None
+        return None
+
+    actions = fix_dependencies(run=_fake_run([]), which=which, platform="win32", bundled_ffmpeg=lambda: "x")
+    assert os.environ["PATH"].split(os.pathsep)[0] == str(other)
+    assert any("dvisvgm found at" in a for a in actions)
+    assert not any("still not found" in a for a in actions)
+
+
+def test_linux_with_latex_but_no_dvisvgm_installs_dvisvgm():
+    from animatica.doctor import fix_dependencies
+
+    cmds = []
+    which = lambda n: "/usr/bin/latex" if n == "latex" else ("/usr/bin/ffmpeg" if n == "ffmpeg" else None)
+    fix_dependencies(run=_fake_run(cmds), which=which, platform="linux", bundled_ffmpeg=lambda: "x")
+    assert any(c[-1] == "dvisvgm" and "apt" in c for c in cmds)
+    assert not any("texlive" in c for c in cmds)  # TeX itself is not reinstalled
+
+
+def test_apt_has_no_sudo_when_root(monkeypatch):
+    import os
+
+    from animatica.doctor import fix_dependencies
+
+    monkeypatch.setattr(os, "geteuid", lambda: 0, raising=False)
+    cmds = []
+    fix_dependencies(run=_fake_run(cmds), which=lambda n: "/usr/bin/sudo" if n == "sudo" else None,
+                     platform="linux", bundled_ffmpeg=lambda: None)
+    assert cmds and all(c[0] == "apt" for c in cmds)
+
+
+def test_doctor_fix_text_is_specific_when_only_dvisvgm_is_missing():
+    from animatica.doctor import run_checks
+
+    checks = run_checks(which=lambda n: "/usr/bin/latex" if n == "latex" else "/usr/bin/" + n if n != "dvisvgm" else None,
+                        deep_latex=False)
+    latex = next(c for c in checks if c.name == "latex")
+    assert not latex.ok and "dvisvgm" in latex.fix and "installed" in latex.fix

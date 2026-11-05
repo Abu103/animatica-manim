@@ -39,6 +39,20 @@ jobs:
       - run: pip install -e . pytest
       - name: Install TinyTeX via Animatica's own fixer (this tests the Windows fix path)
         run: python -m animatica doctor --fix --yes
+      - name: Diagnostics if the fixer failed
+        if: failure()
+        run: |
+          $root = Join-Path $env:APPDATA "TinyTeX"
+          $bin = Join-Path $root "bin\windows"
+          Write-Host "TinyTeX bin: $bin (exists: $(Test-Path $bin))"
+          if (Test-Path $bin) {
+            Get-ChildItem $bin -Filter "dvi*" | ForEach-Object { $_.Name }
+            & "$bin\tlmgr.bat" --version
+            & "$bin\tlmgr.bat" info dvisvgm
+            Write-Host "tlmgr info exit code: $LASTEXITCODE"
+          }
+          Write-Host "dvisvgm anywhere under TinyTeX:"
+          Get-ChildItem $root -Recurse -Filter "dvisvgm*" -ErrorAction SilentlyContinue | ForEach-Object { $_.FullName }
       - name: Make TinyTeX visible to later steps
         run: |
           $d = python -c "from animatica.doctor import ensure_tex_on_path as e; d=e(); print(d or '')"

@@ -39,6 +39,12 @@ def _latex_fix() -> str:
     return "install TinyTeX from https://yihui.org/tinytex/ (or `sudo apt install texlive texlive-latex-extra`)"
 
 
+def _dvisvgm_fix() -> str:
+    if sys.platform == "linux":
+        return "latex is installed but dvisvgm is not: `sudo apt install dvisvgm` (or run `animatica doctor --fix`)"
+    return "latex is installed but dvisvgm is not: run `tlmgr install dvisvgm` (or `animatica doctor --fix`)"
+
+
 def _ffmpeg_fix() -> str:
     if sys.platform == "win32":
         return "install ffmpeg (`winget install ffmpeg`)"
@@ -82,7 +88,7 @@ def run_checks(run=subprocess.run, which=shutil.which, deep_latex: bool = True) 
             "latex",
             latex_ok,
             f"latex={'yes' if latex_bin else 'no'} dvisvgm={'yes' if dvisvgm_bin else 'no'}",
-            "" if latex_ok else _latex_fix(),
+            "" if latex_ok else (_dvisvgm_fix() if latex_bin else _latex_fix()),
         )
     )
 
@@ -231,6 +237,22 @@ def _bundled_ffmpeg():
         return None
 
 
+def _locate_dvisvgm(tlmgr: str, exe: str, actions: list[str]) -> bool:
+    """dvisvgm was installed but is not on PATH: look through the TinyTeX tree and use its folder."""
+    bindir = Path(tlmgr).parent
+    try:
+        root = bindir.parents[1]  # <TinyTeX>/bin/<arch> -> <TinyTeX>
+        hits = [h for h in root.rglob(f"dvisvgm{exe}") if h.is_file()]
+    except (OSError, IndexError):
+        return False
+    if not hits:
+        return False
+    d = hits[0].parent
+    os.environ["PATH"] = str(d) + os.pathsep + os.environ.get("PATH", "")
+    actions.append(f"dvisvgm found at {d}; added to PATH for Animatica")
+    return True
+
+
 # Packages a fresh TinyTeX lacks but Animatica needs (the 2026-11-04 sessions hit exactly these).
 TEX_PACKAGES = ("standalone", "preview", "babel-english", "amsmath", "amsfonts", "dvisvgm")
 
@@ -243,7 +265,7 @@ def fix_dependencies(run=subprocess.run, which=shutil.which, platform: str = sys
     actions: list[str] = []
     last_tail: list[str] = [""]  # last lines of the most recent command's output, for failure reports
 
-    def _try(label: str, cmd: list[str]) -> bool:
+    def _try(label: str, cmd: list[str], show_output: bool = False) -> bool:
         try:
             result = run(cmd, capture_output=True, text=True)
             ok = getattr(result, "returncode", 0) == 0
@@ -254,10 +276,14 @@ def fix_dependencies(run=subprocess.run, which=shutil.which, platform: str = sys
             actions.append(f"failed: {label} ({exc})")
             return False
         if ok:
-            actions.append(f"done: {label}")
+            actions.append(f"done: {label}" + (f"\n{last_tail[0]}" if show_output and last_tail[0].strip() else ""))
         else:
             actions.append(f"failed: {label} (exit {getattr(result, 'returncode', '?')})" + (f"\n{last_tail[0]}" if last_tail[0].strip() else ""))
         return ok
+
+    def _apt(*pkgs: str) -> list[str]:
+        is_root = hasattr(os, "geteuid") and os.geteuid() == 0
+        return ([] if is_root or not which("sudo") else ["sudo"]) + ["apt", "install", "-y", *pkgs]
 
     # ffmpeg: the bundled imageio-ffmpeg binary is enough, so only install a system one if neither exists
     if not which("ffmpeg") and not bundled_ffmpeg():
@@ -266,7 +292,7 @@ def fix_dependencies(run=subprocess.run, which=shutil.which, platform: str = sys
         elif platform == "darwin":
             _try("install ffmpeg via brew", ["brew", "install", "ffmpeg"])
         else:
-            _try("install ffmpeg via apt", ["sudo", "apt", "install", "-y", "ffmpeg"])
+            _try("install ffmpeg via apt", _apt("ffmpeg"))
         actions.append("restart your terminal so the new PATH applies" if which("ffmpeg") else "ffmpeg still not on PATH after install -- restart your terminal and re-run 'animatica doctor'")
 
     # LaTeX / TinyTeX
@@ -290,13 +316,36 @@ def fix_dependencies(run=subprocess.run, which=shutil.which, platform: str = sys
             _try("install TinyTeX", ["bash", "-c", "curl -fsSL https://yihui.org/tinytex/install-unx.sh | sh"])
             ensure_tex_on_path(platform)
         else:
-            _try("install TeX Live", ["sudo", "apt", "install", "-y", "texlive", "texlive-latex-extra", "dvisvgm"])
+            _try("install TeX Live", _apt("texlive", "texlive-latex-extra", "dvisvgm"))
+    elif latex_missing and platform == "linux":
+        # latex exists but dvisvgm does not (e.g. a bare texlive-base): apt can add just that
+        _try("install dvisvgm via apt", _apt("dvisvgm"))
 
-    # TinyTeX needs extra packages (dvisvgm, standalone, ...) via tlmgr; on Linux apt provides them.
+    # TinyTeX needs extra packages (dvisvgm, standalone, ...) via tlmgr. On Linux apt provides them.
     if latex_missing and platform != "linux":
         tlmgr = which("tlmgr")
         if tlmgr:
-            _try("install required TeX packages", [tlmgr, "install", *TEX_PACKAGES])
+            exe = ".exe" if platform == "win32" else ""
+            # dvisvgm first and on its own: Manim cannot work without it, and one bad package name
+            # elsewhere must not hide whether it installed. tlmgr output is shown even on success,
+            # because tlmgr can print an error and still exit 0.
+            _try("install dvisvgm", [tlmgr, "install", "dvisvgm"], show_output=True)
+            _try("install required TeX packages", [tlmgr, "install", *TEX_PACKAGES], show_output=True)
+            if not which("dvisvgm"):
+                _locate_dvisvgm(tlmgr, exe, actions)
+            if not which("dvisvgm"):
+                _try("reinstall dvisvgm", [tlmgr, "install", "--reinstall", "dvisvgm"], show_output=True)
+                _locate_dvisvgm(tlmgr, exe, actions)
+            if not which("dvisvgm"):
+                bindir = Path(tlmgr).parent
+                try:
+                    near = sorted(p.name for p in bindir.glob("dvi*"))
+                except OSError:
+                    near = []
+                actions.append("dvisvgm is still not found after tlmgr install. Diagnostics:")
+                actions.append(f"  dvi* files in {bindir}: {near or 'none'}")
+                _try("tlmgr info dvisvgm", [tlmgr, "info", "dvisvgm"], show_output=True)
+                _try("tlmgr repository", [tlmgr, "option", "repository"], show_output=True)
         else:
             actions.append("tlmgr not found; open a new terminal, then run: tlmgr install " + " ".join(TEX_PACKAGES))
 
