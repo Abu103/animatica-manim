@@ -2,8 +2,8 @@ from typer.testing import CliRunner
 
 from animatica.cli import app
 
-def test_cli_unknown_backend_exits_nonzero_without_traceback():
-    r = CliRunner().invoke(app, ["make", "graph of sin(x)", "--backend", "nope"])
+def test_cli_unknown_backend_exits_nonzero_without_traceback(tmp_path):
+    r = CliRunner().invoke(app, ["make", "graph of sin(x)", "--backend", "nope", "-o", str(tmp_path)])
     assert r.exit_code != 0 and "Traceback" not in r.output and "available:" in r.output
 
 

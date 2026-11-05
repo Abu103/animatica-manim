@@ -98,30 +98,31 @@ def test_render_scenes_in_order_with_jobs_2(tmp_path, monkeypatch):
         }
     )
 
-    seen: list[int] = []
+    import re
+    import time
+
+    rendered: list[int] = []
+    concat_order: list[int] = []
 
     def fake_run(cmd, **kw):
         cmd = list(cmd)
-        is_manim = any("manim" in str(c) for c in cmd[:3]) or any(
-            "StoryboardScene" in str(c) for c in cmd
-        )
-        if is_manim:
-            idx = None
-            for env_k, env_v in (kw.get("env") or {}).items():
-                if env_k == "ANIMATICA_SCENE_INDEX":
-                    idx = int(env_v)
-            if idx is not None:
-                media_dir = Path(cmd[cmd.index("--media_dir") + 1])
-                media_dir.mkdir(parents=True, exist_ok=True)
-                (media_dir / f"scene_{idx}.mp4").write_bytes(b"x")
-            seen.append(idx if idx is not None else -1)
+        if "--media_dir" in cmd:  # the per-scene manim render
+            idx = int(kw["env"]["ANIMATICA_SCENE_INDEX"])
+            if idx == 0:
+                time.sleep(0.3)  # scene 0 finishes last, so results arrive out of order
+            media_dir = Path(cmd[cmd.index("--media_dir") + 1])
+            media_dir.mkdir(parents=True, exist_ok=True)
+            (media_dir / f"scene_{idx}.mp4").write_bytes(b"x")
+            rendered.append(idx)
+        else:  # ffmpeg concat: record clip order from the list file, then write dst
+            listing = Path(cmd[cmd.index("-i") + 1]).read_text(encoding="utf-8")
+            concat_order.extend(int(m) for m in re.findall(r"scene_(\d+)\.mp4", listing))
+            Path(cmd[-1]).write_bytes(b"x")
         return _subprocess.CompletedProcess(cmd, 0)
 
-    monkeypatch.setattr(mb.subprocess, "run", fake_run)
-    try:
-        result = mb.ManimBackend().render(sb, tmp_path, RenderOptions(quality="preview", jobs=2))
-    finally:
-        mb.subprocess.run = _subprocess.run
+    monkeypatch.setattr(mb.subprocess, "run", fake_run)  # monkeypatch restores it on teardown
+    result = mb.ManimBackend().render(sb, tmp_path, RenderOptions(quality="preview", jobs=2))
 
     assert result.video.exists()
-    assert seen == [0, 1], seen  # scenes processed in index order even with jobs=2
+    assert rendered == [1, 0], rendered  # out-of-order completion really happened
+    assert concat_order == [0, 1], concat_order  # ...yet concat is in scene index order
