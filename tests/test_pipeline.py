@@ -84,3 +84,13 @@ def test_make_video_uses_injected_backend_not_manim(monkeypatch, tmp_path):
 
     result = pipeline.make_video("make a title card about Hello", out_dir=tmp_path, preview=True, backend="fake")
     assert result.video.exists()
+
+
+def test_unknown_backend_fails_before_provider_call_or_any_file(tmp_path, monkeypatch):
+    calls = []
+    monkeypatch.setattr("animatica.pipeline.get_provider", lambda name, cfg: calls.append(name))
+    out = tmp_path / "out"
+    with pytest.raises(ValueError, match="available:"):
+        make_video("explain quicksort", out_dir=out, provider="nim", backend="nope")
+    assert calls == []  # no LLM spend on a typo'd backend
+    assert not out.exists()  # nothing written
