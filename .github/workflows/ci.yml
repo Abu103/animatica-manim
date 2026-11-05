@@ -79,3 +79,18 @@ jobs:
           $errs = $null
           [System.Management.Automation.Language.Parser]::ParseFile("$PWD\scripts\bootstrap.ps1", [ref]$null, [ref]$errs) | Out-Null
           if ($errs) { $errs | ForEach-Object { Write-Host $_ }; exit 1 }
+      - name: TeX diagnostics (only on failure)
+        if: failure()
+        run: |
+          $env:PATH = "$env:APPDATA\TinyTeX\bin\windows;$env:PATH"
+          Write-Host "latex: $((Get-Command latex -ErrorAction SilentlyContinue).Source)"
+          foreach ($f in "standalone.cls","preview.sty","xkeyval.sty","english.ldf","amsmath.sty","amssymb.sty") {
+            Write-Host ("kpsewhich {0} -> {1}" -f $f, (kpsewhich $f))
+          }
+          $d = Join-Path $env:RUNNER_TEMP "texdiag"; New-Item -ItemType Directory -Force $d | Out-Null
+          Set-Content (Join-Path $d "t.tex") '\documentclass[preview]{standalone}\usepackage[english]{babel}\usepackage{amsmath}\usepackage{amssymb}\begin{document}$x^2$\end{document}'
+          Push-Location $d
+          latex -interaction=nonstopmode t.tex | Select-Object -Last 15
+          Write-Host "---- t.log (first error + context)"
+          Select-String -Path t.log -Pattern '^!' -Context 0,8 | Select-Object -First 1 | ForEach-Object { $_.Line; $_.Context.PostContext }
+          Pop-Location

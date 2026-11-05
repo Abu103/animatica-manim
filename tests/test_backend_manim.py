@@ -26,19 +26,11 @@ BAD_LATEX_SB = Storyboard.model_validate(
 
 
 def _ffprobe_duration(path: Path) -> float:
-    out = subprocess.run(
-        [
-            "ffprobe", "-v", "error",
-            "-show_entries", "format=duration",
-            "-of", "default=noprint_wrappers=1:nokey=1",
-            str(path),
-        ],
-        capture_output=True,
-        text=True,
-        timeout=60,
-    )
-    assert out.returncode == 0, out.stderr
-    return float(out.stdout.strip())
+    """Container duration via PyAV (a Manim dependency): ffprobe is not available on every platform."""
+    import av
+
+    with av.open(str(path)) as c:
+        return float(c.duration) / av.time_base
 
 
 @pytest.mark.render

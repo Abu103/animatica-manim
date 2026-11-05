@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -259,7 +260,61 @@ TLMGR_ERROR_MARKERS = ("tlmgr itself needs to be updated", "Terminating; please 
 
 
 # Packages a fresh TinyTeX lacks but Animatica needs (the 2026-11-04 sessions hit exactly these).
-TEX_PACKAGES = ("standalone", "preview", "babel-english", "amsmath", "amsfonts", "dvisvgm")
+TEX_PACKAGES = ("standalone", "preview", "babel-english", "amsmath", "amsfonts", "dvisvgm", "xkeyval")
+
+# Files Manim's default template needs -> the package that provides them. Checked with kpsewhich after
+# installing, because tlmgr's exit code and messages are not reliable (it can "succeed" and install nothing).
+NEEDED_TEX_FILES = {
+    "standalone.cls": "standalone",
+    "preview.sty": "preview",
+    "xkeyval.sty": "xkeyval",
+    "english.ldf": "babel-english",
+    "amsmath.sty": "amsmath",
+    "amssymb.sty": "amsfonts",
+}
+
+
+def _ensure_tex_files(tlmgr: str, run, which, exe: str, actions: list[str]) -> None:
+    """Verify each needed TeX file exists; install the owning package (found via tlmgr search) if not."""
+    kpse = which("kpsewhich")
+    if not kpse:
+        cand = Path(tlmgr).parent / f"kpsewhich{exe}"
+        kpse = str(cand) if cand.is_file() else None
+    if not kpse:
+        return
+
+    def have(name: str) -> bool:
+        try:
+            r = run([kpse, name], capture_output=True, text=True)
+            return getattr(r, "returncode", 1) == 0 and bool((getattr(r, "stdout", "") or "").strip())
+        except Exception:
+            return False
+
+    def tl(*args: str) -> str:
+        try:
+            r = run([tlmgr, *args], capture_output=True, text=True)
+            return f"{getattr(r, 'stdout', '') or ''}\n{getattr(r, 'stderr', '') or ''}"
+        except Exception as exc:
+            return f"(tlmgr failed: {exc})"
+
+    for fname, pkg in NEEDED_TEX_FILES.items():
+        if have(fname):
+            continue
+        out = tl("install", pkg)
+        if not have(fname):
+            # the guessed package name may be wrong for this TeX Live: ask tlmgr who owns the file
+            found = re.findall(r"^([A-Za-z0-9_.+-]+):\s*$", tl("search", "--file", "--global", f"/{fname}"), re.M)
+            for owner in dict.fromkeys(found):
+                if owner != pkg:
+                    out += "\n" + tl("install", owner)
+                if have(fname):
+                    break
+        if have(fname):
+            actions.append(f"done: TeX file {fname} is now available (package {pkg})")
+        else:
+            tail = "\n".join("    | " + ln for ln in out.strip().splitlines()[-8:])
+            actions.append(f"failed: TeX file {fname} still missing after installing {pkg}\n{tail}")
+
 
 
 def fix_dependencies(run=subprocess.run, which=shutil.which, platform: str = sys.platform, bundled_ffmpeg=_bundled_ffmpeg) -> list[str]:
@@ -342,6 +397,7 @@ def fix_dependencies(run=subprocess.run, which=shutil.which, platform: str = sys
             _try("update tlmgr itself", [tlmgr, "update", "--self"], show_output=True)
             _try("install dvisvgm", [tlmgr, "install", "dvisvgm"], show_output=True, fail_on=TLMGR_ERROR_MARKERS)
             _try("install required TeX packages", [tlmgr, "install", *TEX_PACKAGES], show_output=True, fail_on=TLMGR_ERROR_MARKERS)
+            _ensure_tex_files(tlmgr, run, which, exe, actions)
             if not which("dvisvgm"):
                 _locate_dvisvgm(tlmgr, exe, actions)
             if not which("dvisvgm"):

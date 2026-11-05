@@ -133,8 +133,8 @@ def _tail_reason(log_text: str) -> tuple[str, list[str]]:
     """Return (one-line reason, list of CTAN packages that look missing) from a TeX log."""
     packages: list[str] = []
     reason = ""
-    for m in re.finditer(r"File [`'](.+?)' not found", log_text):
-        fname = m.group(1)
+    for m in re.finditer(r"[Ff]ile [`'\u2018\"]([^`'\u2019\"\n]+?)['\u2019\"] not found|I can't find file [`'](.+?)'", log_text):
+        fname = m.group(1) or m.group(2)
         pkg = FILE_TO_PACKAGE.get(fname) or FILE_TO_PACKAGE.get(Path(fname).name)
         if pkg and pkg not in packages:
             packages.append(pkg)

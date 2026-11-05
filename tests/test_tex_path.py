@@ -277,7 +277,7 @@ def test_doctor_fix_text_is_specific_when_only_dvisvgm_is_missing():
 # ---- fix4: tlmgr says "itself needs to be updated ... Terminating" and exits 0 ----
 
 def test_tlmgr_is_updated_before_packages_are_installed(tmp_path):
-    from animatica.doctor import fix_dependencies
+    from animatica.doctor import TEX_PACKAGES, fix_dependencies
 
     bindir = tmp_path / "TinyTeX" / "bin" / "windows"
     bindir.mkdir(parents=True)
@@ -287,7 +287,7 @@ def test_tlmgr_is_updated_before_packages_are_installed(tmp_path):
     fix_dependencies(run=_fake_run(cmds), which=which, platform="win32", bundled_ffmpeg=lambda: "x")
     upd = cmds.index([tlmgr, "update", "--self"])
     assert upd < cmds.index([tlmgr, "install", "dvisvgm"])
-    assert upd < cmds.index([tlmgr, "install", "standalone", "preview", "babel-english", "amsmath", "amsfonts", "dvisvgm"])
+    assert upd < cmds.index([tlmgr, "install", *TEX_PACKAGES])
 
 
 def test_tlmgr_terminating_with_exit_zero_is_reported_as_failure(tmp_path):
@@ -301,3 +301,92 @@ def test_tlmgr_terminating_with_exit_zero_is_reported_as_failure(tmp_path):
     actions = fix_dependencies(run=_fake_run([], stdout=out), which=which, platform="win32", bundled_ffmpeg=lambda: "x")
     assert any(a.startswith("failed: install dvisvgm") for a in actions)
     assert not any(a.startswith("done: install dvisvgm") for a in actions)
+
+
+# ---- fix5: verify by outcome (kpsewhich), not by tlmgr's exit code ----
+
+def test_missing_tex_file_is_installed_via_tlmgr_search(tmp_path):
+    """tlmgr 'succeeded' but a needed file is missing: ask tlmgr who owns it, install that, re-check."""
+    from animatica.doctor import fix_dependencies
+
+    bindir = tmp_path / "TinyTeX" / "bin" / "windows"
+    bindir.mkdir(parents=True)
+    (bindir / "kpsewhich.exe").write_text("")
+    tlmgr = str(bindir / "tlmgr.bat")
+    kpse = str(bindir / "kpsewhich.exe")
+    installed = set()
+    cmds = []
+
+    def run(cmd, **kw):
+        cmds.append(list(cmd))
+
+        class R:
+            returncode = 0
+            stderr = ""
+            stdout = ""
+
+        if cmd[0] == kpse:
+            name = cmd[1]
+            R.stdout = f"C:/tex/{name}\n" if name != "standalone.cls" or "standalone-real" in installed else ""
+            R.returncode = 0 if R.stdout else 1
+        elif cmd[1:3] == ["search", "--file"]:
+            R.stdout = "tlmgr: package repository x\nstandalone-real:\n\ttexmf-dist/tex/latex/standalone/standalone.cls\n"
+        elif cmd[1] == "install":
+            installed.update(cmd[2:])
+        return R()
+
+    which = lambda n: tlmgr if n == "tlmgr" else ("C:/tex/latex" if n == "latex" else None)  # dvisvgm missing -> tlmgr branch runs
+    actions = fix_dependencies(run=run, which=which, platform="win32", bundled_ffmpeg=lambda: "x")
+    assert [tlmgr, "search", "--file", "--global", "/standalone.cls"] in cmds
+    assert [tlmgr, "install", "standalone-real"] in cmds
+    assert any("standalone.cls is now available" in a for a in actions)
+
+
+def test_still_missing_tex_file_is_reported_with_tlmgr_output(tmp_path):
+    from animatica.doctor import fix_dependencies
+
+    bindir = tmp_path / "TinyTeX" / "bin" / "windows"
+    bindir.mkdir(parents=True)
+    (bindir / "kpsewhich.exe").write_text("")
+    tlmgr = str(bindir / "tlmgr.bat")
+    kpse = str(bindir / "kpsewhich.exe")
+
+    def run(cmd, **kw):
+        class R:
+            returncode = 1 if cmd[0] == kpse else 0
+            stderr = ""
+            stdout = "" if cmd[0] == kpse else "tlmgr says something odd"
+
+        return R()
+
+    which = lambda n: tlmgr if n == "tlmgr" else ("C:/tex/latex" if n == "latex" else None)
+    actions = fix_dependencies(run=run, which=which, platform="win32", bundled_ffmpeg=lambda: "x")
+    assert any(a.startswith("failed: TeX file standalone.cls still missing") and "tlmgr says something odd" in a for a in actions)
+
+
+def test_missing_file_regex_handles_curly_quotes_and_cant_find_file():
+    from animatica.components._latex import _tail_reason
+
+    r, pk = _tail_reason("! LaTeX Error: File \u2018standalone.cls\u2019 not found.\n! Emergency stop.\n")
+    assert "standalone.cls" in r and pk == ["standalone"]
+    r, pk = _tail_reason("! I can't find file `preview.sty'.\n")
+    assert "preview.sty" in r
+
+
+def test_probe_reports_a_log_excerpt_when_no_package_is_identified(tmp_path):
+    from animatica.latex_check import probe_latex
+
+    class P:
+        returncode = 1
+        stderr = ""
+        stdout = ""
+
+    def run(cmd, **kw):
+        import tempfile
+        from pathlib import Path
+
+        Path(cmd[-1], "x.log").write_text("junk\n! Emergency stop.\n<*> thing\n*** (job aborted)\n", encoding="utf-8")
+        return P()
+
+    ok, reason, pk = probe_latex(run=run)
+    assert not ok and pk == [] and "Emergency stop" in reason and "job aborted" in reason
