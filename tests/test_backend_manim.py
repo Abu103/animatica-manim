@@ -77,3 +77,51 @@ def test_failed_scene_error_includes_manim_output(tmp_path, monkeypatch):
         ManimBackend().render(sb, tmp_path, RenderOptions(quality="preview", captions=False))
     assert "standalone.cls" in str(exc.value)
     assert "scene 0" in str(exc.value)
+
+
+@pytest.mark.render
+def test_render_scenes_in_order_with_jobs_2(tmp_path, monkeypatch):
+    """With jobs=2, two scenes render and concat in scene index order (subprocess.run faked)."""
+    import subprocess as _subprocess
+    import animatica.backends.manim_backend as mb
+    from animatica.backends.base import RenderOptions
+    from animatica.storyboard.models import Storyboard
+
+    sb = Storyboard.model_validate(
+        {
+            "version": "1",
+            "title": "Two",
+            "scenes": [
+                {"beats": [{"component": "title_card", "params": {"title": "One"}}]},
+                {"beats": [{"component": "title_card", "params": {"title": "Two"}}]},
+            ],
+        }
+    )
+
+    seen: list[int] = []
+
+    def fake_run(cmd, **kw):
+        cmd = list(cmd)
+        is_manim = any("manim" in str(c) for c in cmd[:3]) or any(
+            "StoryboardScene" in str(c) for c in cmd
+        )
+        if is_manim:
+            idx = None
+            for env_k, env_v in (kw.get("env") or {}).items():
+                if env_k == "ANIMATICA_SCENE_INDEX":
+                    idx = int(env_v)
+            if idx is not None:
+                media_dir = Path(cmd[cmd.index("--media_dir") + 1])
+                media_dir.mkdir(parents=True, exist_ok=True)
+                (media_dir / "scene_0.mp4").write_bytes(b"x")
+            seen.append(idx or -1)
+        return _subprocess.CompletedProcess(cmd, 0)
+
+    monkeypatch.setattr(mb.subprocess, "run", fake_run)
+    try:
+        result = mb.ManimBackend().render(sb, tmp_path, RenderOptions(quality="preview", jobs=2))
+    finally:
+        mb.subprocess.run = _subprocess.run
+
+    assert result.video.exists()
+    assert seen == [0, 1], seen  # scenes processed in index order even with jobs=2

@@ -231,6 +231,7 @@ def make(
     two_stage: bool = typer.Option(False, "--two-stage", help="Two-stage AI generation: outline, then fill each scene"),
     model: str | None = typer.Option(None, "--model", help="Override the AI model id for the chosen provider"),
     backend: str = typer.Option("manim", "--backend", help="Renderer backend (manim, or any registered backend)"),
+    jobs: int = typer.Option(1, "--jobs", min=1, help="Render scenes in parallel (1 = serial; each scene is already a subprocess)"),
 ) -> None:
     """Turn a plain-language prompt into an explainer video."""
     if model:
@@ -247,6 +248,7 @@ def make(
             captions=captions,
             two_stage=two_stage,
             backend=backend,
+            jobs=jobs,
         )
         typer.echo(f"Video: {result.video}")
         for w in result.warnings:

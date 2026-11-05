@@ -157,3 +157,14 @@ def test_concat_failure_includes_ffmpeg_stderr(tmp_path, monkeypatch):
         concat_videos([tmp_path / "a.mp4"], tmp_path / "o.mp4")
     assert "No such file: x.mp4" in str(exc.value)
 
+
+def test_parallel_accepts_unpicklable_closure(tmp_path):
+    """A closure over local state must render fine under threads (no pickle needed)."""
+    marker = object()
+
+    def render_one(i: int) -> Path:
+        assert marker is not None  # closes over local state
+        return tmp_path / f"{i}.mp4"
+
+    assert render_scenes_parallel(render_one, 3, jobs=2) == [tmp_path / f"{i}.mp4" for i in range(3)]
+

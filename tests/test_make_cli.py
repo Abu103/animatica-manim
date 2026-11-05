@@ -108,3 +108,8 @@ def test_explicit_provider_skips_offline_templates(monkeypatch, tmp_path):
         pipeline.make_video(prompt="explain the pythagorean theorem in depth", out_dir=tmp_path, provider="nim")
     assert called == ["nim"]
 
+
+def test_cli_jobs_zero_rejected():
+    r = CliRunner().invoke(app, ["make", "graph of sin(x)", "--jobs", "0"])
+    assert r.exit_code != 0
+

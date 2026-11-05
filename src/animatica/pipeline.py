@@ -90,6 +90,7 @@ def make_video(
     backend: str = "manim",
     captions: bool = True,
     two_stage: bool = False,
+    jobs: int = 1,
 ) -> MakeResult:
     out_dir = Path(out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -150,7 +151,7 @@ def make_video(
     if preview:
         quality = "preview"
     render_result = render_backend.render(
-        sb, out_dir, RenderOptions(quality=quality, captions=captions)
+        sb, out_dir, RenderOptions(quality=quality, captions=captions, jobs=jobs)
     )
     video = render_result.video
     warnings.extend(render_result.warnings)
