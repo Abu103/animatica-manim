@@ -8,6 +8,10 @@
 #
 # Failures use `throw` (not `exit`) so a failure under `irm | iex` does not close your terminal.
 $ErrorActionPreference = "Stop"
+# Python warnings (e.g. a SyntaxWarning inside a dependency on a new Python) are written to stderr. In
+# Windows PowerShell, with "Stop" and a redirect, stderr text becomes a terminating error and killed step 3
+# on a real PC. Silence them for child processes, and never treat stderr text as failure (exit codes decide).
+$env:PYTHONWARNINGS = "ignore"
 
 $ghRepo = if ($env:ANIMATICA_GH_REPO) { $env:ANIMATICA_GH_REPO } else { "Abu103/animatica-manim" }
 
@@ -61,10 +65,15 @@ if (-not (Test-Path $animatica)) { throw "animatica.exe was not created in .venv
 # [3/4] LaTeX. Windows needs a Windows-native TeX; the official TinyTeX installer is used.
 # (animatica itself finds a TinyTeX install even if it is not on PATH.)
 Write-Host "[3/4] checking LaTeX / ffmpeg"
+$ErrorActionPreference = "Continue"
 & $animatica doctor *> $null
-if ($LASTEXITCODE -ne 0) {
+$doctorExit = $LASTEXITCODE
+$ErrorActionPreference = "Stop"
+if ($doctorExit -ne 0) {
     Write-Host "Something is missing -- running: animatica doctor --fix --yes"
+    $ErrorActionPreference = "Continue"
     & $animatica doctor --fix --yes
+    $ErrorActionPreference = "Stop"
     # exit status of this command reflects the state AFTER the fix attempt
 }
 
