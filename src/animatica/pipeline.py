@@ -92,6 +92,7 @@ def make_video(
     two_stage: bool = False,
     jobs: int = 1,
 ) -> MakeResult:
+    render_backend = resolve_backend(backend)  # fail fast: before any file write or LLM call
     out_dir = Path(out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
     out_dir = long_path(out_dir)
@@ -147,7 +148,6 @@ def make_video(
     dump_storyboard(sb, out_dir / "storyboard.json")
 
     # ---- render ----
-    render_backend = resolve_backend(backend)
     if preview:
         quality = "preview"
     render_result = render_backend.render(
