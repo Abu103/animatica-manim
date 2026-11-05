@@ -139,7 +139,7 @@ def _tail_reason(log_text: str) -> tuple[str, list[str]]:
         if pkg and pkg not in packages:
             packages.append(pkg)
         reason = reason or f"TeX file {fname} not found"
-    if re.search(r"Unknown option [`']?english|babel.*english", log_text, re.S) and "babel-english" not in packages:
+    if re.search(r"Unknown option [`']?english", log_text, re.I) and "babel-english" not in packages:
         packages.append("babel-english")
         reason = reason or "babel language 'english' not installed"
     if not reason:

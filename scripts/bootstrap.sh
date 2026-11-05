@@ -25,9 +25,9 @@ if ! command -v uv >/dev/null 2>&1; then
 fi
 
 # --- 1+2 in parallel: python deps | pre-baked TinyTeX ---
-uv venv "$ROOT/.venv" &
-PY_PID=$!
-# shellcheck disable=SC2086
+if [ ! -x "$ROOT/.venv/bin/python" ]; then
+  uv venv "$ROOT/.venv"
+fi
 uv pip install --python "$ROOT/.venv/bin/python" -e "$ROOT" &
 PIP_PID=$!
 
@@ -53,20 +53,31 @@ fetch_tex() {
 fetch_tex && TEX_OK=1 &
 TEX_PID=$!
 
-wait $PY_PID; wait $PIP_PID
+wait "$PIP_PID"
 if wait $TEX_PID; then TEX_OK=1; fi
 
 if [ "$TEX_OK" = "1" ]; then
   mkdir -p "$TINYTEX_DIR" && unzip -oq /tmp/tinytex-manim.zip -d "$TINYTEX_DIR"
   TEX_BIN=$(ls -d "$TINYTEX_DIR"/bin/*/ 2>/dev/null | head -1 || true)
-  echo "[2/3] TinyTeX ready at $TINYTEX_DIR"
-  echo "      add to PATH for this shell:  export PATH=\"$ROOT/$TEX_BIN:\$PATH\""
+  if [ -z "$TEX_BIN" ]; then
+    echo "TinyTeX archive has no bin directory" >&2
+    exit 1
+  fi
+  export PATH="$TEX_BIN:$PATH"
+  echo "[2/3] TinyTeX available in this bootstrap process at $TEX_BIN"
+  echo "      for future shells, add to PATH: $TEX_BIN"
 else
   echo "[2/3] pre-baked TinyTeX zip unavailable (release not published?) -- falling back to doctor --fix"
-  "$ROOT/.venv/bin/animatica" doctor --fix || true
+  # --yes: no prompt (stdin is the script itself under curl|bash). Failures are caught by the final check.
+  "$ROOT/.venv/bin/animatica" doctor --fix --yes || true
 fi
 
 echo "[3/3] verifying"
-"$ROOT/.venv/bin/animatica" doctor || true
-echo ""
-echo "Done. Then: source .venv/bin/activate && animatica make \"graph of sin(x)\" -o out/"
+if "$ROOT/.venv/bin/animatica" doctor; then
+  echo ""
+  echo "Done. Then: source .venv/bin/activate && animatica make \"graph of sin(x)\" -o out/"
+else
+  echo ""
+  echo "Setup is NOT complete: see the FAIL lines above (re-run after fixing them)." >&2
+  exit 1
+fi

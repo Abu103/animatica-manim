@@ -1,10 +1,12 @@
 """Pre-flight dependency checks: `animatica doctor`."""
 from __future__ import annotations
 
+import os
 import shutil
 import subprocess
 import sys
 from dataclasses import dataclass
+from pathlib import Path
 
 from animatica.config import load_config, load_key
 
@@ -33,7 +35,7 @@ def _manim_fix() -> str:
 
 def _latex_fix() -> str:
     if sys.platform == "win32":
-        return "install TinyTeX from https://yihui.org/tinytex/ (then restart your terminal)"
+        return "run `animatica doctor --fix` (installs TinyTeX), or see https://yihui.org/tinytex/ ; then open a new terminal"
     return "install TinyTeX from https://yihui.org/tinytex/ (or `sudo apt install texlive texlive-latex-extra`)"
 
 
@@ -162,6 +164,53 @@ def run_checks(run=subprocess.run, which=shutil.which, deep_latex: bool = True) 
 
 
 
+# Official upstream Windows installer (verified to exist in rstudio/tinytex; the old
+# yihui.org/tinytex/install-windows.ps1 URL returns 404).
+TINYTEX_WIN_INSTALLER_URL = "https://raw.githubusercontent.com/rstudio/tinytex/main/tools/install-bin-windows.ps1"
+
+
+def tinytex_bin_dirs(platform: str = sys.platform, env=None) -> list[Path]:
+    """Places a TinyTeX `bin` directory may live, most likely first.
+
+    Windows: the upstream installer uses %TINYTEX_DIR%, else %APPDATA% (only when it is plain
+    ASCII), else %ProgramData%; Chocolatey uses C:\\tools\\tinytex.
+    """
+    env = os.environ if env is None else env
+    dirs: list[Path] = []
+    if platform == "win32":
+        for base in (env.get("TINYTEX_DIR"), env.get("APPDATA"), env.get("ProgramData")):
+            if base:
+                dirs.append(Path(base) / "TinyTeX" / "bin" / "windows")
+        dirs.append(Path("C:/tools/tinytex/bin/windows"))
+    else:
+        home = Path(env.get("HOME") or Path.home())
+        for root in (home / ".TinyTeX" / "bin", home / "Library" / "TinyTeX" / "bin"):
+            if root.is_dir():
+                dirs.extend(sorted(p for p in root.iterdir() if p.is_dir()))
+    return dirs
+
+
+def ensure_tex_on_path(platform: str = sys.platform, env=None, is_ok=None) -> Path | None:
+    """If latex/dvisvgm are not on PATH but a TinyTeX install exists, put it on THIS process's PATH.
+
+    A child process can never change its parent shell's PATH, so Animatica makes TeX visible to
+    itself (and to the Manim/LaTeX subprocesses it spawns) instead of relying on a restarted terminal.
+    Returns the bin dir that was added, or None.
+    """
+    env = os.environ if env is None else env
+    exe = ".exe" if platform == "win32" else ""
+    if is_ok is None:
+        def is_ok(d: Path) -> bool:
+            return (d / f"latex{exe}").is_file() and (d / f"dvisvgm{exe}").is_file()
+    if shutil.which("latex", path=env.get("PATH")) and shutil.which("dvisvgm", path=env.get("PATH")):
+        return None
+    for d in tinytex_bin_dirs(platform, env):
+        if is_ok(d):
+            env["PATH"] = str(d) + os.pathsep + env.get("PATH", "")
+            return d
+    return None
+
+
 # Packages a fresh TinyTeX lacks but Animatica needs (the 2026-11-04 sessions hit exactly these).
 TEX_PACKAGES = ("standalone", "preview", "babel-english", "amsmath", "amsfonts", "dvisvgm")
 
@@ -198,24 +247,32 @@ def fix_dependencies(run=subprocess.run, which=shutil.which, platform: str = sys
         actions.append("restart your terminal so the new PATH applies" if which("ffmpeg") else "ffmpeg still not on PATH after install -- restart your terminal and re-run 'animatica doctor'")
 
     # LaTeX / TinyTeX
+    ensure_tex_on_path(platform)  # already installed but not on PATH? just use it
     latex_missing = not (which("latex") and which("dvisvgm"))
     if latex_missing:
         if platform == "win32":
             _try(
-                "install TinyTeX",
+                "install TinyTeX (official rstudio/tinytex Windows installer)",
                 ["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-Command",
-                 "irm https://yihui.org/tinytex/install-windows.ps1 | iex"],
+                 f"$ProgressPreference='SilentlyContinue'; irm {TINYTEX_WIN_INSTALLER_URL} | iex"],
             )
+            added = ensure_tex_on_path(platform)
+            if added:
+                actions.append(f"TinyTeX found at {added}; added to PATH for Animatica (new terminals get it via 'tlmgr path add')")
+            else:
+                actions.append("TinyTeX installer ran but latex.exe/dvisvgm.exe were not found; open a new terminal and run 'animatica doctor'")
         elif platform == "darwin":
             _try("install TinyTeX", ["bash", "-c", "curl -fsSL https://yihui.org/tinytex/install-unx.sh | sh"])
+            ensure_tex_on_path(platform)
         else:
-            _try("install TeX Live", ["sudo", "apt", "install", "-y", "texlive", "texlive-latex-extra"])
-        actions.append("add the TinyTeX bin dir to PATH (Windows: C:\\tools\\tinytex\\bin\\windows) and restart your terminal")
+            _try("install TeX Live", ["sudo", "apt", "install", "-y", "texlive", "texlive-latex-extra", "dvisvgm"])
 
-    # TinyTeX packages (only when we just installed TeX and tlmgr is now on PATH)
-    if latex_missing and which("tlmgr"):
-        _try("install required TeX packages", ["tlmgr", "install", *TEX_PACKAGES])
-    elif latex_missing:
-        actions.append("tlmgr not found; if you installed TinyTeX, restart your terminal, then run: tlmgr install " + " ".join(TEX_PACKAGES))
+    # TeX packages: resolve tlmgr explicitly (Windows ships tlmgr.bat) and install what Manim needs.
+    if latex_missing:
+        tlmgr = which("tlmgr")
+        if tlmgr:
+            _try("install required TeX packages", [tlmgr, "install", *TEX_PACKAGES])
+        else:
+            actions.append("tlmgr not found; open a new terminal, then run: tlmgr install " + " ".join(TEX_PACKAGES))
 
     return actions

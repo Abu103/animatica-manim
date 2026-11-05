@@ -12,11 +12,15 @@ def transcode(
     src: Path,
     dst: Path,
     enc: EncoderInfo,
-    ffmpeg: str = "ffmpeg",
+    ffmpeg: str | None = None,
     run: Callable = subprocess.run,
 ) -> TranscodeResult:
     """Transcode `src` to `dst` using `enc`. On any failure return `src` with a
     warning; never raise and never modify `src`."""
+    if ffmpeg is None:
+        from animatica.encode.probe import _default_ffmpeg
+
+        ffmpeg = _default_ffmpeg()
     src = Path(src)
     dst = Path(dst)
     try:

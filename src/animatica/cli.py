@@ -26,12 +26,13 @@ def main(
     version: bool = typer.Option(False, "--version", callback=_version, is_eager=True, help="Show version."),
 ) -> None:
     """Animatica command group."""
+    # TinyTeX may be installed but not on this shell's PATH (a child installer cannot change it).
+    from animatica.doctor import ensure_tex_on_path
+
+    ensure_tex_on_path()
 
 
-@app.command()
-def doctor(fix: bool = typer.Option(False, "--fix", help="Offer to auto-fix missing dependencies.")) -> None:
-    """Check Python, Manim, LaTeX, ffmpeg, encoders, and configured provider."""
-    checks = run_checks()
+def _print_checks(checks) -> int:
     failures = 0
     for c in checks:
         mark = "OK " if c.ok else "FAIL"
@@ -42,26 +43,38 @@ def doctor(fix: bool = typer.Option(False, "--fix", help="Offer to auto-fix miss
                 typer.echo(f"       fix: {c.fix}")
         elif c.fix:  # passed, but there is something worth knowing
             typer.echo(f"       tip: {c.fix}")
-    if fix and failures:
-        _offer_fix()
+    return failures
+
+
+@app.command()
+def doctor(
+    fix: bool = typer.Option(False, "--fix", help="Offer to auto-fix missing dependencies."),
+    yes: bool = typer.Option(False, "--yes", "-y", help="With --fix: do not prompt (for scripts/CI)."),
+) -> None:
+    """Check Python, Manim, LaTeX, ffmpeg, encoders, and configured provider."""
+    failures = _print_checks(run_checks())
+    if fix and failures and _offer_fix(assume_yes=yes):
+        typer.echo("\nRe-checking after fixes:")
+        failures = _print_checks(run_checks())  # exit status reflects the state AFTER the fix attempt
     if failures:
         raise typer.Exit(code=1)
     typer.echo("\nAll checks passed.")
 
 
-def _offer_fix() -> None:
+def _offer_fix(assume_yes: bool = False) -> bool:
+    """Ask (unless assume_yes), then attempt fixes. Returns True only if fixes were attempted."""
     from animatica.doctor import fix_dependencies
 
-    ans = typer.prompt(
+    ans = "y" if assume_yes else typer.prompt(
         "Auto-install missing dependencies now (ffmpeg, TinyTeX + TeX packages)? (y/N)",
         default="N", show_default=False,
     ).strip().lower()
     if ans != "y":
         typer.echo("No changes made. Re-run 'animatica doctor --fix' any time.")
-        return
+        return False
     for line in fix_dependencies():
         typer.echo(line)
-    typer.echo("\nRe-run 'animatica doctor' to verify (restart your terminal first so PATH updates apply).")
+    return True
 
 
 @app.command()
@@ -72,12 +85,20 @@ def bootstrap() -> None:
 
     from animatica.doctor import fix_dependencies
 
-    typer.echo("[1/2] pip install -e . (animatica + deps incl. manim)")
-    subprocess.run([sys.executable, "-m", "pip", "install", "-e", "."], check=False)
-    typer.echo("[2/2] system dependencies")
+    typer.echo("[1/3] pip install -e . (animatica + deps incl. manim)")
+    pip = subprocess.run([sys.executable, "-m", "pip", "install", "-e", "."], check=False)
+    if pip.returncode != 0:
+        typer.echo(f"pip install failed (exit {pip.returncode}); fix that first, then re-run.")
+        raise typer.Exit(code=pip.returncode or 1)
+    typer.echo("[2/3] system dependencies")
     for line in fix_dependencies():
         typer.echo(line)
-    typer.echo("\nDone. Restart your terminal, then run: animatica doctor")
+    typer.echo("[3/3] verifying")
+    failures = _print_checks(run_checks())
+    if failures:
+        typer.echo("\nSetup is NOT complete; see the FAIL lines above.")
+        raise typer.Exit(code=1)
+    typer.echo("\nDone. All checks passed.")
 
 
 @app.command("setup")
@@ -259,3 +280,7 @@ def make(
         typer.echo("Re-run with --debug for the full traceback.")
         raise typer.Exit(code=1)
 
+
+
+if __name__ == "__main__":
+    app()

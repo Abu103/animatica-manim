@@ -60,8 +60,12 @@ def _concat_entry(clip: Path) -> str:
     return f"file '{posix}'"
 
 
-def concat_videos(clips: list[Path], dst: Path, ffmpeg: str = "ffmpeg") -> None:
-    """Concatenate `clips` into `dst` with the ffmpeg concat demuxer (`-c copy`)."""
+def concat_videos(clips: list[Path], dst: Path, ffmpeg: str | None = None) -> None:
+    """Concatenate clips using explicit, system, or bundled ffmpeg, in that order."""
+    if ffmpeg is None:
+        from animatica.encode.probe import _default_ffmpeg
+
+        ffmpeg = _default_ffmpeg()
     dst = Path(dst)
     list_file = dst.parent / f".concat_{dst.name}.txt"
     try:

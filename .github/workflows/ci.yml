@@ -2,19 +2,57 @@ name: ci
 on: [push, pull_request]
 permissions:
   contents: read
+
 jobs:
-  test:
+  linux:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
           python-version: "3.13"
-      - name: System libs for manim (cairo/pango)
-        run: sudo apt-get update && sudo apt-get install -y libcairo2-dev pkg-config libpango1.0-dev libavcodec-dev libavformat-dev libswscale-dev
-      - name: Install deps (no system TeX needed for unit tests)
-        run: pip install -e . pytest imageio-ffmpeg
-      - name: Run tests (render tests skip without manim/latex/ffmpeg)
-        run: python -m pytest -q
-      - name: Doctor smoke (informational)
-        run: python -m animatica.cli doctor || true
+      - name: System libs (cairo/pango, TeX, ffmpeg)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libcairo2-dev pkg-config libpango1.0-dev ffmpeg \
+            texlive-latex-extra texlive-science dvisvgm
+      - run: pip install -e . pytest
+      - name: Doctor (must pass)
+        run: python -m animatica doctor
+      - name: Unit tests
+        run: python -m pytest -q -rs
+      - name: Real render smoke test
+        run: python scripts/ci_smoke.py
+      - name: bootstrap.sh is valid bash
+        run: bash -n scripts/bootstrap.sh
+
+  windows:
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install -e . pytest
+      - name: Install TinyTeX via Animatica's own fixer (this tests the Windows fix path)
+        run: python -m animatica doctor --fix --yes
+      - name: Make TinyTeX visible to later steps
+        run: |
+          $d = python -c "from animatica.doctor import ensure_tex_on_path as e; d=e(); print(d or '')"
+          if (-not $d) { Write-Host "TinyTeX not found by animatica after install"; exit 1 }
+          Write-Host "TinyTeX bin: $d"
+          Add-Content $env:GITHUB_PATH $d
+      - name: Doctor (must pass)
+        run: python -m animatica doctor
+      - name: Unit tests
+        run: python -m pytest -q -rs
+      - name: Real render smoke test (space + non-ASCII output paths)
+        run: python scripts/ci_smoke.py
+      - name: PowerShell bootstrap parses
+        run: |
+          $errs = $null
+          [System.Management.Automation.Language.Parser]::ParseFile("$PWD\scripts\bootstrap.ps1", [ref]$null, [ref]$errs) | Out-Null
+          if ($errs) { $errs | ForEach-Object { Write-Host $_ }; exit 1 }

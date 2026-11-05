@@ -51,7 +51,7 @@ def test_make_captions_cumulative(tmp_path):
     runner = CliRunner()
     result = runner.invoke(app, ["make", "steps to do a thing", "-o", str(tmp_path)])
     assert result.exit_code == 0, result.output
-    vtt = (tmp_path / "captions.vtt").read_text()
+    vtt = (tmp_path / "captions.vtt").read_text(encoding="utf-8")
     assert vtt.startswith("WEBVTT")
     # cue times should be non-decreasing cumulative
     import re

@@ -41,7 +41,7 @@ def test_fake_backend_wrong_durations_reported(tmp_path):
 
 def test_conformance_expected_matches_actual_durations():
     reg = default_registry()
-    expected = json.loads((CONFORMANCE_DIR / "expected.json").read_text())
+    expected = json.loads((CONFORMANCE_DIR / "expected.json").read_text(encoding="utf-8"))
     for fname, exp in expected.items():
         sb = load_storyboard(CONFORMANCE_DIR / fname)
         assert len(sb.scenes) == exp["scenes"], fname

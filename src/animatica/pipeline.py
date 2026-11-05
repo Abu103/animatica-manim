@@ -140,8 +140,10 @@ def make_video(
         enc_infos = probe_encoders()
         enc = pick_encoder(encoder, enc_infos)
         encoder_used = enc.name
-        transcode(video, out_dir / "video_transcoded.mp4", enc)
-        video = out_dir / "video_transcoded.mp4"
+        transcode_result = transcode(video, out_dir / "video_transcoded.mp4", enc)
+        video = transcode_result.path
+        if transcode_result.warning:
+            warnings.append(f"transcode: {transcode_result.warning}")
 
     # ---- captions + report ----
     _write_captions(sb, registry, out_dir / "captions.vtt")

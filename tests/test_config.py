@@ -26,7 +26,7 @@ def test_config_defaults_when_missing():
 @pytest.mark.skipif(sys.platform == "win32", reason="POSIX file modes")
 def test_key_file_mode(cfg_dir):
     save_key("groq", "secret-key-123")
-    key_files = [p for p in cfg_dir.rglob("*") if p.is_file() and "secret-key-123" in p.read_text()]
+    key_files = [p for p in cfg_dir.rglob("*") if p.is_file() and "secret-key-123" in p.read_text(encoding="utf-8")]
     assert len(key_files) == 1
     assert stat.S_IMODE(key_files[0].stat().st_mode) == 0o600
     assert load_key("groq") == "secret-key-123"
@@ -35,7 +35,7 @@ def test_key_file_mode(cfg_dir):
 def test_key_not_in_config_toml(cfg_dir):
     save_config(Config(provider="groq"))
     save_key("groq", "secret-key-123")
-    assert "secret-key-123" not in (cfg_dir / "config.toml").read_text()
+    assert "secret-key-123" not in (cfg_dir / "config.toml").read_text(encoding="utf-8")
 
 
 def test_missing_key_is_none():

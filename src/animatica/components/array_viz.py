@@ -36,6 +36,16 @@ class ArrayViz(Component):
                     for ix in idxs:
                         if not (0 <= ix < n):
                             raise ValueError(f"step {i}: index {ix} out of range for {n} values")
+                for key in ("low", "high", "mid"):
+                    if key in st:
+                        ix = st[key]
+                        if type(ix) is not int or not (0 <= ix < n):
+                            raise ValueError(f"step {i}: {key} must be an integer index in [0, {n - 1}]")
+                lo, hi, mid = st.get("low"), st.get("high"), st.get("mid")
+                if lo is not None and hi is not None and lo > hi:
+                    raise ValueError(f"step {i}: low must not exceed high")
+                if mid is not None and ((lo is not None and mid < lo) or (hi is not None and mid > hi)):
+                    raise ValueError(f"step {i}: mid must lie within the active range")
             return self
 
     def duration(self, p: BaseModel) -> float:
@@ -45,14 +55,14 @@ class ArrayViz(Component):
         return f"{p.title}: [{', '.join(f'{v:g}' for v in p.values)}]"  # type: ignore[attr-defined]
 
     def play(self, scene, p, colors) -> None:
-        from manim import FadeIn, Text, VGroup
+        from manim import DOWN, FadeIn, Text, VGroup
 
         prepare(scene, colors)
         title = Text(wrap(p.title, 45), font_size=MIN_FONT_SIZE + 8, color=colors.accent)
         boxes = VGroup(*[
             Text(f"{v:g}", font_size=MIN_FONT_SIZE + 4, color=colors.text) for v in p.values  # type: ignore[attr-defined]
         ]).arrange_in_grid(1, len(p.values), buff=0.9)  # type: ignore[attr-defined]
-        group = VGroup(title, boxes)
+        group = VGroup(title, boxes).arrange(DOWN, buff=0.5)
         fit(group)
         clock = Clock(scene, self.duration(p))
         clock.play(FadeIn(title), run_time=0.6)
