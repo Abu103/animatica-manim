@@ -193,6 +193,10 @@ def tinytex_bin_dirs(platform: str = sys.platform, env=None) -> list[Path]:
 def ensure_tex_on_path(platform: str = sys.platform, env=None, is_ok=None) -> Path | None:
     """If latex/dvisvgm are not on PATH but a TinyTeX install exists, put it on THIS process's PATH.
 
+    A fresh TinyTeX has `latex` and `tlmgr` but NOT `dvisvgm` (tlmgr installs that afterwards), so a
+    bin dir counts as found when it has `latex`; requiring dvisvgm too would hide tlmgr and make the
+    package install impossible.
+
     A child process can never change its parent shell's PATH, so Animatica makes TeX visible to
     itself (and to the Manim/LaTeX subprocesses it spawns) instead of relying on a restarted terminal.
     Returns the bin dir that was added, or None.
@@ -201,7 +205,7 @@ def ensure_tex_on_path(platform: str = sys.platform, env=None, is_ok=None) -> Pa
     exe = ".exe" if platform == "win32" else ""
     if is_ok is None:
         def is_ok(d: Path) -> bool:
-            return (d / f"latex{exe}").is_file() and (d / f"dvisvgm{exe}").is_file()
+            return (d / f"latex{exe}").is_file()
     if shutil.which("latex", path=env.get("PATH")) and shutil.which("dvisvgm", path=env.get("PATH")):
         return None
     for d in tinytex_bin_dirs(platform, env):
@@ -211,21 +215,40 @@ def ensure_tex_on_path(platform: str = sys.platform, env=None, is_ok=None) -> Pa
     return None
 
 
+def describe_tex_search(platform: str = sys.platform, env=None) -> str:
+    """Human-readable list of where we looked for TinyTeX (for failure messages / CI logs)."""
+    lines = [f"  {'FOUND  ' if d.is_dir() else 'missing'} {d}" for d in tinytex_bin_dirs(platform, env)]
+    return "searched for TinyTeX in:\n" + ("\n".join(lines) if lines else "  (no candidate folders)")
+
+
+def _bundled_ffmpeg():
+    """Path of the static ffmpeg shipped in the imageio-ffmpeg wheel, or None."""
+    try:
+        import imageio_ffmpeg
+
+        return imageio_ffmpeg.get_ffmpeg_exe()
+    except Exception:
+        return None
+
+
 # Packages a fresh TinyTeX lacks but Animatica needs (the 2026-11-04 sessions hit exactly these).
 TEX_PACKAGES = ("standalone", "preview", "babel-english", "amsmath", "amsfonts", "dvisvgm")
 
 
-def fix_dependencies(run=subprocess.run, which=shutil.which, platform: str = sys.platform) -> list[str]:
+def fix_dependencies(run=subprocess.run, which=shutil.which, platform: str = sys.platform, bundled_ffmpeg=_bundled_ffmpeg) -> list[str]:
     """Actually install missing deps (doctor --fix). Returns human-readable actions taken.
 
     Never aborts on one failure: every step is attempted and reported.
     """
     actions: list[str] = []
+    last_tail: list[str] = [""]  # last lines of the most recent command's output, for failure reports
 
     def _try(label: str, cmd: list[str]) -> bool:
         try:
             result = run(cmd, capture_output=True, text=True)
             ok = getattr(result, "returncode", 0) == 0
+            out = f"{getattr(result, 'stdout', '') or ''}\n{getattr(result, 'stderr', '') or ''}"
+            last_tail[0] = "\n".join("    | " + ln for ln in str(out).strip().splitlines()[-15:])
         except Exception as exc:
             ok = False
             actions.append(f"failed: {label} ({exc})")
@@ -233,11 +256,11 @@ def fix_dependencies(run=subprocess.run, which=shutil.which, platform: str = sys
         if ok:
             actions.append(f"done: {label}")
         else:
-            actions.append(f"failed: {label} (exit {getattr(result, 'returncode', '?')})")
+            actions.append(f"failed: {label} (exit {getattr(result, 'returncode', '?')})" + (f"\n{last_tail[0]}" if last_tail[0].strip() else ""))
         return ok
 
-    # ffmpeg
-    if not which("ffmpeg"):
+    # ffmpeg: the bundled imageio-ffmpeg binary is enough, so only install a system one if neither exists
+    if not which("ffmpeg") and not bundled_ffmpeg():
         if platform == "win32":
             _try("install ffmpeg via winget", ["winget", "install", "--id", "Gyan.FFmpeg", "-e", "--accept-source-agreements", "--accept-package-agreements"])
         elif platform == "darwin":
@@ -248,8 +271,9 @@ def fix_dependencies(run=subprocess.run, which=shutil.which, platform: str = sys
 
     # LaTeX / TinyTeX
     ensure_tex_on_path(platform)  # already installed but not on PATH? just use it
-    latex_missing = not (which("latex") and which("dvisvgm"))
-    if latex_missing:
+    have_latex = bool(which("latex"))
+    latex_missing = not (have_latex and which("dvisvgm"))
+    if not have_latex:
         if platform == "win32":
             _try(
                 "install TinyTeX (official rstudio/tinytex Windows installer)",
@@ -260,15 +284,16 @@ def fix_dependencies(run=subprocess.run, which=shutil.which, platform: str = sys
             if added:
                 actions.append(f"TinyTeX found at {added}; added to PATH for Animatica (new terminals get it via 'tlmgr path add')")
             else:
-                actions.append("TinyTeX installer ran but latex.exe/dvisvgm.exe were not found; open a new terminal and run 'animatica doctor'")
+                actions.append("TinyTeX installer ran but latex.exe was not found.\n" + describe_tex_search(platform)
+                               + (f"\ninstaller output (last lines):\n{last_tail[0]}" if last_tail[0].strip() else ""))
         elif platform == "darwin":
             _try("install TinyTeX", ["bash", "-c", "curl -fsSL https://yihui.org/tinytex/install-unx.sh | sh"])
             ensure_tex_on_path(platform)
         else:
             _try("install TeX Live", ["sudo", "apt", "install", "-y", "texlive", "texlive-latex-extra", "dvisvgm"])
 
-    # TeX packages: resolve tlmgr explicitly (Windows ships tlmgr.bat) and install what Manim needs.
-    if latex_missing:
+    # TinyTeX needs extra packages (dvisvgm, standalone, ...) via tlmgr; on Linux apt provides them.
+    if latex_missing and platform != "linux":
         tlmgr = which("tlmgr")
         if tlmgr:
             _try("install required TeX packages", [tlmgr, "install", *TEX_PACKAGES])

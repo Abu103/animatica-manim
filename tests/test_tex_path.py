@@ -111,3 +111,69 @@ def test_python_dash_m_animatica_actually_runs():
     r = subprocess.run([sys.executable, "-m", "animatica", "--version"], capture_output=True, text=True)
     assert r.returncode == 0
     assert "animatica" in r.stdout
+
+
+def test_fresh_tinytex_without_dvisvgm_is_still_found(tmp_path):
+    """Regression (Windows CI): a fresh TinyTeX has latex + tlmgr but no dvisvgm yet.
+    It must be found, or tlmgr never reaches PATH and dvisvgm can never be installed."""
+    bin_dir = tmp_path / "AppData" / "TinyTeX" / "bin" / "windows"
+    bin_dir.mkdir(parents=True)
+    (bin_dir / "latex.exe").write_text("")
+    (bin_dir / "tlmgr.bat").write_text("")  # note: NO dvisvgm.exe
+    env = {"PATH": "/nonexistent", "APPDATA": str(tmp_path / "AppData")}
+    assert ensure_tex_on_path("win32", env) == bin_dir
+    assert env["PATH"].split(os.pathsep)[0] == str(bin_dir)
+
+
+def test_dir_without_latex_is_not_accepted(tmp_path):
+    bin_dir = tmp_path / "AppData" / "TinyTeX" / "bin" / "windows"
+    bin_dir.mkdir(parents=True)
+    env = {"PATH": "/nonexistent", "APPDATA": str(tmp_path / "AppData")}
+    assert ensure_tex_on_path("win32", env) is None
+
+
+def test_search_report_lists_every_place_looked(tmp_path):
+    from animatica.doctor import describe_tex_search
+
+    env = {"APPDATA": str(tmp_path / "A"), "ProgramData": str(tmp_path / "P")}
+    (tmp_path / "A" / "TinyTeX" / "bin" / "windows").mkdir(parents=True)
+    report = describe_tex_search("win32", env)
+    assert "FOUND" in report and "missing" in report
+    assert "TinyTeX" in report
+
+
+def test_no_system_ffmpeg_install_when_bundled_ffmpeg_exists():
+    from animatica.doctor import fix_dependencies
+
+    cmds = []
+
+    def run(cmd, **kw):
+        cmds.append(" ".join(cmd))
+
+        class R:
+            returncode = 0
+
+        return R()
+
+    fix_dependencies(run=run, which=lambda n: "/x/" + n if n != "ffmpeg" else None, platform="win32",
+                     bundled_ffmpeg=lambda: "/bundled/ffmpeg")
+    assert not any("winget" in c or "ffmpeg" in c for c in cmds)
+
+
+def test_only_dvisvgm_missing_installs_packages_without_reinstalling_tinytex():
+    from animatica.doctor import fix_dependencies
+
+    cmds = []
+
+    def run(cmd, **kw):
+        cmds.append(" ".join(cmd))
+
+        class R:
+            returncode = 0
+
+        return R()
+
+    which = lambda n: None if n == "dvisvgm" else "C:/tex/" + n  # latex + tlmgr present
+    fix_dependencies(run=run, which=which, platform="win32", bundled_ffmpeg=lambda: "x")
+    assert any("tlmgr" in c and "dvisvgm" in c for c in cmds)
+    assert not any("install-bin-windows" in c for c in cmds)  # TeX not reinstalled

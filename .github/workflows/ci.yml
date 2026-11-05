@@ -42,7 +42,12 @@ jobs:
       - name: Make TinyTeX visible to later steps
         run: |
           $d = python -c "from animatica.doctor import ensure_tex_on_path as e; d=e(); print(d or '')"
-          if (-not $d) { Write-Host "TinyTeX not found by animatica after install"; exit 1 }
+          if (-not $d) {
+            Write-Host "TinyTeX not found by animatica after install"
+            python -c "from animatica.doctor import describe_tex_search; print(describe_tex_search())"
+            Get-ChildItem $env:APPDATA, $env:ProgramData -Filter "TinyTeX*" -ErrorAction SilentlyContinue | ForEach-Object { $_.FullName }
+            exit 1
+          }
           Write-Host "TinyTeX bin: $d"
           Add-Content $env:GITHUB_PATH $d
       - name: Doctor (must pass)
