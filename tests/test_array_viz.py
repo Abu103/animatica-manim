@@ -1,6 +1,6 @@
 import pytest
 
-from animatica.components.array_viz import ArrayViz, swap_targets
+from animatica.components.array_viz import ArrayViz, opacity_for, swap_targets
 from animatica.components.registry import default_registry
 
 
@@ -70,3 +70,16 @@ def test_swap_lands_boxes_on_original_centers(run_component, monkeypatch):
     assert set(landed) == {"5", "1"}, landed
     assert landed["5"] > landed["1"], landed  # "5" (index 0) took index 2's right slot
     assert landed["5"] - landed["1"] > 0.5, landed  # two distinct slots, not the collapsed 1.14 of the bug
+
+
+def test_opacity_inside_range_is_full():
+    assert opacity_for(3, 2, 5) == 1.0
+
+
+def test_opacity_outside_range_is_dimmed():
+    assert opacity_for(0, 2, 5) == 0.25
+    assert opacity_for(6, 2, 5) == 0.25
+
+
+def test_opacity_without_range_is_full():
+    assert opacity_for(0, None, None) == 1.0
