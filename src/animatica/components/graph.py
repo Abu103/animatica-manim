@@ -2,12 +2,13 @@
 from __future__ import annotations
 
 import math
+import re
 from typing import ClassVar
 
 from pydantic import BaseModel, Field, field_validator, model_validator
 
 from animatica.components._draw import MIN_FONT_SIZE, Clock, fit, prepare, text_card, warn
-from animatica.components._latex import explain_latex_failure
+from animatica.components._latex import explain_latex_failure, latex_to_plain
 from animatica.components.base import Component
 from animatica.native import sample_function
 from animatica.storyboard.models import MAX_TEXT
@@ -15,6 +16,28 @@ from animatica.storyboard.safety import parse_function
 
 SAMPLES = 400
 DURATION = 4.0
+
+_MATH_HINT = re.compile(r"(?<=[A-Za-z0-9])[\\^_\/]|[\\^_\/](?=[A-Za-z0-9])")
+
+
+def looks_like_math(label: str) -> bool:
+    """True when the label carries math notation (^, _, backslash, or /
+    adjacent to an alphanumeric character)."""
+    return _MATH_HINT.search(label) is not None
+
+
+def make_label(scene, text: str, colors):
+    """MathTex label for math text, plain Text otherwise; on any LaTeX failure,
+    warn and degrade to Text(latex_to_plain(text)) so the beat never aborts."""
+    from manim import MathTex, Text
+
+    if looks_like_math(text):
+        try:
+            return MathTex(text, font_size=MIN_FONT_SIZE, color=colors.text)
+        except Exception as exc:  # LaTeX missing/broken: readable fallback, never abort
+            warn(scene, f"graph label: LaTeX failed for {text!r} ({explain_latex_failure(exc)})")
+            return Text(latex_to_plain(text), font_size=MIN_FONT_SIZE, color=colors.text)
+    return Text(text, font_size=MIN_FONT_SIZE, color=colors.text)
 
 
 def clip_segments(segs: list[list[tuple[float, float]]], y_range: tuple[float, float]):
@@ -102,7 +125,7 @@ class Graph(Component):
             curve.set_points_as_corners([axes.c2p(x, y) for x, y in seg])
             curves.append(curve)
         plot = VGroup(axes, *curves)
-        title = Text(p.label, font_size=MIN_FONT_SIZE, color=colors.text) if p.label else None
+        title = make_label(scene, p.label, colors) if p.label else None
         whole = VGroup(title, plot).arrange(DOWN, buff=0.3) if title else plot
         fit(whole)  # scales axes and curves together (curves are children of `plot`)
         clock = Clock(scene, DURATION)
