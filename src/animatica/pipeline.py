@@ -13,6 +13,7 @@ from animatica.components.registry import default_registry
 from animatica.config import load_config
 from animatica.encode.probe import pick_encoder, probe_encoders
 from animatica.encode.transcode import transcode
+from animatica.paths import long_path
 from animatica.report import write_report
 from animatica.storyboard.cache import StoryboardCache
 from animatica.storyboard.lint import lint_storyboard
@@ -71,6 +72,7 @@ def make_video(
 ) -> MakeResult:
     out_dir = Path(out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
+    out_dir = long_path(out_dir)
     registry = default_registry()
     warnings: list[str] = []
 

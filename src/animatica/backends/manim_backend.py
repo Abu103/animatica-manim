@@ -12,6 +12,7 @@ from animatica.backends.base import RenderBackend, RenderOptions, RenderResult
 from animatica.backends.scheduler import concat_videos
 from animatica.components.registry import default_registry
 from animatica.components.theme import get_colors
+from animatica.paths import check_tex_safe, long_path
 from animatica.report import StageTimer, write_report
 from animatica.storyboard.models import Storyboard, dump_storyboard
 
@@ -31,6 +32,8 @@ class ManimBackend:
     def render(self, sb: Storyboard, out_dir: Path, opts: RenderOptions) -> RenderResult:
         out_dir = Path(out_dir)
         out_dir.mkdir(parents=True, exist_ok=True)
+        out_dir = long_path(out_dir)  # RUNNER~1 -> runneradmin: TeX treats "~" as a command
+        check_tex_safe(out_dir)
         timer = StageTimer()
         warnings: list[str] = []
         durations: list[float] = []

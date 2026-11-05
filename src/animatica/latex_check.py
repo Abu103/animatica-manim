@@ -6,6 +6,7 @@ import sys
 import tempfile
 from pathlib import Path
 
+from animatica.paths import long_path
 from animatica.components._latex import _tail_reason, install_hint
 
 _PROBE = (
@@ -28,7 +29,8 @@ def log_excerpt(text: str, lines: int = 8) -> str:
 
 def probe_latex(run=subprocess.run, timeout: int = 120) -> tuple[bool, str, list[str]]:
     """Return (ok, reason, missing_packages). Never raises."""
-    with tempfile.TemporaryDirectory(prefix="animatica_tex_") as tmp:
+    with tempfile.TemporaryDirectory(prefix="animatica_tex_") as short_tmp:
+        tmp = str(long_path(short_tmp))  # 8.3 names like RUNNER~1 make latex abort ("~" is active)
         try:
             proc = run([sys.executable, "-c", _PROBE, tmp], capture_output=True, text=True, timeout=timeout)
         except Exception as exc:  # timeout, missing interpreter...
