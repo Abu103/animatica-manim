@@ -506,3 +506,65 @@ def test_lint_video_low_sample_fps_reduces_findings():
     cfg = FrameLintConfig(enabled=True, sample_fps=0.1)
     result = lint_video("fake.mp4", [10.0], cfg, decode=lambda p: _make_container(frames, 160, 120, 10.0))
     assert len(result.findings) <= 3, f"expected <=3 findings with 0.1fps, got {len(result.findings)}"
+
+
+# ---------------------------------------------------------------------------
+# lint_video: empty-frame end-of-video suppression
+# ---------------------------------------------------------------------------
+
+def _empty_frame(width=160, height=120):
+    return _solid_frame([40, 40, 40], width, height)
+
+
+def test_lint_video_empty_during_fade_out_not_warned():
+    """Empty frames in the last second (end fade) should NOT produce a warning."""
+    content = _solid_frame([40, 40, 40], 160, 120)
+    content[40:80, 60:100] = [200, 200, 200]
+    blank = _empty_frame()
+    # content until 3.5s, then blank from 3.5s to 5.0s (end of 5s video)
+    # sample_fps=1.0 samples at 0,1,2,3,4; blank frame at 4s is
+    # within the last second (>= 4.0s threshold) -> suppressed.
+    # Blank at 3s is NOT in last second -> should warn.
+    frames = [
+        (content, 0.0),
+        (content, 1.0),
+        (content, 2.0),
+        (blank, 3.0),   # blank but NOT in last second -> warned
+        (blank, 4.0),   # blank in last second -> suppressed
+    ]
+    cfg = FrameLintConfig(enabled=True, sample_fps=1.0)
+    result = lint_video("fake.mp4", [5.0], cfg, decode=lambda p: _make_container(frames, 160, 120, 5.0))
+    empty = [f for f in result.findings if f.kind == "empty"]
+    assert len(empty) == 1, f"expected 1 empty warning at t=3s, got {len(empty)}: {[f.timestamp for f in empty]}"
+    assert empty[0].timestamp == 3.0
+
+
+def test_lint_video_empty_before_fade_out_still_warned():
+    """Blank section that ends before the last second should still warn."""
+    content = _solid_frame([40, 40, 40], 160, 120)
+    content[40:80, 60:100] = [200, 200, 200]
+    blank = _empty_frame()
+    # content until 1.0s, blank from 1.0s to 2.5s, content again at 2.5s
+    # blank at 1s and 2s are BEFORE the last second (threshold = 4.0s for 5s video)
+    frames = [
+        (content, 0.0),
+        (blank, 1.0),   # blank before fade-out zone -> warned
+        (blank, 2.0),   # blank before fade-out zone -> warned
+        (content, 2.5), # content returns
+        (content, 3.0),
+        (content, 4.0),
+    ]
+    cfg = FrameLintConfig(enabled=True, sample_fps=1.0)
+    result = lint_video("fake.mp4", [5.0], cfg, decode=lambda p: _make_container(frames, 160, 120, 5.0))
+    empty = [f for f in result.findings if f.kind == "empty"]
+    assert len(empty) >= 1, f"expected >=1 empty warning for blank section before fade-out, got {len(empty)}"
+
+
+def test_lint_video_genuinely_empty_video_warned():
+    """A completely empty video should produce an empty warning."""
+    blank = _empty_frame()
+    frames = [(blank, 0.0), (blank, 1.0), (blank, 2.0)]
+    cfg = FrameLintConfig(enabled=True, sample_fps=1.0)
+    result = lint_video("fake.mp4", [3.0], cfg, decode=lambda p: _make_container(frames, 160, 120, 3.0))
+    empty = [f for f in result.findings if f.kind == "empty"]
+    assert len(empty) >= 1, f"expected >=1 empty warning for fully empty video, got {len(empty)}"

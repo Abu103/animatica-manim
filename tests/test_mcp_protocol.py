@@ -1,187 +1,118 @@
-"""Test that animatica mcp implements the real MCP protocol over stdio."""
+"""Test that animatica mcp implements the real MCP protocol over stdio.
+
+Tests use plain asyncio (no pytest_asyncio dependency) so they run under
+CI with just `pip install -e . pytest`. The mcp package (a main dependency)
+provides both the server and client SDK.
+"""
 import asyncio
 import json
 import sys
 
 import pytest
 
-
-async def _mcp_request(proc, method, params=None, request_id=1):
-    """Send one MCP JSON-RPC request and read the response."""
-    msg = {"jsonrpc": "2.0", "id": request_id, "method": method}
-    if params is not None:
-        msg["params"] = params
-    line = json.dumps(msg) + "\n"
-    proc.stdin.write(line.encode())
-    await proc.stdin.drain()
-    resp_line = await proc.stdout.readline()
-    return json.loads(resp_line.decode())
+from mcp.client.stdio import stdio_client
+from mcp import ClientSession, StdioServerParameters
 
 
-async def _mcp_call(proc, name, arguments, request_id):
-    """Send a tools/call request and return the parsed structured_content."""
-    resp = await _mcp_request(proc, "tools/call", {
-        "name": name,
-        "arguments": arguments,
-    }, request_id=request_id)
-    assert "result" in resp, f"{name} call failed: {resp}"
-    content = resp["result"]["content"][0]["text"]
-    return json.loads(content)
-
-
-@pytest.mark.asyncio
-async def test_mcp_initialize():
-    proc = await asyncio.create_subprocess_exec(
-        sys.executable, "-m", "animatica", "mcp",
-        stdin=asyncio.subprocess.PIPE,
-        stdout=asyncio.subprocess.PIPE,
-        stderr=asyncio.subprocess.PIPE,
+async def _run_mcp_session(test_fn):
+    """Start the animatica mcp server, run `test_fn(session)`, then shut down."""
+    params = StdioServerParameters(
+        command=sys.executable,
+        args=["-m", "animatica", "mcp"],
     )
-    try:
-        resp = await _mcp_request(proc, "initialize", {
-            "protocolVersion": "2024-11-05",
-            "capabilities": {},
-            "clientInfo": {"name": "test-client", "version": "1.0"},
-        }, request_id=1)
-        assert resp.get("jsonrpc") == "2.0"
-        assert resp.get("id") == 1
-        assert "result" in resp
-        assert resp["result"]["serverInfo"]["name"] == "animatica"
-    finally:
-        proc.stdin.close()
-        await proc.wait()
+    async with stdio_client(params) as (read, write):
+        async with ClientSession(read, write) as session:
+            await session.initialize()
+            await test_fn(session)
 
 
-@pytest.mark.asyncio
-async def test_mcp_tools_list():
-    proc = await asyncio.create_subprocess_exec(
-        sys.executable, "-m", "animatica", "mcp",
-        stdin=asyncio.subprocess.PIPE,
-        stdout=asyncio.subprocess.PIPE,
-        stderr=asyncio.subprocess.PIPE,
-    )
-    try:
-        await _mcp_request(proc, "initialize", {
-            "protocolVersion": "2024-11-05",
-            "capabilities": {},
-            "clientInfo": {"name": "test-client", "version": "1.0"},
-        }, request_id=1)
-        resp = await _mcp_request(proc, "tools/list", request_id=2)
-        assert "result" in resp
-        tools = resp["result"].get("tools", [])
-        tool_names = {t["name"] for t in tools}
+# ---------------------------------------------------------------------------
+# MCP SDK client tests (official SDK, stdio transport)
+# ---------------------------------------------------------------------------
+
+def test_mcp_initialize_and_tools_list():
+    async def check(session):
+        tools = await session.list_tools()
+        tool_names = {t.name for t in tools.tools}
         expected = {"list_components", "component_schema", "validate_storyboard",
                     "render_storyboard", "preview_frame", "lint_video"}
         assert expected <= tool_names, f"missing tools: {expected - tool_names}"
-    finally:
-        proc.stdin.close()
-        await proc.wait()
+
+    asyncio.run(_run_mcp_session(check))
 
 
-@pytest.mark.asyncio
-async def test_mcp_call_list_components():
-    proc = await asyncio.create_subprocess_exec(
-        sys.executable, "-m", "animatica", "mcp",
-        stdin=asyncio.subprocess.PIPE,
-        stdout=asyncio.subprocess.PIPE,
-        stderr=asyncio.subprocess.PIPE,
-    )
-    try:
-        await _mcp_request(proc, "initialize", {
-            "protocolVersion": "2024-11-05",
-            "capabilities": {},
-            "clientInfo": {"name": "test-client", "version": "1.0"},
-        }, request_id=1)
-        data = await _mcp_call(proc, "list_components", {}, 2)
-        assert "components" in data
-        assert "bounce_sequence" in data["components"]
-    finally:
-        proc.stdin.close()
-        await proc.wait()
+def test_mcp_call_list_components():
+    async def check(session):
+        result = await session.call_tool("list_components", {})
+        assert result.structured_content is not None
+        assert "components" in result.structured_content
+        assert "bounce_sequence" in result.structured_content["components"]
+
+    asyncio.run(_run_mcp_session(check))
 
 
-@pytest.mark.asyncio
-async def test_mcp_call_component_schema():
-    proc = await asyncio.create_subprocess_exec(
-        sys.executable, "-m", "animatica", "mcp",
-        stdin=asyncio.subprocess.PIPE,
-        stdout=asyncio.subprocess.PIPE,
-        stderr=asyncio.subprocess.PIPE,
-    )
-    try:
-        await _mcp_request(proc, "initialize", {
-            "protocolVersion": "2024-11-05",
-            "capabilities": {},
-            "clientInfo": {"name": "test-client", "version": "1.0"},
-        }, request_id=1)
-        data = await _mcp_call(proc, "component_schema", {"name": "bounce_sequence"}, 2)
-        assert "schema" in data
-        assert data["schema"].get("properties", {}).get("values") is not None
-    finally:
-        proc.stdin.close()
-        await proc.wait()
+def test_mcp_call_component_schema():
+    async def check(session):
+        result = await session.call_tool("component_schema",
+                                         {"name": "bounce_sequence"})
+        assert result.structured_content is not None
+        assert "schema" in result.structured_content
+        assert result.structured_content["schema"].get("properties", {}).get(
+            "values") is not None
+
+    asyncio.run(_run_mcp_session(check))
 
 
-@pytest.mark.asyncio
-async def test_mcp_call_validate_storyboard_valid():
-    proc = await asyncio.create_subprocess_exec(
-        sys.executable, "-m", "animatica", "mcp",
-        stdin=asyncio.subprocess.PIPE,
-        stdout=asyncio.subprocess.PIPE,
-        stderr=asyncio.subprocess.PIPE,
-    )
-    try:
-        await _mcp_request(proc, "initialize", {
-            "protocolVersion": "2024-11-05",
-            "capabilities": {},
-            "clientInfo": {"name": "test-client", "version": "1.0"},
-        }, request_id=1)
-        data = await _mcp_call(proc, "validate_storyboard",
-                               {"path": "docs/gallery/howto.json"}, 2)
-        assert data.get("valid") is True
-    finally:
-        proc.stdin.close()
-        await proc.wait()
+def test_mcp_call_validate_storyboard_valid():
+    async def check(session):
+        result = await session.call_tool("validate_storyboard",
+                                         {"path": "docs/gallery/howto.json"})
+        assert result.structured_content is not None
+        assert result.structured_content.get("valid") is True
+
+    asyncio.run(_run_mcp_session(check))
 
 
-@pytest.mark.asyncio
-async def test_mcp_call_validate_storyboard_invalid_path():
-    proc = await asyncio.create_subprocess_exec(
-        sys.executable, "-m", "animatica", "mcp",
-        stdin=asyncio.subprocess.PIPE,
-        stdout=asyncio.subprocess.PIPE,
-        stderr=asyncio.subprocess.PIPE,
-    )
-    try:
-        await _mcp_request(proc, "initialize", {
-            "protocolVersion": "2024-11-05",
-            "capabilities": {},
-            "clientInfo": {"name": "test-client", "version": "1.0"},
-        }, request_id=1)
-        data = await _mcp_call(proc, "validate_storyboard",
-                               {"path": "/nonexistent/foo.json"}, 2)
-        assert "error" in data
-    finally:
-        proc.stdin.close()
-        await proc.wait()
+def test_mcp_call_validate_storyboard_invalid_path():
+    async def check(session):
+        result = await session.call_tool("validate_storyboard",
+                                         {"path": "/nonexistent/foo.json"})
+        assert result.structured_content is not None
+        assert "error" in result.structured_content
+
+    asyncio.run(_run_mcp_session(check))
 
 
-@pytest.mark.asyncio
-async def test_mcp_call_unknown_tool():
-    proc = await asyncio.create_subprocess_exec(
-        sys.executable, "-m", "animatica", "mcp",
-        stdin=asyncio.subprocess.PIPE,
-        stdout=asyncio.subprocess.PIPE,
-        stderr=asyncio.subprocess.PIPE,
-    )
-    try:
-        await _mcp_request(proc, "initialize", {
-            "protocolVersion": "2024-11-05",
-            "capabilities": {},
-            "clientInfo": {"name": "test-client", "version": "1.0"},
-        }, request_id=1)
-        data = await _mcp_call(proc, "nonexistent_tool", {}, 2)
-        assert "error" in data
-    finally:
-        proc.stdin.close()
-        await proc.wait()
+def test_mcp_call_unknown_tool():
+    async def check(session):
+        result = await session.call_tool("nonexistent_tool", {})
+        assert result.structured_content is not None
+        assert "error" in result.structured_content
+
+    asyncio.run(_run_mcp_session(check))
+
+
+def test_mcp_sdk_client_full_flow():
+    """End-to-end MCP SDK client: initialize, list tools, call multiple tools."""
+    async def check(session):
+        # List tools
+        tools = await session.list_tools()
+        tool_names = {t.name for t in tools.tools}
+        assert "list_components" in tool_names
+        assert "validate_storyboard" in tool_names
+
+        # Call list_components
+        result = await session.call_tool("list_components", {})
+        assert "components" in result.structured_content
+
+        # Call validate_storyboard (valid storyboard)
+        result = await session.call_tool("validate_storyboard",
+                                         {"path": "docs/gallery/howto.json"})
+        assert result.structured_content.get("valid") is True
+
+        # Call validate_storyboard (invalid path)
+        result = await session.call_tool("validate_storyboard",
+                                         {"path": "/nonexistent/foo.json"})
+        assert "error" in result.structured_content
+
+    asyncio.run(_run_mcp_session(check))
