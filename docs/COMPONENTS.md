@@ -22,6 +22,7 @@ sync with the code: the test suite compares this document against
 | `formula_derivation` | `title`, `steps[]` (1-6), optional `highlight[]` | 2.0 s + 1.0 s per step |
 | `parametric_graph` | `title`, `x_expr`, `y_expr`, `t_range[]`, optional `label` | 4.0 s fixed |
 | `code_walkthrough` | `title`, `code`, `language`, optional `lines[]`, `variables{}` | 3.0 s + 1.0 s per line |
+| `flow` | `title`, `nodes[]` (1-10), `edges[][]` ([from,to] pairs) | 2.0 s + 0.6 s per edge |
 | `table` | `title`, `columns[]` (1-6), `rows[][]` (1-6 rows; every row needs exactly `len(columns)` cells) | 2.0 s + 0.5 s per row |
 | `recursion_tree` | `title`, `fn` (only `"fib"`), `n` (2..6) | 2.0 s + 0.8 s per level of `n` (tree capped at 31 nodes) |
 | `array_viz` | `title`, `values[]` (2-12), `steps[]` (<=12); a step carries `highlight[]`, `swap` (exactly 2 indices), and/or binary-search `low`/`high`/`mid` — all indices in `[0, len(values)-1]`, `low` <= `high`, `mid` inside that range | 2.0 s + 0.8 s per step |
@@ -50,6 +51,7 @@ Registered component names:
 - formula_derivation
 - parametric_graph
 - code_walkthrough
+- flow
 
 ## Stability
 

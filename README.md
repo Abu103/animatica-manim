@@ -60,13 +60,17 @@ Hand-written example storyboards (not model output), in `docs/gallery/`:
 - `howto.json` — title card and a four-step list for boiling an egg
 - `matrix.json` — a 2x2 matrix with diagonal cells highlighted
 - `stat_callout.json` — a large percentage with label and delta
+- `formula_derivation.json` — step-by-step quadratic formula derivation
+- `parametric_graph.json` — a parametric circle x=cos(t), y=sin(t)
+- `code_walkthrough.json` — recursive Fibonacci function with variable panel
+- `flow.json` — water cycle process flow with 4 nodes
 
 Re-render any one (no AI key needed):
 ```
 animatica make --from docs/gallery/fibonacci.json -o out/
 ```
 
-All six render successfully with LaTeX installed (equations and graph axis numbers use real LaTeX; without LaTeX they degrade gracefully to plain text). Burned-in captions appear at the bottom of each video and may trigger `safe_area` frame-lint warnings — this is expected caption placement, not clipping.
+All ten render successfully with LaTeX installed (equations and graph axis numbers use real LaTeX; without LaTeX they degrade gracefully to plain text). Burned-in captions appear at the bottom of each video and may trigger `safe_area` frame-lint warnings — this is expected caption placement, not clipping.
 
 The rendered MP4s are not committed (they're large binary artifacts). To regenerate them all:
 ```
