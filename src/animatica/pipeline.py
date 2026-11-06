@@ -10,7 +10,7 @@ from animatica.ai.repair import generate_storyboard, generate_storyboard_two_sta
 from animatica.backends.base import RenderBackend, RenderOptions
 from animatica.backends.manim_backend import ManimBackend
 from animatica.backends import default_backends
-from animatica.components.registry import default_registry
+from animatica.components.registry import ComponentRegistry, default_registry
 from animatica.config import load_config
 from animatica.encode.probe import pick_encoder, probe_encoders
 from animatica.encode.transcode import transcode
@@ -19,6 +19,10 @@ from animatica.report import write_report
 from animatica.storyboard.cache import StoryboardCache
 from animatica.storyboard.lint import lint_storyboard
 from animatica.storyboard.models import Storyboard, dump_storyboard, load_storyboard
+
+# Frame lint is a non-fatal post-render quality check. Imported here so the
+# pipeline can wire it into ``make_video`` without the CLI knowing about PyAV.
+from animatica.frame_lint import FrameLintConfig, lint_video, lint_result_to_warnings  # noqa: PLC0415
 
 
 @dataclass
@@ -91,6 +95,7 @@ def make_video(
     captions: bool = True,
     two_stage: bool = False,
     jobs: int = 1,
+    frame_lint: bool = False,
 ) -> MakeResult:
     render_backend = resolve_backend(backend)  # fail fast: before any file write or LLM call
     out_dir = Path(out_dir)
@@ -145,6 +150,8 @@ def make_video(
     if errors:
         raise ValueError("invalid storyboard: " + "; ".join(errors[:6]))
 
+    _check_capabilities(sb, render_backend)
+
     dump_storyboard(sb, out_dir / "storyboard.json")
 
     # ---- render ----
@@ -166,6 +173,16 @@ def make_video(
         video = transcode_result.path
         if transcode_result.warning:
             warnings.append(f"transcode: {transcode_result.warning}")
+
+    # ---- frame lint (non-fatal post-render quality check) ----
+    if frame_lint:
+        lint_config = FrameLintConfig(enabled=True)
+        lint_result = lint_video(
+            str(video),
+            render_result.durations,
+            lint_config,
+        )
+        warnings.extend(lint_result_to_warnings(lint_result))
 
     # ---- captions + report (single writer) ----
     _write_captions(sb, registry, out_dir / "captions.vtt")
@@ -192,4 +209,39 @@ def typer_print_provider(provider_used: str, encoder_used: str) -> None:
 
     typer.echo(f"Provider: {provider_used}")
     typer.echo(f"Encoder: {encoder_used}")
+
+
+def _check_capabilities(sb: Storyboard, backend: RenderBackend, registry: ComponentRegistry | None = None) -> None:
+    """Check that every component's required capabilities are supported by the backend.
+
+    Raises ``ValueError`` with an actionable message when a component requires
+    a capability the backend does not support. Checked before any rendering
+    work begins so failures are fast and clear.
+
+    Fail-closed: a backend that declares no capabilities supports nothing.
+    Components with no required capabilities are compatible with any backend.
+    """
+    cap_fn = getattr(backend, "capabilities", None)
+    supported = set(cap_fn()) if callable(cap_fn) else set(getattr(backend, "supported_capabilities", []))
+    missing: list[str] = []
+    for si, scene in enumerate(sb.scenes, 1):
+        for bi, beat in enumerate(scene.beats, 1):
+            # Look up component class from registry to get required_capabilities
+            reg = registry or default_registry()
+            try:
+                comp_cls = reg.get(beat.component).__class__
+            except KeyError:
+                continue  # unknown component: validation already caught this
+            for cap in getattr(comp_cls, "required_capabilities", []):
+                if cap not in supported:
+                    missing.append(
+                        f"scene {si}, beat {bi}: component '{beat.component}' requires "
+                        f"capability '{cap}' but backend '{backend.name}' only supports: "
+                        f"{', '.join(sorted(supported)) or '(none)'}"
+                    )
+    if missing:
+        raise ValueError(
+            "Capability incompatibility: storyboard requires capabilities the backend does not support.\n"
+            + "\n".join(f"  - {m}" for m in missing)
+        )
 

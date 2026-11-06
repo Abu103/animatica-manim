@@ -69,6 +69,8 @@ def nice_step(span: float, target: int = 6) -> float:
 
 class Graph(Component):
     name: ClassVar[str] = "graph"
+    # LaTeX is not a hard requirement: axis-number rendering degrades gracefully
+    # when LaTeX is unavailable. required_capabilities stays empty.
 
     class Params(BaseModel):
         fn: str = Field(min_length=1, max_length=MAX_TEXT)

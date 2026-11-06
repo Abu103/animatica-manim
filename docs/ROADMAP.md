@@ -26,7 +26,7 @@ Acceptance: re-run the Fibonacci 0..15 prompt on nemotron, one scene, 16 terms, 
 
 ### P1 Make weak models reliable
 1. **Two-stage generation**: stage 1 outline (scene list: component + one-line intent, tiny JSON); stage 2 fill params per scene, one call each, each validated and retried alone. Short outputs = fewer failures, cheap retries, partial caching.
-2. **Eval harness** `animatica eval --models a,b,c`: 20 reference prompts, deterministic scores (valid on 1st try, warnings, duration vs captions, lint score, frame lint). Gives a table "which free model is good enough". This is the thing that tells you if the weak-model strategy works.
+2. **Eval harness** `animatica eval --provider X`: reference prompts, deterministic scores (valid on 1st try, retries, lint warnings, duration). Multi-provider `--models` deferred to Phase 2.1.
 3. **Frame lint** after render: extract keyframes, check pixels (empty frame, content outside safe area, text too small, low contrast). Deterministic first. Optional VLM critique with the same model if vision works.
 4. **Error messages written for LLMs**: every validation error says field, bad value, allowed values, and a fixed example. Retries get much better.
 

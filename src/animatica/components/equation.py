@@ -13,6 +13,8 @@ from animatica.storyboard.safety import check_latex, latex_braces_balanced
 
 class Equation(Component):
     name: ClassVar[str] = "equation"
+    # LaTeX is not a hard requirement: _play_without_latex degrades gracefully
+    # when LaTeX is unavailable. required_capabilities stays empty.
 
     class Params(BaseModel):
         mode: Literal["reveal", "transform"] = "reveal"

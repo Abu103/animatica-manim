@@ -4,8 +4,10 @@ from __future__ import annotations
 import glob
 import json
 import os
+import shutil
 import subprocess
 import sys
+from typing import ClassVar
 from pathlib import Path
 
 from animatica.backends.base import RenderBackend, RenderOptions, RenderResult
@@ -28,6 +30,20 @@ def _find_mp4(media_dir: Path, prefix: str) -> Path:
 
 class ManimBackend:
     name = "manim"
+    supported_capabilities: ClassVar[list[str]] = ["latex", "ffmpeg", "manim"]
+
+    def capabilities(self) -> list[str]:
+        """Return capabilities actually available at runtime.
+
+        ``latex`` and ``dvisvgm`` depend on system binaries; probe them
+        dynamically so the capability report reflects reality, not aspiration.
+        """
+        caps = list(self.supported_capabilities)
+        if not shutil.which("latex"):
+            caps = [c for c in caps if c != "latex"]
+        if not shutil.which("dvisvgm"):
+            caps = [c for c in caps if c != "dvisvgm"]
+        return caps
 
     @property
     def version(self) -> str:

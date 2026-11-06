@@ -82,11 +82,74 @@ def _warn_phantom_objects(scenes: list[Scene], notes: list[str]) -> None:
                 notes.append(f"lint: scene {si} caption mentions a ball/hop but {b.component} draws none")
 
 
+# Preferred narrative arc: title -> definition -> demo -> summary.
+_STAGE = {
+    "title_card": 0,
+    "equation": 1,
+    "steps_list": 1,
+    "diagram": 1,
+    "code_highlight": 1,
+    "bounce_sequence": 2,
+    "graph": 2,
+    "bar_chart": 2,
+    "array_viz": 2,
+    "recursion_tree": 2,
+    "number_line": 2,
+    "table": 2,
+    "shape_morph": 2,
+    # compare is a two-column demo/comparison, not a summary: keep it in the
+    # demo stage so it is never mistaken for the closing summary.
+    "compare": 2,
+}
+
+
+def _scene_component_order(scenes: list[Scene], notes: list[str]) -> None:
+    """Warn when scenes break the title -> definition -> demo -> summary arc.
+
+    Weak models ignore the prompt's ordering rule, so the lint pass notes it.
+    This only reports (never reorders): reordering is a semantic choice the
+    user makes in the storyboard JSON.
+
+    Single-scene storyboards have no ordering to violate, so they are left
+    alone: P0 acceptance is "one scene, ... no warnings", and a lone demo
+    scene must not be told to open with a title_card.
+
+    Components that are not in the narrative arc (unknown or future
+    components) are treated as neutral: they neither trigger nor suppress a
+    regression warning, since we cannot know where they belong.
+    """
+    if len(scenes) < 2:
+        return
+    first_comp = scenes[0].beats[0].component if scenes[0].beats else ""
+    if first_comp != "title_card":
+        notes.append(
+            "lint: storyboards should open with a title_card; "
+            "the first scene is not one"
+        )
+    prev: int | None = None
+    last = len(scenes) - 1
+    for si, scene in enumerate(scenes, 1):
+        comp = scene.beats[0].component if scene.beats else ""
+        if si - 1 == last and comp == "title_card":
+            stage = 3  # a closing title is the summary
+        else:
+            stage = _STAGE.get(comp)
+        if stage is None:
+            continue  # unclassified: no opinion, skip regression tracking
+        if prev is not None and stage < prev:
+            notes.append(
+                f"lint: scene {si} ({comp}) moves backward in the narrative; "
+                "prefer title -> definition -> demo -> summary"
+            )
+        prev = stage if prev is None else max(prev, stage)
+
+
 def lint_storyboard(sb: Storyboard) -> tuple[Storyboard, list[str]]:
     notes: list[str] = []
     scenes = _merge_sequences(list(sb.scenes), notes)
     scenes = _drop_redundant_charts(scenes, notes)
     _warn_phantom_objects(scenes, notes)
+    _scene_component_order(scenes, notes)
     if scenes == list(sb.scenes):
         return sb, notes
     return sb.model_copy(update={"scenes": scenes}), notes

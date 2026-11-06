@@ -15,6 +15,10 @@ dependencies = [
   "platformdirs>=4",
   "imageio-ffmpeg>=0.4",
   "tomli>=2; python_version < '3.11'",
+  # Direct imports in animatica.frame_lint (transitive via manim, declared
+  # explicitly for clarity):
+  "av>=10.0.0",
+  "numpy>=1.24",
 ]
 
 [project.optional-dependencies]

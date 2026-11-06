@@ -1,4 +1,5 @@
 import pytest
+from typing import ClassVar
 
 from animatica.pipeline import cache_variant, make_video, resolve_backend
 from types import SimpleNamespace
@@ -65,6 +66,10 @@ def test_make_video_uses_injected_backend_not_manim(monkeypatch, tmp_path):
     class FakeBackend:
         name = "fake"
         version = "9.9"
+        supported_capabilities: ClassVar[list[str]] = ["latex", "ffmpeg", "manim"]
+
+        def capabilities(self) -> list[str]:
+            return list(self.supported_capabilities)
 
         def render(self, sb, out_dir, opts):
             out_dir = pathlib.Path(out_dir)

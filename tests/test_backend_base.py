@@ -1,5 +1,6 @@
 import json
 from pathlib import Path
+from typing import ClassVar
 
 from animatica.backends.base import RenderBackend, RenderOptions, RenderResult
 from animatica.report import StageTimer, write_report
@@ -28,6 +29,10 @@ def test_write_report_produces_stages_and_warnings(tmp_path):
 def test_fake_backend_satisfies_protocol():
     class Fake:
         name = "fake"
+        supported_capabilities: ClassVar[list[str]] = ["latex", "ffmpeg", "manim"]
+
+        def capabilities(self) -> list[str]:
+            return list(self.supported_capabilities)
 
         def render(self, sb, out_dir, opts):
             return RenderResult(

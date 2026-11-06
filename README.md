@@ -2,8 +2,6 @@
 
 Describe something, get an explainer video. Built on Manim; works with free AI models.
 
-![demo](docs/gallery/fibonacci.gif)
-
 ## Install (Windows / Mac / Linux)
 
 One command sets everything up with full quality (real LaTeX + real ffmpeg). Expect a few minutes the first time (downloading LaTeX is the slow part); later runs are quick. Supported and CI-tested: **Linux** and **Windows**; macOS is best-effort.
@@ -54,7 +52,7 @@ animatica make "explain the fibonacci series by making a ball bounce on terms 0 
 Free options: OpenRouter, Groq, NVIDIA build.nvidia.com, or Ollama locally (no key). `--provider X --model <id>` picks a model.
 
 ## Gallery
-Hand-written example storyboards (not model output), in `docs/gallery/`: `fibonacci`, `pythagoras`, `sine`, `howto` (.json source + .mp4).
+Hand-written example storyboards (not model output), in `docs/gallery/`: `fibonacci`, `pythagoras`, `sine`, `howto` (.json source).
 Re-render one: `animatica make --from docs/gallery/fibonacci.json -o out/`
 
 ## Useful flags

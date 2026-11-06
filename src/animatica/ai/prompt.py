@@ -61,12 +61,20 @@ def build_prompt(request: str, registry: ComponentRegistry, errors: list[str] | 
         '- "version" must be the string "1". Do not add keys other than version, title, scenes, '
         "and (per beat) component, params, caption.",
         "- Use ONLY the components below, with exactly the params their schema allows.",
-        "- Start with a title_card and prefer 3-6 scenes that build the idea step by step.",
+        "- A single scene is acceptable when one component can explain the topic adequately. "
+        "Prefer a single scene when one component can fully explain the topic. "
+        "Only add more scenes when each scene provides information that cannot be conveyed in the first scene. "
+        "For example, a single bounce_sequence showing terms 0-15 fully explains 'fibonacci 0 to 15' "
+        "without needing separate title, equation, or summary scenes.",
+        "- A title_card is optional; use it when an opening title helps, but do not require it.",
         "- Put a one-sentence plain-language caption on each beat. Captions are shown on screen, so they must "
         "describe only what that beat's component actually draws; never mention a ball, arrows or any object "
         "unless the component shows it (only bounce_sequence has a ball).",
         "- Do not use steps_list or diagram just to repeat what another scene already shows; each scene should add something new.",
-        "- Scene order: title_card first, then the definition/equation, then the demo (bounce_sequence, graph, ...), then at most one short summary. Never end with a chart that repeats the demo.",
+        "- Do not split a continuous demonstration (such as one bounce_sequence) across multiple scenes; "
+        "keep one sequence in a single scene.",
+        "- Scene order: optional title_card, then definition/equation, then the demo, then at most one short summary. "
+        "Never end with a chart that repeats the demo.",
         "- For equations use plain LaTeX that compiles on its own (no \\usepackage, no $ signs, no text-mode commands).",
         "",
         "Components:",

@@ -126,7 +126,7 @@ Animatica matches your prompt to templates when possible. Good prompts:
 Avoid vague prompts like "make a video about science" — they may not match a
 template and will fall back to the (optional) AI provider.
 
-Run `animatica templates` to list the offline templates and their example prompts.
+Run `animatica list-components` to list the registered components available to templates.
 
 ## Getting a free API key
 
