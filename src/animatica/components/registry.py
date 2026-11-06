@@ -80,7 +80,9 @@ class ComponentRegistry:
 
 def _builtins() -> list[type[Component]]:
     from animatica.components.compare import Compare
+    from animatica.components.formula_derivation import FormulaDerivation
     from animatica.components.matrix import Matrix
+    from animatica.components.parametric_graph import ParametricGraph
     from animatica.components.stat_callout import StatCallout
     from animatica.components.timeline import Timeline
     from animatica.components.array_viz import ArrayViz
@@ -105,6 +107,8 @@ def _builtins() -> list[type[Component]]:
         NumberLine,
         Matrix,
         StatCallout,
+        FormulaDerivation,
+        ParametricGraph,
         TitleCard,
         Equation,
         StepsList,
