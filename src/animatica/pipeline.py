@@ -197,6 +197,7 @@ def make_video(
         render_result.stage_times,
         warnings,
         backend={"name": render_backend.name, "version": getattr(render_backend, "version", "unknown")},
+        scene_durations=render_result.durations,
     )
 
     typer_print_provider(provider_used, encoder_used)
@@ -234,6 +235,10 @@ def preview_frame(
     (seconds within the scene) is translated to the video's absolute time.
     Returns the path to the extracted PNG frame (writes to `out_path` if given,
     otherwise next to the video).
+
+    Raises ValueError for invalid scene_index or t (out of range, negative,
+    non-finite). If scene_durations is empty (old report without scene
+    durations), raises ValueError with an actionable message.
     """
     import av
     import numpy as np
@@ -242,6 +247,32 @@ def preview_frame(
     video_path = Path(video_path)
     if not video_path.is_file():
         raise FileNotFoundError(f"video not found: {video_path}")
+
+    # Validate scene_index and t before touching the video
+    if not isinstance(scene_index, int) or scene_index < 0:
+        raise ValueError(f"scene_index must be a non-negative integer, got {scene_index!r}")
+    if not isinstance(t, (int, float)) or isinstance(t, bool):
+        raise ValueError(f"t must be a number, got {t!r}")
+    if not np.isfinite(float(t)):
+        raise ValueError(f"t must be finite, got {t!r}")
+    if not scene_durations:
+        raise ValueError(
+            f"no scene durations available for {video_path}: report.json has no "
+            f"`scene_durations` field. Re-render the storyboard or specify "
+            f"`scene_durations` as a list of per-scene seconds."
+        )
+    if scene_index >= len(scene_durations):
+        raise ValueError(
+            f"scene_index {scene_index} out of range for {len(scene_durations)} scenes: "
+            f"scene_durations={scene_durations}"
+        )
+    if t < 0:
+        raise ValueError(f"t must be >= 0, got {t!r}")
+    if t > scene_durations[scene_index]:
+        raise ValueError(
+            f"t={t} is beyond scene {scene_index} duration "
+            f"{scene_durations[scene_index]}s"
+        )
 
     # Cumulative offsets: scene 0 starts at 0, scene 1 at sum(scene 0), etc.
     offset = sum(scene_durations[:scene_index])
