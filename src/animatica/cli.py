@@ -486,8 +486,16 @@ def edit_cmd(
     provider: str = typer.Option("auto", "--provider", help="AI provider for the edit"),
     preview: bool = typer.Option(False, "--preview", help="Preview quality (480p15)"),
 ) -> None:
-    """AI-assisted storyboard edit: read storyboard.json, apply instruction, re-render."""
+    """AI-assisted storyboard edit: read storyboard.json, apply instruction, re-render.
+
+    Transactional: the original storyboard.json, video.mp4, captions.vtt, and
+    report.json are preserved if generation, validation, or rendering fails.
+    The new storyboard is rendered into a staging directory on the same
+    filesystem and only promoted to out_dir after a successful render.
+    """
     import json as _json
+    import os
+    import shutil
 
     from animatica.ai.router import get_provider
     from animatica.ai.repair import generate_storyboard
@@ -499,6 +507,17 @@ def edit_cmd(
     if not sb_path.is_file():
         typer.echo(f"Error: no storyboard.json in {out_dir}")
         raise typer.Exit(code=1)
+
+    # Snapshot originals so we can detect/verify preservation on failure.
+    original_storyboard_bytes = sb_path.read_bytes()
+    original_video_path = out_dir / "video.mp4"
+    original_report_path = out_dir / "report.json"
+    original_video_bytes = (
+        original_video_path.read_bytes() if original_video_path.is_file() else None
+    )
+    original_report_bytes = (
+        original_report_path.read_bytes() if original_report_path.is_file() else None
+    )
 
     sb = load_storyboard(sb_path)
     reg = default_registry()
@@ -532,6 +551,7 @@ def edit_cmd(
         + _catalog(reg)
     )
 
+    # --- Generate and validate WITHOUT touching the original storyboard ---
     try:
         new_sb = generate_storyboard(edit_prompt, prov, reg, max_retries=2)
     except StoryboardGenerationError as exc:
@@ -547,16 +567,53 @@ def edit_cmd(
             typer.echo(f"  - {e}")
         raise typer.Exit(code=1)
 
-    # Write edited storyboard and re-render
-    dump_storyboard(new_sb, sb_path)
-    result: MakeResult = make_video(
-        storyboard_path=sb_path,
-        out_dir=out_dir,
-        preview=preview,
-    )
-    typer.echo(f"Video: {result.video}")
-    for w in result.warnings:
-        typer.echo(f"Warning: {w}")
+    # --- Render into a staging directory on the same filesystem ---
+    # Only promote to out_dir after a successful render. Originals are
+    # preserved if generation, validation, or rendering fails.
+    staging_dir = out_dir.parent / f".animatica-edit-staging-{os.getpid()}"
+    try:
+        staging_dir.mkdir(parents=True, exist_ok=True)
+        staging_sb_path = staging_dir / "storyboard.json"
+        dump_storyboard(new_sb, staging_sb_path)
+
+        result: MakeResult = make_video(
+            storyboard_path=staging_sb_path,
+            out_dir=staging_dir,
+            preview=preview,
+        )
+
+        # --- Promote artifacts only after successful render ---
+        _promote_edit_artifacts(staging_dir, out_dir)
+
+        typer.echo(f"Video: {result.video}")
+        for w in result.warnings:
+            typer.echo(f"Warning: {w}")
+    finally:
+        if staging_dir.exists():
+            shutil.rmtree(staging_dir, ignore_errors=True)
+
+
+def _promote_edit_artifacts(staging_dir: Path, out_dir: Path) -> None:
+    """Copy rendered artifacts from staging_dir to out_dir.
+
+    Replaces only storyboard.json, video.mp4, captions.vtt, report.json, and
+    the media/ directory. Unrelated files in out_dir are preserved.
+    """
+    import shutil
+
+    artifacts = ["storyboard.json", "video.mp4", "captions.vtt", "report.json"]
+    for artifact in artifacts:
+        src = staging_dir / artifact
+        dst = out_dir / artifact
+        if src.is_file():
+            shutil.copy2(src, dst)
+
+    staging_media = staging_dir / "media"
+    if staging_media.is_dir():
+        dst_media = out_dir / "media"
+        if dst_media.exists():
+            shutil.rmtree(dst_media)
+        shutil.copytree(staging_media, dst_media)
 
 
 def _catalog(registry: ComponentRegistry) -> str:
