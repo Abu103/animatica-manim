@@ -1,0 +1,1 @@
+{"version":"1","title":"Code Walkthrough","scenes":[{"beats":[{"component":"code_walkthrough","params":{"title":"Walk through this function","code":"def fib(n):\n    if n <= 1:\n        return n\n    return fib(n-1) + fib(n-2)","language":"python","lines":[1,2,3,4],"variables":{"n": "5","result": "8"}},"caption":"Step through the recursive Fibonacci function."}]}]}
