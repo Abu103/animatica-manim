@@ -1,15 +1,16 @@
 """Code walkthrough: step through code lines with a variable panel.
 
 Made for prompts like "walk through this python function line by line".
-Shows code with a highlighted current line, plus a panel of variable
-name/value pairs that update as execution progresses.
-Duration: 3.0 s + 1.0 s per line.
+Shows code with line numbers, stepping through selected lines one at a time.
+A static variable panel shows name/value pairs (these do not change during
+the walkthrough; they provide context for the code being shown).
+Duration: 3.0 s + 1.0 s per line stepped through.
 """
 from __future__ import annotations
 
 from typing import ClassVar
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 from animatica.components._draw import Clock, fit, prepare, text_card, warn
 from animatica.components.base import Component
@@ -31,15 +32,25 @@ class CodeWalkthrough(Component):
         )
         variables: dict[str, str] = Field(
             default_factory=dict,
-            description="variable name -> value to show in the panel",
+            description="variable name -> value shown in the static panel",
         )
 
-        @property
-        def line_count(self) -> int:
-            return len(self.code.splitlines())
+        @model_validator(mode="after")
+        def _check(self):
+            code_lines = self.code.splitlines()[:MAX_LINES]
+            n = len(code_lines)
+            for line_num in self.lines:
+                if not (1 <= line_num <= n):
+                    raise ValueError(
+                        f"line {line_num} out of range for code with {n} lines"
+                    )
+            if len(self.lines) > MAX_LINES:
+                raise ValueError(f"at most {MAX_LINES} lines to step through")
+            return self
 
     def duration(self, p: BaseModel) -> float:
-        lines = p.lines or list(range(1, min(p.line_count, MAX_LINES) + 1))  # type: ignore[attr-defined]
+        code_lines = p.code.splitlines()[:MAX_LINES]
+        lines = p.lines or list(range(1, len(code_lines) + 1))
         return 3.0 + 1.0 * len(lines)
 
     def fallback_text(self, p: BaseModel) -> str:
@@ -53,13 +64,13 @@ class CodeWalkthrough(Component):
 
         prepare(scene, colors)
         code_lines = p.code.splitlines()[:MAX_LINES]  # type: ignore[attr-defined]
-        lines_to_show = p.lines or list(range(1, min(len(code_lines), MAX_LINES) + 1))  # type: ignore[attr-defined]
+        lines_to_show = p.lines or list(range(1, len(code_lines) + 1))
         variables = p.variables  # type: ignore[attr-defined]
 
         title = Text(p.title, font_size=40, color=colors.text).to_edge(UP, buff=0.4)
         fit(title)
 
-        # Code lines
+        # Code lines - all start in muted color
         rendered_lines: list = []
         for i, line_text in enumerate(code_lines, 1):
             line = Text(f"{i}: {line_text}", font_size=24, color=colors.muted)
@@ -68,7 +79,7 @@ class CodeWalkthrough(Component):
         code_group = VGroup(*rendered_lines).arrange(DOWN, buff=0.15, aligned_edge=LEFT)
         fit(code_group)
 
-        # Variable panel
+        # Variable panel (static - values do not change during the walkthrough)
         var_entries: list = []
         for var_name, var_value in variables.items():
             entry = Text(f"{var_name} = {var_value}", font_size=24, color=colors.accent)
@@ -84,7 +95,19 @@ class CodeWalkthrough(Component):
 
         clock = Clock(scene, self.duration(p))
         clock.play(FadeIn(title), run_time=0.6)
-        clock.play(FadeIn(code_group), run_time=0.8)
+        clock.play(FadeIn(code_group), run_time=0.6)
         if var_group:
             clock.play(FadeIn(var_group), run_time=0.6)
+
+        # Step through lines: highlight each one in order with hold time
+        n_lines = len(lines_to_show)
+        if n_lines > 0:
+            # Budget: total duration minus title + code + vars fade-in time
+            hold_time = max(0.2, (self.duration(p) - 1.8) / n_lines)
+            for line_num in lines_to_show:
+                line_idx = line_num - 1  # convert to 0-based index
+                line_mob = rendered_lines[line_idx]
+                # Highlight this line by changing its color to accent
+                clock.play(line_mob.animate.set_color(colors.accent), run_time=hold_time)
+
         clock.finish()
