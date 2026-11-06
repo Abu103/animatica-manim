@@ -58,10 +58,11 @@ Hand-written example storyboards (not model output), in `docs/gallery/`:
 - `pythagoras.json` — title card and a two-step equation reveal for the Pythagorean theorem
 - `sine.json` — title card and a graph of `sin(x)` over one period
 - `howto.json` — title card and a four-step list for boiling an egg
+- `matrix.json` — a 2x2 matrix with diagonal cells highlighted
 
 Re-render one: `animatica make --from docs/gallery/fibonacci.json -o out/`
 
-All four render successfully with LaTeX installed (equations and graph axis numbers use real LaTeX; without LaTeX they degrade gracefully to plain text). Burned-in captions appear at the bottom of each video and may trigger `safe_area` frame-lint warnings — this is expected caption placement, not clipping.
+All five render successfully with LaTeX installed (equations and graph axis numbers use real LaTeX; without LaTeX they degrade gracefully to plain text). Burned-in captions appear at the bottom of each video and may trigger `safe_area` frame-lint warnings — this is expected caption placement, not clipping.
 
 ## Useful flags
 `--quality preview` (fast), `--from storyboard.json` (re-render without calling a model), `--no-captions`, `--debug`.
