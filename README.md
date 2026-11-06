@@ -52,8 +52,16 @@ animatica make "explain the fibonacci series by making a ball bounce on terms 0 
 Free options: OpenRouter, Groq, NVIDIA build.nvidia.com, or Ollama locally (no key). `--provider X --model <id>` picks a model.
 
 ## Gallery
-Hand-written example storyboards (not model output), in `docs/gallery/`: `fibonacci`, `pythagoras`, `sine`, `howto` (.json source).
+
+Hand-written example storyboards (not model output), in `docs/gallery/`:
+- `fibonacci.json` — title card, equation, and a bouncing-ball sequence through Fibonacci terms 0–15
+- `pythagoras.json` — title card and a two-step equation reveal for the Pythagorean theorem
+- `sine.json` — title card and a graph of `sin(x)` over one period
+- `howto.json` — title card and a four-step list for boiling an egg
+
 Re-render one: `animatica make --from docs/gallery/fibonacci.json -o out/`
+
+All four render successfully with LaTeX installed (equations and graph axis numbers use real LaTeX; without LaTeX they degrade gracefully to plain text). Burned-in captions appear at the bottom of each video and may trigger `safe_area` frame-lint warnings — this is expected caption placement, not clipping.
 
 ## Useful flags
 `--quality preview` (fast), `--from storyboard.json` (re-render without calling a model), `--no-captions`, `--debug`.

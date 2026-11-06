@@ -51,3 +51,34 @@ def test_eval_summary_table():
     results = run_eval(["p1", "p2"], GoodProvider(), default_registry())
     text = run_eval(["p1"], GoodProvider(), default_registry(), as_table=True)
     assert "prompt" in text and "valid" in text
+
+
+def test_eval_result_has_provider():
+    results = run_eval(["p1"], GoodProvider(), default_registry())
+    assert isinstance(results, list)
+    assert results[0].provider == "good"
+
+
+def test_eval_multi_runs_all_providers():
+    from animatica.eval import EvalSummary, run_eval_multi
+    summary = run_eval_multi(["p1"], [GoodProvider(), FlakyProvider()], default_registry())
+    assert isinstance(summary, EvalSummary)
+    assert len(summary.results) == 2
+    good = [r for r in summary.results if r.provider == "good"][0]
+    flaky = [r for r in summary.results if r.provider == "flaky"][0]
+    assert good.valid_first_try is True
+    assert flaky.valid_first_try is False
+
+
+def test_eval_multi_format_table():
+    from animatica.eval import EvalSummary, format_multi_table, run_eval_multi
+    summary = run_eval_multi(["p1"], [GoodProvider(), FlakyProvider()], default_registry())
+    text = format_multi_table(summary)
+    assert "good" in text and "flaky" in text and "VALID/Total" in text
+
+
+def test_eval_multi_empty_providers():
+    from animatica.eval import EvalSummary, run_eval_multi
+    summary = run_eval_multi([], [], default_registry())
+    assert isinstance(summary, EvalSummary)
+    assert summary.total == 0

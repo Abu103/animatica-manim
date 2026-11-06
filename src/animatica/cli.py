@@ -147,7 +147,8 @@ def new_component(
 
 @app.command("eval")
 def eval_cmd(
-    provider: str = typer.Option("auto", "--provider", help="AI provider to evaluate"),
+    provider: str = typer.Option("auto", "--provider", help="AI provider to evaluate (single-provider mode)"),
+    models: str = typer.Option(None, "--models", help="Comma-separated providers for multi-provider comparison (Phase 2.1)"),
     prompts_file: Path = typer.Option(Path("tests/reference_prompts.txt"), "--prompts", help="One prompt per line"),
     max_retries: int = typer.Option(2, "--max-retries"),
 ) -> None:
@@ -155,14 +156,31 @@ def eval_cmd(
     from animatica.ai.router import get_provider
     from animatica.components.registry import default_registry
     from animatica.config import load_config
-    from animatica.eval import run_eval
+    from animatica.eval import format_multi_table, format_table, run_eval, run_eval_multi
 
     prompts = [l.strip() for l in prompts_file.read_text(encoding="utf-8").splitlines() if l.strip() and not l.startswith("#")]
-    prov = get_provider(provider, load_config())
-    if prov is None:
-        typer.echo("Error: no AI provider available; run 'animatica setup' or pass --provider")
-        raise typer.Exit(code=1)
-    typer.echo(run_eval(prompts, prov, default_registry(), max_retries=max_retries, as_table=True))
+    registry = default_registry()
+    cfg = load_config()
+
+    if models:
+        # Phase 2.1: multi-provider comparison
+        model_list = [m.strip() for m in models.split(",") if m.strip()]
+        providers = []
+        for m in model_list:
+            prov = get_provider(m, cfg)
+            if prov is None:
+                typer.echo(f"Error: no AI provider available for {m!r}; run 'animatica setup' or check the provider name")
+                raise typer.Exit(code=1)
+            providers.append(prov)
+        summary = run_eval_multi(prompts, providers, registry, max_retries=max_retries)
+        typer.echo(format_multi_table(summary))
+    else:
+        # P1.2: single-provider eval
+        prov = get_provider(provider, cfg)
+        if prov is None:
+            typer.echo("Error: no AI provider available; run 'animatica setup' or pass --provider")
+            raise typer.Exit(code=1)
+        typer.echo(run_eval(prompts, prov, registry, max_retries=max_retries, as_table=True))
 
 
 @app.command("list-components")
