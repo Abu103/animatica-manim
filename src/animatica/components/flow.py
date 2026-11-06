@@ -39,6 +39,10 @@ class Flow(Component):
                 frm, to = edge
                 if not (0 <= frm < n and 0 <= to < n):
                     raise ValueError(f"edge {edge} node index out of range for {n} nodes")
+                if frm == to:
+                    raise ValueError(
+                        f"edge {edge} is a self-loop; self-loops are not supported"
+                    )
             if len(self.edges) > MAX_EDGES:
                 raise ValueError(f"at most {MAX_EDGES} edges")
             return self
@@ -48,7 +52,7 @@ class Flow(Component):
 
     def fallback_text(self, p: BaseModel) -> str:
         node_list = " -> ".join(p.nodes)  # type: ignore[attr-defined]
-        return f"{p.title}\n{node_list}"
+        return f"{p.title}\\n{node_list}"
 
     def play(self, scene, p, colors) -> None:
         from manim import Arrow, Circle, DOWN, FadeIn, Text, UP, VGroup
@@ -61,7 +65,7 @@ class Flow(Component):
         title = Text(p.title, font_size=40, color=colors.text).to_edge(UP, buff=0.4)
         fit(title)
 
-        # Vertical layout for nodes
+        # --- Create nodes and lay them out vertically ---
         node_mobs: list = []
         spacing = 1.4
         total_height = (n - 1) * spacing
@@ -77,7 +81,11 @@ class Flow(Component):
             group.move_to([0, start_y - i * spacing, 0])
             node_mobs.append(group)
 
-        # Edges as arrows between nodes
+        # Group all nodes and fit as a unit so their final positions are stable
+        all_nodes = VGroup(*node_mobs)
+        fit(all_nodes)
+
+        # --- Create arrows from final node positions (after fit) ---
         arrows: list = []
         for frm, to in edges:
             start = node_mobs[frm].get_bottom()
@@ -85,10 +93,12 @@ class Flow(Component):
             arrow = Arrow(start, end, buff=0.55, color=colors.accent, stroke_width=3)
             arrows.append(arrow)
 
-        all_nodes = VGroup(*node_mobs)
-        fit(all_nodes)
+        # --- Group nodes + arrows together so they move/scale as one unit ---
+        diagram = VGroup(all_nodes, *arrows)
+        fit(diagram)
 
-        whole = VGroup(title, all_nodes, *arrows).arrange(DOWN, buff=0.6)
+        # --- Arrange title + diagram ---
+        whole = VGroup(title, diagram).arrange(DOWN, buff=0.6)
         fit(whole)
 
         clock = Clock(scene, self.duration(p))
