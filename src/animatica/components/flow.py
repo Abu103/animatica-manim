@@ -87,9 +87,27 @@ class Flow(Component):
 
         # --- Create arrows from final node positions (after fit) ---
         arrows: list = []
+        seen_edges: set[tuple[int, int]] = set()
         for frm, to in edges:
-            start = node_mobs[frm].get_bottom()
-            end = node_mobs[to].get_top()
+            # Reject duplicate edges (same direction).
+            if (frm, to) in seen_edges:
+                raise ValueError(f"duplicate edge {frm}->{to} in flow diagram")
+            seen_edges.add((frm, to))
+
+            # For backward edges (from > to), draw from source top to
+            # destination bottom so arrows always point the right way.
+            # For forward edges, use source bottom -> destination top.
+            if frm < to:
+                start = node_mobs[frm].get_bottom()
+                end = node_mobs[to].get_top()
+            elif frm > to:
+                start = node_mobs[frm].get_top()
+                end = node_mobs[to].get_bottom()
+            else:
+                # frm == to is already rejected by the validator, but keep
+                # a defensive branch for robustness.
+                continue
+
             arrow = Arrow(start, end, buff=0.55, color=colors.accent, stroke_width=3)
             arrows.append(arrow)
 

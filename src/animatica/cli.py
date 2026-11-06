@@ -485,18 +485,25 @@ def edit_cmd(
     instruction: str = typer.Argument(..., help="Edit instruction, e.g. 'slow down scene 3'"),
     provider: str = typer.Option("auto", "--provider", help="AI provider for the edit"),
     preview: bool = typer.Option(False, "--preview", help="Preview quality (480p15)"),
+    replace: bool = typer.Option(
+        False, "--replace",
+        help="Replace the original output directory with the new render (backups are kept). "
+             "By default the new render goes to a fresh directory and the original is left untouched.",
+    ),
 ) -> None:
     """AI-assisted storyboard edit: read storyboard.json, apply instruction, re-render.
 
-    Transactional: the original storyboard.json, video.mp4, captions.vtt, and
-    report.json are preserved if generation, validation, or rendering fails.
-    The new storyboard is rendered into a staging directory on the same
-    filesystem and only promoted to out_dir after a successful render.
+    By default the new render is written to a fresh, uniquely-named output directory
+    alongside ``out_dir``; the original storyboard/video/report/media are left untouched.
+    With --replace, the new artifacts are promoted into ``out_dir`` using recoverable
+    backups and rollback if anything fails.
     """
     import json as _json
-    import os
     import shutil
+    import tempfile
+    import time
 
+    from animatica.ai.base import StoryboardGenerationError
     from animatica.ai.router import get_provider
     from animatica.ai.repair import generate_storyboard
     from animatica.components.registry import default_registry
@@ -508,16 +515,22 @@ def edit_cmd(
         typer.echo(f"Error: no storyboard.json in {out_dir}")
         raise typer.Exit(code=1)
 
-    # Snapshot originals so we can detect/verify preservation on failure.
+    # Snapshot originals for preservation/rollback verification.
     original_storyboard_bytes = sb_path.read_bytes()
     original_video_path = out_dir / "video.mp4"
     original_report_path = out_dir / "report.json"
+    original_captions_path = out_dir / "captions.vtt"
     original_video_bytes = (
         original_video_path.read_bytes() if original_video_path.is_file() else None
     )
     original_report_bytes = (
         original_report_path.read_bytes() if original_report_path.is_file() else None
     )
+    original_captions_bytes = (
+        original_captions_path.read_bytes() if original_captions_path.is_file() else None
+    )
+    original_media_path = out_dir / "media"
+    original_media_exists = original_media_path.is_dir()
 
     sb = load_storyboard(sb_path)
     reg = default_registry()
@@ -567,53 +580,115 @@ def edit_cmd(
             typer.echo(f"  - {e}")
         raise typer.Exit(code=1)
 
-    # --- Render into a staging directory on the same filesystem ---
-    # Only promote to out_dir after a successful render. Originals are
-    # preserved if generation, validation, or rendering fails.
-    staging_dir = out_dir.parent / f".animatica-edit-staging-{os.getpid()}"
-    try:
-        staging_dir.mkdir(parents=True, exist_ok=True)
-        staging_sb_path = staging_dir / "storyboard.json"
-        dump_storyboard(new_sb, staging_sb_path)
+    # --- Render into a secure staging directory on the same filesystem ---
+    # Use mkdtemp so the name is unpredictable and we own the directory.
+    staging_dir = Path(tempfile.mkdtemp(prefix=".animatica-edit-staging-", dir=str(out_dir.parent)))
+    staging_sb_path = staging_dir / "storyboard.json"
+    dump_storyboard(new_sb, staging_sb_path)
 
-        result: MakeResult = make_video(
+    result: MakeResult | None = None
+    try:
+        result = make_video(
             storyboard_path=staging_sb_path,
             out_dir=staging_dir,
             preview=preview,
         )
+    except Exception:
+        # Render failed: clean up staging dir we created, originals untouched.
+        shutil.rmtree(staging_dir, ignore_errors=True)
+        raise
 
-        # --- Promote artifacts only after successful render ---
-        _promote_edit_artifacts(staging_dir, out_dir)
+    if result is None:
+        shutil.rmtree(staging_dir, ignore_errors=True)
+        raise RuntimeError("make_video returned no result")
 
-        typer.echo(f"Video: {result.video}")
-        for w in result.warnings:
-            typer.echo(f"Warning: {w}")
-    finally:
-        if staging_dir.exists():
+    # --- Decide output destination ---
+    if replace:
+        # Recoverable promotion: back up existing outputs, promote new ones,
+        # roll back on any failure.
+        _promote_edit_artifacts_with_backup(staging_dir, out_dir)
+        out_video = out_dir / "video.mp4"
+    else:
+        # Default: leave original untouched, promote to a fresh directory.
+        # Use a unique name based on the original dir name + timestamp.
+        stamp = int(time.time() * 1000)
+        new_out_dir = out_dir.parent / f"{out_dir.name}.edited-{stamp}"
+        # Move the whole staging dir to its final home (same filesystem = atomic rename).
+        try:
+            staging_dir.rename(new_out_dir)
+        except OSError:
+            # Cross-filesystem fallback: copy then remove staging.
+            if new_out_dir.exists():
+                shutil.rmtree(new_out_dir, ignore_errors=True)
+            shutil.copytree(staging_dir, new_out_dir)
             shutil.rmtree(staging_dir, ignore_errors=True)
+        out_video = new_out_dir / "video.mp4"
+
+    typer.echo(f"Video: {out_video}")
+    for w in result.warnings:
+        typer.echo(f"Warning: {w}")
 
 
-def _promote_edit_artifacts(staging_dir: Path, out_dir: Path) -> None:
-    """Copy rendered artifacts from staging_dir to out_dir.
+def _promote_edit_artifacts_with_backup(staging_dir: Path, out_dir: Path) -> None:
+    """Promote rendered artifacts from staging_dir into out_dir with backups + rollback.
 
-    Replaces only storyboard.json, video.mp4, captions.vtt, report.json, and
-    the media/ directory. Unrelated files in out_dir are preserved.
+    Backs up each existing artifact (storyboard.json, video.mp4, captions.vtt,
+    report.json, media/) to a timestamped backup directory before overwriting.
+    If any step fails, all backups are restored and the error is re-raised.
     """
     import shutil
+    import time
 
     artifacts = ["storyboard.json", "video.mp4", "captions.vtt", "report.json"]
-    for artifact in artifacts:
-        src = staging_dir / artifact
-        dst = out_dir / artifact
-        if src.is_file():
-            shutil.copy2(src, dst)
+    stamp = int(time.time() * 1000)
+    backup_dir = out_dir.parent / f"{out_dir.name}.edit-backup-{stamp}"
 
-    staging_media = staging_dir / "media"
-    if staging_media.is_dir():
+    # Create backups of everything that exists in out_dir.
+    backed_up: list[tuple[Path, Path]] = []  # (backup_path, original_path)
+    try:
+        backup_dir.mkdir(parents=True, exist_ok=False)
+    except FileExistsError:
+        raise RuntimeError(f"backup directory already exists: {backup_dir}")
+
+    try:
+        for artifact in artifacts:
+            src = staging_dir / artifact
+            dst = out_dir / artifact
+            if src.is_file():
+                if dst.is_file():
+                    shutil.copy2(dst, backup_dir / artifact)
+                    backed_up.append((backup_dir / artifact, dst))
+                shutil.copy2(src, dst)
+
+        staging_media = staging_dir / "media"
         dst_media = out_dir / "media"
-        if dst_media.exists():
-            shutil.rmtree(dst_media)
-        shutil.copytree(staging_media, dst_media)
+        if staging_media.is_dir():
+            if dst_media.exists():
+                shutil.copytree(dst_media, backup_dir / "media")
+                backed_up.append((backup_dir / "media", dst_media))
+                shutil.rmtree(dst_media)
+            shutil.copytree(staging_media, dst_media)
+    except Exception:
+        # Rollback: restore everything we backed up.
+        for backup_path, original_path in backed_up:
+            try:
+                if backup_path.is_dir():
+                    if original_path.exists():
+                        shutil.rmtree(original_path, ignore_errors=True)
+                    shutil.copytree(backup_path, original_path)
+                elif backup_path.is_file():
+                    shutil.copy2(backup_path, original_path)
+            except Exception:
+                pass  # best-effort rollback
+        # Remove any artifacts we may have copied but couldn't roll back.
+        for artifact in artifacts:
+            dst = out_dir / artifact
+            if dst.is_file() and not (staging_dir / artifact).is_file():
+                pass  # leave as-is, rollback attempted above
+        raise
+
+    # Promotion succeeded: remove backup dir.
+    shutil.rmtree(backup_dir, ignore_errors=True)
 
 
 def _catalog(registry: ComponentRegistry) -> str:
