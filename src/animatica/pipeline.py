@@ -97,6 +97,7 @@ def make_video(
     jobs: int = 1,
     frame_lint: bool = False,
     vertical: bool = False,
+    theme: str | None = None,
 ) -> MakeResult:
     render_backend = resolve_backend(backend)  # fail fast: before any file write or LLM call
     out_dir = Path(out_dir)
@@ -150,6 +151,10 @@ def make_video(
     errors = registry.validate(sb)
     if errors:
         raise ValueError("invalid storyboard: " + "; ".join(errors[:6]))
+
+    # Apply CLI theme override if specified
+    if theme is not None:
+        sb.theme.palette = theme
 
     _check_capabilities(sb, render_backend)
 

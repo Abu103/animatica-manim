@@ -283,6 +283,10 @@ def lint_video(
         seen_blank_since_last_content = False
         analyzed = 0
 
+        # Suppress empty-frame warnings near the end of the video, where a
+        # natural fade-out (clock.finish()) leaves the frame empty.
+        end_fade_threshold = duration - 1.0
+
         for frame in container.decode(video_stream):
             ts = frame.time if frame.time is not None else analyzed
             ts = float(ts)
@@ -298,7 +302,8 @@ def lint_video(
                 bg = _background_luma(gray)
                 nonbg_fraction = _cheap_empty(rgb, bg)
                 if nonbg_fraction < config.empty_threshold:
-                    seen_blank_since_last_content = True
+                    if ts < end_fade_threshold:
+                        seen_blank_since_last_content = True
                 else:
                     prev_content_ts = ts
                     seen_blank_since_last_content = False
@@ -353,12 +358,13 @@ def lint_video(
 
             # --- 2. Empty / nearly empty frame ---
             if nonbg_fraction < config.empty_threshold:
-                _report(
-                    "empty",
-                    "warning",
-                    f"frame is nearly empty ({nonbg_fraction:.4%} non-background pixels)",
-                    scene_idx,
-                )
+                if ts < end_fade_threshold:
+                    _report(
+                        "empty",
+                        "warning",
+                        f"frame is nearly empty ({nonbg_fraction:.4%} non-background pixels)",
+                        scene_idx,
+                    )
                 seen_blank_since_last_content = True
                 analyzed += 1
                 continue  # skip content-quality checks on empty frames

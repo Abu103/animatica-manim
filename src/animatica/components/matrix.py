@@ -64,6 +64,7 @@ class Matrix(Component):
 
     def play(self, scene, p, colors) -> None:
         from manim import (
+            DOWN,
             FadeIn,
             Square,
             Text,
@@ -78,7 +79,6 @@ class Matrix(Component):
         ncols = len(values[0])
 
         title = Text(p.title, font_size=40, color=colors.text).to_edge(UP, buff=0.4)
-        fit(title)
 
         cells: list = []
         for r in range(nrows):
@@ -103,7 +103,6 @@ class Matrix(Component):
                 cells.append(group)
 
         grid = VGroup(*cells).arrange_in_grid(nrows, ncols, buff=CELL_GAP)
-        fit(grid)
         whole = VGroup(title, grid).arrange(DOWN, buff=0.5)
         fit(whole)
 

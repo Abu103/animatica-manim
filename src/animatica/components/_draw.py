@@ -55,14 +55,29 @@ def wrap(text: str, width: int) -> str:
 
 
 def fit(mobject: Any, max_width: float | None = None, max_height: float | None = None) -> Any:
-    """Scale a mobject down (never up) so it fits inside the frame with margins."""
+    """Scale a mobject to fit inside the frame with margins.
+
+    First scales down if the mobject exceeds the frame bounds, then scales up
+    proportionally to fill the available space. Content never overflows the
+    frame because the up-scale is limited by whichever dimension is more
+    constraining. This makes landscape-sized content fill more of the frame in
+    portrait (9:16) videos without changing behavior for content that already
+    fills the width in landscape mode.
+    """
     from manim import config
     max_width = max_width or config.frame_width - 1.0
-    max_height = max_height or config.frame_height - 2.4  # bottom band is reserved for the caption
+    max_height = max_height or config.frame_height - 2.4  # bottom band reserved for caption
     if mobject.width > max_width:
         mobject.scale_to_fit_width(max_width)
     if mobject.height > max_height:
         mobject.scale_to_fit_height(max_height)
+    # Scale up proportionally to fill the frame when content is smaller than
+    # the bounds. Limited by min(scale_w, scale_h) so content never overflows.
+    scale_w = max_width / mobject.width if mobject.width > 0 else 1.0
+    scale_h = max_height / mobject.height if mobject.height > 0 else 1.0
+    scale = min(scale_w, scale_h)
+    if scale > 1.0:
+        mobject.scale(scale)
     return mobject
 
 

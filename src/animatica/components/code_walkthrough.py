@@ -49,7 +49,7 @@ class CodeWalkthrough(Component):
         return f"{p.title}\n{shown}\n" + "\n".join(var_lines)
 
     def play(self, scene, p, colors) -> None:
-        from manim import DOWN, FadeIn, LEFT, RIGHT, Text, VGroup
+        from manim import DOWN, FadeIn, LEFT, RIGHT, Text, UP, VGroup
 
         prepare(scene, colors)
         code_lines = p.code.splitlines()[:MAX_LINES]  # type: ignore[attr-defined]
