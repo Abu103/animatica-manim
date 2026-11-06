@@ -81,6 +81,7 @@ class ComponentRegistry:
 def _builtins() -> list[type[Component]]:
     from animatica.components.compare import Compare
     from animatica.components.matrix import Matrix
+    from animatica.components.stat_callout import StatCallout
     from animatica.components.timeline import Timeline
     from animatica.components.array_viz import ArrayViz
     from animatica.components.recursion_tree import RecursionTree
@@ -103,6 +104,7 @@ def _builtins() -> list[type[Component]]:
         Table,
         NumberLine,
         Matrix,
+        StatCallout,
         TitleCard,
         Equation,
         StepsList,

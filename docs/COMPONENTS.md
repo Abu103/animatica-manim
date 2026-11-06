@@ -18,6 +18,7 @@ sync with the code: the test suite compares this document against
 | `code_highlight` | `code` (<=1200 chars), `language`, `lines[]` | 3.0 s + 1.0 s per line |
 | `number_line` | `title`, `start`, `end` (`end` must be > `start`), `marks[]` (<=12, inside range), `jumps[]` (<=8, each `[from, to]` inside range) | 2.0 s + 0.7 s per jump |
 | `matrix` | `title`, `values[][]` (max 6x6), optional `highlight[][]` ([row,col] pairs) | 2.0 s + 0.4 s per cell |
+| `stat_callout` | `value`, `label`, optional `delta` | 3.0 s fixed |
 | `table` | `title`, `columns[]` (1-6), `rows[][]` (1-6 rows; every row needs exactly `len(columns)` cells) | 2.0 s + 0.5 s per row |
 | `recursion_tree` | `title`, `fn` (only `"fib"`), `n` (2..6) | 2.0 s + 0.8 s per level of `n` (tree capped at 31 nodes) |
 | `array_viz` | `title`, `values[]` (2-12), `steps[]` (<=12); a step carries `highlight[]`, `swap` (exactly 2 indices), and/or binary-search `low`/`high`/`mid` — all indices in `[0, len(values)-1]`, `low` <= `high`, `mid` inside that range | 2.0 s + 0.8 s per step |
@@ -42,6 +43,7 @@ Registered component names:
 - table
 - number_line
 - matrix
+- stat_callout
 
 ## Stability
 
