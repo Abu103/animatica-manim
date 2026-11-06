@@ -8,9 +8,11 @@ from pathlib import Path
 
 from animatica import __version__
 from animatica.ai.base import ProviderError, RateLimited, StoryboardGenerationError
+from animatica.components.registry import ComponentRegistry
 from animatica.doctor import run_checks
-from animatica.pipeline import make_video
+from animatica.pipeline import MakeResult, make_video
 from animatica.setup_wizard import setup
+from animatica.storyboard.models import load_storyboard, dump_storyboard
 
 app = typer.Typer(add_completion=False, help="Turn a plain-language prompt into an explainer video.")
 
@@ -223,7 +225,7 @@ def validate(storyboard: Path = typer.Argument(..., help="storyboard.json to val
     typer.echo(_json.dumps(default_registry().validate(sb), indent=2))
 
 
-@app.command()
+@app.command("lint")
 def lint(storyboard: Path = typer.Argument(..., help="model-written storyboard.json to lint")) -> None:
     """Lint a storyboard; prints JSON {storyboard, notes} (agent tool)."""
     import json as _json
@@ -235,7 +237,227 @@ def lint(storyboard: Path = typer.Argument(..., help="model-written storyboard.j
     typer.echo(_json.dumps({"storyboard": _json.loads(sb.model_dump_json()), "notes": notes}, indent=2))
 
 
-@app.command()
+@app.command("mcp")
+def mcp() -> None:
+    """JSON-CLI for agent integration (Hermes). Reads JSON commands from stdin,
+    writes JSON results to stdout. Tools: list_components, component_schema,
+    validate_storyboard, render_storyboard, preview_frame, lint_video."""
+    import json as _json
+    import sys
+
+    from animatica.components.registry import default_registry
+    from animatica.frame_lint import FrameLintConfig, lint_video, lint_result_to_warnings
+    from animatica.pipeline import MakeResult, make_video, preview_frame
+    from animatica.storyboard.lint import lint_storyboard
+    from animatica.storyboard.models import Storyboard, load_storyboard
+
+    reg = default_registry()
+
+    def tool_list_components(_args: dict) -> dict:
+        return {"components": reg.names()}
+
+    def tool_component_schema(args: dict) -> dict:
+        name = args.get("name")
+        if name not in reg.names():
+            return {"error": f"unknown component {name!r}"}
+        return {"schema": reg.get(name).Params.model_json_schema()}
+
+    def tool_validate_storyboard(args: dict) -> dict:
+        path = args.get("path")
+        if not path:
+            return {"error": "missing 'path' argument"}
+        try:
+            sb = load_storyboard(__import__("pathlib").Path(path))
+        except Exception as exc:
+            return {"error": f"load error: {exc}"}
+        errors = reg.validate(sb)
+        return {"valid": not errors, "errors": errors}
+
+    def tool_render_storyboard(args: dict) -> dict:
+        path = args.get("path")
+        out_dir = args.get("out_dir", ".")
+        preview = args.get("preview", False)
+        if not path:
+            return {"error": "missing 'path' argument"}
+        try:
+            result: MakeResult = make_video(
+                storyboard_path=__import__("pathlib").Path(path),
+                out_dir=__import__("pathlib").Path(out_dir),
+                preview=preview,
+            )
+            return {
+                "video": str(result.video),
+                "storyboard": str(result.storyboard),
+                "captions": str(result.captions),
+                "report": str(result.report),
+                "warnings": result.warnings,
+            }
+        except Exception as exc:
+            return {"error": f"render error: {type(exc).__name__}: {exc}"}
+
+    def tool_preview_frame(args: dict) -> dict:
+        video = args.get("video")
+        scene_index = args.get("scene_index")
+        t = args.get("t", 0.0)
+        out = args.get("out")
+        if not video:
+            return {"error": "missing 'video' argument"}
+        if scene_index is None:
+            return {"error": "missing 'scene_index' argument"}
+        try:
+            # Read report.json next to the video for scene durations
+            vp = __import__("pathlib").Path(video)
+            rp = vp.parent / "report.json"
+            durations: list[float] = []
+            if rp.is_file():
+                try:
+                    import json as _j
+                    durations = _j.loads(rp.read_text(encoding="utf-8")).get("stages", {}).get("durations", [])
+                except Exception:
+                    durations = []
+            out_path = preview_frame(vp, durations, int(scene_index), float(t), __import__("pathlib").Path(out) if out else None)
+            return {"frame": str(out_path)}
+        except Exception as exc:
+            return {"error": f"preview error: {type(exc).__name__}: {exc}"}
+
+    def tool_lint_video(args: dict) -> dict:
+        video = args.get("video")
+        scene_durations = args.get("scene_durations", [])
+        if not video:
+            return {"error": "missing 'video' argument"}
+        try:
+            result = lint_video(
+                video,
+                scene_durations,
+                FrameLintConfig(enabled=True),
+            )
+            return {"findings": [f.__dict__ for f in result.findings], "warnings": lint_result_to_warnings(result)}
+        except Exception as exc:
+            return {"error": f"lint error: {type(exc).__name__}: {exc}"}
+
+    TOOLS = {
+        "list_components": tool_list_components,
+        "component_schema": tool_component_schema,
+        "validate_storyboard": tool_validate_storyboard,
+        "render_storyboard": tool_render_storyboard,
+        "preview_frame": tool_preview_frame,
+        "lint_video": tool_lint_video,
+    }
+
+    for line in sys.stdin:
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            cmd = _json.loads(line)
+        except _json.JSONDecodeError as exc:
+            typer.echo(_json.dumps({"error": f"invalid JSON: {exc}"}))
+            continue
+        tool_name = cmd.get("tool")
+        args = cmd.get("args", {}) or {}
+        if tool_name not in TOOLS:
+            typer.echo(_json.dumps({"error": f"unknown tool {tool_name!r}; available: {', '.join(sorted(TOOLS))}"}))
+            continue
+        try:
+            result = TOOLS[tool_name](args)
+        except Exception as exc:
+            result = {"error": f"tool {tool_name} failed: {type(exc).__name__}: {exc}"}
+        typer.echo(_json.dumps(result))
+        sys.stdout.flush()
+
+
+@app.command("edit")
+def edit_cmd(
+    out_dir: Path = typer.Argument(..., help="Output directory containing storyboard.json"),
+    instruction: str = typer.Argument(..., help="Edit instruction, e.g. 'slow down scene 3'"),
+    provider: str = typer.Option("auto", "--provider", help="AI provider for the edit"),
+    preview: bool = typer.Option(False, "--preview", help="Preview quality (480p15)"),
+) -> None:
+    """AI-assisted storyboard edit: read storyboard.json, apply instruction, re-render."""
+    import json as _json
+
+    from animatica.ai.router import get_provider
+    from animatica.ai.repair import generate_storyboard
+    from animatica.components.registry import default_registry
+    from animatica.config import load_config
+    from animatica.pipeline import MakeResult, make_video
+
+    sb_path = out_dir / "storyboard.json"
+    if not sb_path.is_file():
+        typer.echo(f"Error: no storyboard.json in {out_dir}")
+        raise typer.Exit(code=1)
+
+    sb = load_storyboard(sb_path)
+    reg = default_registry()
+    cfg = load_config()
+    prov = get_provider(provider, cfg)
+    if prov is None:
+        typer.echo("Error: no AI provider available; run 'animatica setup' or pass --provider")
+        raise typer.Exit(code=1)
+
+    # Build an edit prompt: current storyboard + instruction -> corrected storyboard
+    edit_prompt = (
+        "You are editing an explainer-video storyboard. Reply with ONE JSON object and nothing else.\n"
+        "\n"
+        "Current storyboard:\n"
+        + _json.dumps(_json.loads(sb.model_dump_json()), indent=2)
+        + "\n"
+        "\n"
+        "Edit instruction: "
+        + instruction
+        + "\n"
+        "\n"
+        "Rules:\n"
+        "- Preserve the version, title, and scene structure unless the instruction changes them.\n"
+        "- Only change what the instruction asks for; keep everything else identical.\n"
+        "- Use ONLY components from the registry with exactly the params their schema allows.\n"
+        "- 1 to 12 scenes; each scene 1 to 8 beats.\n"
+        "- Every text value at most 300 characters.\n"
+        "- One-sentence caption per beat describing only what the component draws.\n"
+        "\n"
+        "Components:\n"
+        + _catalog(reg)
+    )
+
+    try:
+        new_sb = generate_storyboard(edit_prompt, prov, reg, max_retries=2)
+    except StoryboardGenerationError as exc:
+        typer.echo(f"Error: {exc}")
+        for line in exc.errors[:6]:
+            typer.echo(f"  - {line}")
+        raise typer.Exit(code=1)
+
+    errors = reg.validate(new_sb)
+    if errors:
+        typer.echo("Error: edited storyboard failed validation:")
+        for e in errors[:6]:
+            typer.echo(f"  - {e}")
+        raise typer.Exit(code=1)
+
+    # Write edited storyboard and re-render
+    dump_storyboard(new_sb, sb_path)
+    result: MakeResult = make_video(
+        storyboard_path=sb_path,
+        out_dir=out_dir,
+        preview=preview,
+    )
+    typer.echo(f"Video: {result.video}")
+    for w in result.warnings:
+        typer.echo(f"Warning: {w}")
+
+
+def _catalog(registry: ComponentRegistry) -> str:
+    """Render the component catalog as text for the edit prompt."""
+    import json as _json
+
+    lines = []
+    for name, schema in registry.json_schema().items():
+        schema = {k: v for k, v in schema.items() if k not in ("title", "description")}
+        lines.append(f"- {name}: params schema: {_json.dumps(schema, separators=(',', ':'))}")
+    return "\n".join(lines)
+
+
+@app.command("make")
 def make(
     prompt: str = typer.Argument("", help="Prompt to render into a video"),
     out_dir: Path = typer.Option(Path("."), "-o", "--output", help="Output directory"),

@@ -211,6 +211,58 @@ def typer_print_provider(provider_used: str, encoder_used: str) -> None:
     typer.echo(f"Encoder: {encoder_used}")
 
 
+# ---------------------------------------------------------------------------
+# preview_frame: extract a single frame from a rendered video
+# ---------------------------------------------------------------------------
+
+def preview_frame(
+    video_path: Path | str,
+    scene_durations: list[float],
+    scene_index: int,
+    t: float,
+    out_path: Path | str | None = None,
+) -> Path:
+    """Extract frame at time `t` within `scene_index` from `video_path`.
+
+    `scene_durations` maps scene indices to cumulative time offsets so `t`
+    (seconds within the scene) is translated to the video's absolute time.
+    Returns the path to the extracted PNG frame (writes to `out_path` if given,
+    otherwise next to the video).
+    """
+    import av
+    import numpy as np
+    from PIL import Image
+
+    video_path = Path(video_path)
+    if not video_path.is_file():
+        raise FileNotFoundError(f"video not found: {video_path}")
+
+    # Cumulative offsets: scene 0 starts at 0, scene 1 at sum(scene 0), etc.
+    offset = sum(scene_durations[:scene_index])
+    abs_ts = offset + t
+
+    container = av.open(str(video_path))
+    try:
+        video_stream = next(s for s in container.streams if s.type == "video")
+        target_frame = None
+        for frame in container.decode(video_stream):
+            ts = float(frame.time) if frame.time is not None else 0.0
+            if ts >= abs_ts:
+                target_frame = frame
+                break
+        if target_frame is None:
+            raise ValueError(f"no frame at or after t={abs_ts:.1f}s in {video_path}")
+        img = Image.fromarray(target_frame.to_ndarray(format="rgb24"))
+    finally:
+        container.close()
+
+    if out_path is None:
+        out_path = video_path.with_suffix(f".scene{scene_index}.t{t:.1f}.png")
+    out_path = Path(out_path)
+    img.save(out_path)
+    return out_path
+
+
 def _check_capabilities(sb: Storyboard, backend: RenderBackend, registry: ComponentRegistry | None = None) -> None:
     """Check that every component's required capabilities are supported by the backend.
 
