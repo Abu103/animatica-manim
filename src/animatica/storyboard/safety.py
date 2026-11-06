@@ -46,39 +46,39 @@ def latex_braces_balanced(s: str) -> bool:
     return depth == 0
 
 
-def _validate(node: ast.AST, depth: int = 0) -> None:
+def _validate(node: ast.AST, depth: int = 0, var_name: str = "x") -> None:
     if depth > _MAX_DEPTH:
         raise UnsafeInput("Expression is nested too deeply")
     if isinstance(node, ast.Expression):
-        _validate(node.body, depth + 1)
+        _validate(node.body, depth + 1, var_name=var_name)
     elif isinstance(node, ast.BinOp) and isinstance(node.op, (ast.Add, ast.Sub, ast.Mult, ast.Div, ast.Pow)):
-        _validate(node.left, depth + 1)
-        _validate(node.right, depth + 1)
+        _validate(node.left, depth + 1, var_name=var_name)
+        _validate(node.right, depth + 1, var_name=var_name)
     elif isinstance(node, ast.UnaryOp) and isinstance(node.op, (ast.UAdd, ast.USub)):
-        _validate(node.operand, depth + 1)
+        _validate(node.operand, depth + 1, var_name=var_name)
     elif isinstance(node, ast.Constant) and type(node.value) in (int, float):
         return
-    elif isinstance(node, ast.Name) and (node.id == "x" or node.id in _NAMES):
+    elif isinstance(node, ast.Name) and (node.id == var_name or node.id in _NAMES):
         return
     elif (isinstance(node, ast.Call) and isinstance(node.func, ast.Name) and node.func.id in _FUNCS
           and len(node.args) == 1 and not node.keywords):
-        _validate(node.args[0], depth + 1)
+        _validate(node.args[0], depth + 1, var_name=var_name)
     else:
         raise UnsafeInput(f"Not allowed in a function expression: {type(node).__name__}")
 
 
-def _eval(node: ast.AST, x: float) -> float:
+def _eval(node: ast.AST, x: float, var_name: str = "x") -> float:
     if isinstance(node, ast.Expression):
-        return _eval(node.body, x)
+        return _eval(node.body, x, var_name=var_name)
     if isinstance(node, ast.Constant):
         return float(node.value)
     if isinstance(node, ast.Name):
-        return x if node.id == "x" else _NAMES[node.id]
+        return x if node.id == var_name else _NAMES[node.id]
     if isinstance(node, ast.UnaryOp):
-        v = _eval(node.operand, x)
+        v = _eval(node.operand, x, var_name=var_name)
         return -v if isinstance(node.op, ast.USub) else v
     if isinstance(node, ast.BinOp):
-        a, b = _eval(node.left, x), _eval(node.right, x)
+        a, b = _eval(node.left, x, var_name=var_name), _eval(node.right, x, var_name=var_name)
         op = node.op
         if isinstance(op, ast.Add):
             return a + b
@@ -90,23 +90,23 @@ def _eval(node: ast.AST, x: float) -> float:
             return a / b
         return math.pow(a, b)
     if isinstance(node, ast.Call):
-        return _FUNCS[node.func.id](_eval(node.args[0], x))  # type: ignore[attr-defined]
+        return _FUNCS[node.func.id](_eval(node.args[0], x, var_name=var_name))  # type: ignore[attr-defined]
     raise UnsafeInput("unreachable")  # pragma: no cover
 
 
-def parse_function(expr: str) -> Callable[[float], float]:
-    """Parse `expr` (variable x) into a callable. Domain errors return NaN. Never uses eval."""
+def parse_function(expr: str, var_name: str = "x") -> Callable[[float], float]:
+    """Parse `expr` (variable `var_name`) into a callable. Domain errors return NaN. Never uses eval."""
     if len(expr) > MAX_TEXT:
         raise UnsafeInput(f"Expression is longer than {MAX_TEXT} characters")
     try:
         tree = ast.parse(expr.replace("^", "**"), mode="eval")
     except SyntaxError as exc:
         raise UnsafeInput(f"Could not read the expression {expr!r}: {exc.msg}") from exc
-    _validate(tree)
+    _validate(tree, var_name=var_name)
 
-    def fn(x: float) -> float:
+    def fn(t: float) -> float:
         try:
-            return _eval(tree, float(x))
+            return _eval(tree, float(t), var_name=var_name)
         except (ZeroDivisionError, ValueError, OverflowError):
             return math.nan
 

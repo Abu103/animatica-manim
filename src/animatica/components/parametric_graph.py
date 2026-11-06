@@ -34,9 +34,9 @@ class ParametricGraph(Component):
 
         @model_validator(mode="after")
         def _check(self):
-            # parse_function uses variable `x`; substitute `t` -> `x` for validation
-            parse_function(self.x_expr.replace("t", "x"))
-            parse_function(self.y_expr.replace("t", "x"))
+            # parse_function uses variable `t` natively (no string replacement)
+            parse_function(self.x_expr, var_name="t")
+            parse_function(self.y_expr, var_name="t")
             lo, hi = self.t_range
             if not (math.isfinite(lo) and math.isfinite(hi) and lo < hi):
                 raise ValueError("t_range must be two finite numbers with min < max")
@@ -58,34 +58,71 @@ class ParametricGraph(Component):
         (t0, t1) = p.t_range
         label = p.label
 
-        # Parse expressions (variable `t` -> `x` for the safe parser)
+        # Parse expressions using variable `t` natively (no string replacement).
         try:
-            fx = parse_function(p.x_expr.replace("t", "x"))
-            fy = parse_function(p.y_expr.replace("t", "x"))
+            fx = parse_function(p.x_expr, var_name="t")
+            fy = parse_function(p.y_expr, var_name="t")
         except UnsafeInput as exc:
             warn(scene, f"parametric_graph: unsafe expression ({exc})")
             text_card(scene, self.fallback_text(p), colors, 4.0)
             return
 
-        # Sample x(t), y(t)
-        pts = []
+        # Sample x(t), y(t), splitting into segments at discontinuities.
+        # A discontinuity is detected when consecutive points jump by more
+        # than half the axis range in either dimension.
+        segments: list[list[tuple[float, float]]] = []
+        current_segment: list[tuple[float, float]] = []
+        prev_point: tuple[float, float] | None = None
+
         for i in range(SAMPLES):
             t = t0 + (t1 - t0) * i / (SAMPLES - 1)
             try:
                 x = fx(t)
                 y = fy(t)
             except Exception:
+                if current_segment:
+                    segments.append(current_segment)
+                    current_segment = []
+                prev_point = None
                 continue
             if math.isfinite(x) and math.isfinite(y):
-                pts.append((x, y))
+                point = (x, y)
+                if prev_point is not None:
+                    dx = abs(x - prev_point[0])
+                    dy = abs(y - prev_point[1])
+                    # Heuristic: a jump larger than half the eventual range
+                    # indicates a discontinuity (e.g. tan(t) near pi/2).
+                    # Use a generous threshold so normal steep curves are
+                    # not split; only near-vertical jumps are broken.
+                    if dx > 1.0 or dy > 1.0:
+                        if current_segment:
+                            segments.append(current_segment)
+                        current_segment = [point]
+                    else:
+                        current_segment.append(point)
+                else:
+                    current_segment.append(point)
+                prev_point = point
+            else:
+                if current_segment:
+                    segments.append(current_segment)
+                    current_segment = []
+                prev_point = None
+        if current_segment:
+            segments.append(current_segment)
 
-        if len(pts) < 2:
+        # Filter out segments with fewer than 2 points.
+        segments = [s for s in segments if len(s) >= 2]
+
+        if not segments:
             warn(scene, "parametric_graph: no valid points; showing text card")
             text_card(scene, self.fallback_text(p), colors, 4.0)
             return
 
-        xs = [pt[0] for pt in pts]
-        ys = [pt[1] for pt in pts]
+        # Compute axis bounds from all valid points.
+        all_pts = [pt for seg in segments for pt in seg]
+        xs = [pt[0] for pt in all_pts]
+        ys = [pt[1] for pt in all_pts]
         x_lo, x_hi = min(xs), max(xs)
         y_lo, y_hi = min(ys), max(ys)
         pad = 0.05 * max(x_hi - x_lo, y_hi - y_lo, 1.0)
@@ -103,21 +140,33 @@ class ParametricGraph(Component):
             text_card(scene, self.fallback_text(p), colors, 4.0)
             return
 
-        curve = VMobject(stroke_color=colors.accent, stroke_width=6, fill_opacity=0)
-        curve.set_points_as_corners([axes.c2p(x, y) for x, y in pts])
+        # Draw each continuous segment as a separate curve so discontinuities
+        # are not connected by misleading lines.
+        curves = []
+        for seg in segments:
+            curve = VMobject(stroke_color=colors.accent, stroke_width=6, fill_opacity=0)
+            curve.set_points_as_corners([axes.c2p(x, y) for x, y in seg])
+            curves.append(curve)
 
         title = Text(p.title, font_size=40, color=colors.text)
+
+        # Group axes with all curves so they are positioned as a unit.
+        # Curves are defined relative to axes coordinates, so they must move
+        # together with the axes when the whole group is arranged/scaled.
+        plot_group = VGroup(axes, *curves)
+
         if label:
             label_mob = Text(label, font_size=32, color=colors.muted)
-            whole = VGroup(title, axes, curve, label_mob).arrange(DOWN, buff=0.3)
+            whole = VGroup(title, plot_group, label_mob).arrange(DOWN, buff=0.3)
         else:
-            whole = VGroup(title, axes, curve).arrange(DOWN, buff=0.3)
+            whole = VGroup(title, plot_group).arrange(DOWN, buff=0.3)
         fit(whole)
 
         clock = Clock(scene, 4.0)
         clock.play(FadeIn(title), run_time=0.8)
-        clock.play(FadeIn(axes), run_time=0.8)
-        clock.play(Create(curve), run_time=2.0)
+        clock.play(FadeIn(plot_group), run_time=0.8)
+        for curve in curves:
+            clock.play(Create(curve), run_time=1.2 / len(curves))
         if label:
             clock.play(FadeIn(label), run_time=0.4)
         clock.finish()
