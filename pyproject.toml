@@ -19,10 +19,12 @@ dependencies = [
   # explicitly for clarity):
   "av>=10.0.0",
   "numpy>=1.24",
+  # MCP server (animatica mcp command):
+  "mcp>=1.0",
 ]
 
 [project.optional-dependencies]
-dev = ["pytest>=8"]
+dev = ["pytest>=8", "pytest-asyncio>=1.0"]
 
 [project.scripts]
 animatica = "animatica.cli:app"

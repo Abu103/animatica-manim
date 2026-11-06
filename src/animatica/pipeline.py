@@ -96,6 +96,7 @@ def make_video(
     two_stage: bool = False,
     jobs: int = 1,
     frame_lint: bool = False,
+    vertical: bool = False,
 ) -> MakeResult:
     render_backend = resolve_backend(backend)  # fail fast: before any file write or LLM call
     out_dir = Path(out_dir)
@@ -158,7 +159,7 @@ def make_video(
     if preview:
         quality = "preview"
     render_result = render_backend.render(
-        sb, out_dir, RenderOptions(quality=quality, captions=captions, jobs=jobs)
+        sb, out_dir, RenderOptions(quality=quality, captions=captions, jobs=jobs, vertical=vertical)
     )
     video = render_result.video
     warnings.extend(render_result.warnings)

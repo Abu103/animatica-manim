@@ -13,6 +13,7 @@ class RenderOptions:
     quality: Literal["preview", "standard", "high"] = "standard"
     jobs: int | None = None
     captions: bool = True  # burn each beat's caption into the video
+    vertical: bool = False  # 9:16 aspect ratio for mobile/social
 
 
 @dataclass(frozen=True)

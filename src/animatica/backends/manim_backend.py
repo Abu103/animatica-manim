@@ -105,6 +105,8 @@ class ManimBackend:
                     "--verbosity",
                     "ERROR",
                 ]
+                if opts.vertical:
+                    cmd += ["-r", "1080,1920"]
                 try:
                     subprocess.run(cmd, env=env, check=True, capture_output=True, text=True,
                                    encoding="utf-8", errors="replace", timeout=900)
