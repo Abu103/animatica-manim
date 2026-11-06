@@ -34,13 +34,26 @@ Use this when asked to add a component, fix a storyboard, or improve an Animatic
 - `animatica lint storyboard.json` — JSON {storyboard, notes} after deterministic lint
 
 ## Agent JSON-CLI (MCP mode)
-`animatica mcp` reads JSON commands from stdin, writes JSON results to stdout:
-- `{"tool":"list_components","args":{}}`
-- `{"tool":"component_schema","args":{"name":"<name>"}}`
-- `{"tool":"validate_storyboard","args":{"path":"<path>"}}`
-- `{"tool":"render_storyboard","args":{"path":"<path>","out_dir":"<dir>","preview":true}}`
-- `{"tool":"preview_frame","args":{"video":"<path>","scene_index":0,"t":0.5}}`
-- `{"tool":"lint_video","args":{"video":"<path>","scene_durations":[...]}}`
+`animatica mcp` runs a real Model Context Protocol server on stdio
+(JSON-RPC 2.0). Hermes (or any MCP client) connects via stdio:
+
+Tools:
+- `list_components` — list registered component names
+- `component_schema {name}` — JSON params schema for a component
+- `validate_storyboard {path}` — validate a storyboard; returns errors
+- `render_storyboard {path, out_dir?, preview?}` — render to video
+- `preview_frame {video, scene_index, t, out?}` — extract a frame PNG
+- `lint_video {video, scene_durations?}` — frame-level quality checks
+
+Example MCP session (stdio):
+```
+--> {"jsonrpc":"2.0","id":1,"method":"initialize","params":{...}}
+<--  {"jsonrpc":"2.0","id":1,"result":{"capabilities":{...},"serverInfo":{"name":"animatica"}}}
+--> {"jsonrpc":"2.0","id":2,"method":"tools/list","params":{}}
+<--  {"jsonrpc":"2.0","id":2,"result":{"tools":[...]}}
+--> {"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"list_components","arguments":{}}}
+<--  {"jsonrpc":"2.0","id":3,"result":{"content":[{"type":"text","text":"..."}]}}
+```
 
 ## Commands
 - `animatica make "prompt" -o out/ [--provider X --model Y --preview]` — full video

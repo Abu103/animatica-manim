@@ -239,131 +239,244 @@ def lint(storyboard: Path = typer.Argument(..., help="model-written storyboard.j
 
 @app.command("mcp")
 def mcp() -> None:
-    """JSON-CLI for agent integration (Hermes). Reads JSON commands from stdin,
-    writes JSON results to stdout. Tools: list_components, component_schema,
-    validate_storyboard, render_storyboard, preview_frame, lint_video."""
-    import json as _json
+    """Run the Animatica MCP server on stdio (Model Context Protocol).
+
+    Exposes tools: list_components, component_schema, validate_storyboard,
+    render_storyboard, preview_frame, lint_video.
+    Hermes (or any MCP client) connects via stdio and calls tools via JSON-RPC.
+    """
+    import asyncio
     import sys
+
+    from mcp.server import Server
+    from mcp.server.stdio import stdio_server
+    from mcp.types import (
+        CallToolRequestParams,
+        CallToolResult,
+        ListToolsRequest,
+        ListToolsResult,
+        PaginatedRequestParams,
+        TextContent,
+        Tool,
+    )
 
     from animatica.components.registry import default_registry
     from animatica.frame_lint import FrameLintConfig, lint_video, lint_result_to_warnings
     from animatica.pipeline import MakeResult, make_video, preview_frame
     from animatica.storyboard.lint import lint_storyboard
-    from animatica.storyboard.models import Storyboard, load_storyboard
+    from animatica.storyboard.models import load_storyboard
 
     reg = default_registry()
+    server = Server("animatica")
 
-    def tool_list_components(_args: dict) -> dict:
-        return {"components": reg.names()}
+    # ------------------------------------------------------------------
+    # Tool definitions (MCP protocol)
+    # ------------------------------------------------------------------
 
-    def tool_component_schema(args: dict) -> dict:
-        name = args.get("name")
-        if name not in reg.names():
-            return {"error": f"unknown component {name!r}"}
-        return {"schema": reg.get(name).Params.model_json_schema()}
+    TOOL_DEFS = [
+        Tool(
+            name="list_components",
+            description="List all registered component names",
+            input_schema={"type": "object", "properties": {}, "additionalProperties": False},
+        ),
+        Tool(
+            name="component_schema",
+            description="Get the JSON params schema for a component",
+            input_schema={
+                "type": "object",
+                "properties": {"name": {"type": "string", "description": "Component name"}},
+                "required": ["name"],
+                "additionalProperties": False,
+            },
+        ),
+        Tool(
+            name="validate_storyboard",
+            description="Validate a storyboard JSON file; returns errors if invalid",
+            input_schema={
+                "type": "object",
+                "properties": {"path": {"type": "string", "description": "Path to storyboard.json"}},
+                "required": ["path"],
+                "additionalProperties": False,
+            },
+        ),
+        Tool(
+            name="render_storyboard",
+            description="Render a storyboard JSON file into a video",
+            input_schema={
+                "type": "object",
+                "properties": {
+                    "path": {"type": "string", "description": "Path to storyboard.json"},
+                    "out_dir": {"type": "string", "description": "Output directory", "default": "."},
+                    "preview": {"type": "boolean", "description": "Preview quality", "default": False},
+                },
+                "required": ["path"],
+                "additionalProperties": False,
+            },
+        ),
+        Tool(
+            name="preview_frame",
+            description="Extract a single frame from a rendered video at scene+t",
+            input_schema={
+                "type": "object",
+                "properties": {
+                    "video": {"type": "string", "description": "Path to video.mp4"},
+                    "scene_index": {"type": "integer", "description": "Scene index"},
+                    "t": {"type": "number", "description": "Seconds within the scene", "default": 0.0},
+                    "out": {"type": "string", "description": "Output PNG path (optional)"},
+                },
+                "required": ["video", "scene_index"],
+                "additionalProperties": False,
+            },
+        ),
+        Tool(
+            name="lint_video",
+            description="Run frame-level quality checks on a rendered video",
+            input_schema={
+                "type": "object",
+                "properties": {
+                    "video": {"type": "string", "description": "Path to video.mp4"},
+                    "scene_durations": {
+                        "type": "array",
+                        "items": {"type": "number"},
+                        "description": "Per-scene durations in seconds",
+                        "default": [],
+                    },
+                },
+                "required": ["video"],
+                "additionalProperties": False,
+            },
+        ),
+    ]
 
-    def tool_validate_storyboard(args: dict) -> dict:
-        path = args.get("path")
-        if not path:
-            return {"error": "missing 'path' argument"}
+    async def handle_list_tools(_ctx: object, _request: PaginatedRequestParams) -> ListToolsResult:
+        return ListToolsResult(tools=TOOL_DEFS)
+
+    server.add_request_handler(
+        "tools/list",
+        PaginatedRequestParams,
+        handle_list_tools,
+    )
+
+    async def handle_call_tool(_ctx: object, request: CallToolRequestParams) -> CallToolResult:
+        import json as _json
+        from pathlib import Path as _Path
+
+        name = request.name
+        arguments = request.arguments or {}
+
         try:
-            sb = load_storyboard(__import__("pathlib").Path(path))
-        except Exception as exc:
-            return {"error": f"load error: {exc}"}
-        errors = reg.validate(sb)
-        return {"valid": not errors, "errors": errors}
+            if name == "list_components":
+                structured = {"components": reg.names()}
+            elif name == "component_schema":
+                comp_name = arguments.get("name")
+                if comp_name not in reg.names():
+                    structured = {"error": f"unknown component {comp_name!r}"}
+                else:
+                    structured = {"schema": reg.get(comp_name).Params.model_json_schema()}
+            elif name == "validate_storyboard":
+                path = arguments.get("path")
+                if not path:
+                    structured = {"error": "missing 'path' argument"}
+                else:
+                    sb = load_storyboard(_Path(path))
+                    errors = reg.validate(sb)
+                    structured = {"valid": not errors, "errors": errors}
+            elif name == "render_storyboard":
+                path = arguments.get("path")
+                out_dir = arguments.get("out_dir", ".")
+                preview = arguments.get("preview", False)
+                if not path:
+                    structured = {"error": "missing 'path' argument"}
+                else:
+                    result_obj: MakeResult = make_video(
+                        storyboard_path=_Path(path),
+                        out_dir=_Path(out_dir),
+                        preview=preview,
+                    )
+                    structured = {
+                        "video": str(result_obj.video),
+                        "storyboard": str(result_obj.storyboard),
+                        "captions": str(result_obj.captions),
+                        "report": str(result_obj.report),
+                        "warnings": result_obj.warnings,
+                    }
+            elif name == "preview_frame":
+                video = arguments.get("video")
+                scene_index = arguments.get("scene_index")
+                t = arguments.get("t", 0.0)
+                out = arguments.get("out")
+                if not video:
+                    structured = {"error": "missing 'video' argument"}
+                elif scene_index is None:
+                    structured = {"error": "missing 'scene_index' argument"}
+                else:
+                    vp = _Path(video)
+                    rp = vp.parent / "report.json"
+                    durations: list[float] = []
+                    if rp.is_file():
+                        try:
+                            durations = (
+                                _json.loads(rp.read_text(encoding="utf-8"))
+                                .get("stages", {})
+                                .get("durations", [])
+                            )
+                        except Exception:
+                            durations = []
+                    out_path = preview_frame(
+                        vp,
+                        durations,
+                        int(scene_index),
+                        float(t),
+                        _Path(out) if out else None,
+                    )
+                    structured = {"frame": str(out_path)}
+            elif name == "lint_video":
+                video = arguments.get("video")
+                scene_durations = arguments.get("scene_durations", [])
+                if not video:
+                    structured = {"error": "missing 'video' argument"}
+                else:
+                    lint_result = lint_video(
+                        video,
+                        scene_durations,
+                        FrameLintConfig(enabled=True),
+                    )
+                    structured = {
+                        "findings": [f.__dict__ for f in lint_result.findings],
+                        "warnings": lint_result_to_warnings(lint_result),
+                    }
+            else:
+                structured = {"error": f"unknown tool {name!r}"}
+        except Exception as exc:  # noqa: BLE001 - MCP surface must never crash
+            structured = {"error": f"tool {name} failed: {type(exc).__name__}: {exc}"}
 
-    def tool_render_storyboard(args: dict) -> dict:
-        path = args.get("path")
-        out_dir = args.get("out_dir", ".")
-        preview = args.get("preview", False)
-        if not path:
-            return {"error": "missing 'path' argument"}
-        try:
-            result: MakeResult = make_video(
-                storyboard_path=__import__("pathlib").Path(path),
-                out_dir=__import__("pathlib").Path(out_dir),
-                preview=preview,
+        is_error = isinstance(structured, dict) and "error" in structured
+        return CallToolResult(
+            content=[TextContent(type="text", text=_json.dumps(structured))],
+            structured_content=structured,
+            is_error=is_error,
+        )
+
+    server.add_request_handler(
+        "tools/call",
+        CallToolRequestParams,
+        handle_call_tool,
+    )
+
+    async def _run() -> None:
+        async with stdio_server() as (read_stream, write_stream):
+            await server.run(
+                read_stream,
+                write_stream,
+                server.create_initialization_options(),
             )
-            return {
-                "video": str(result.video),
-                "storyboard": str(result.storyboard),
-                "captions": str(result.captions),
-                "report": str(result.report),
-                "warnings": result.warnings,
-            }
-        except Exception as exc:
-            return {"error": f"render error: {type(exc).__name__}: {exc}"}
 
-    def tool_preview_frame(args: dict) -> dict:
-        video = args.get("video")
-        scene_index = args.get("scene_index")
-        t = args.get("t", 0.0)
-        out = args.get("out")
-        if not video:
-            return {"error": "missing 'video' argument"}
-        if scene_index is None:
-            return {"error": "missing 'scene_index' argument"}
-        try:
-            # Read report.json next to the video for scene durations
-            vp = __import__("pathlib").Path(video)
-            rp = vp.parent / "report.json"
-            durations: list[float] = []
-            if rp.is_file():
-                try:
-                    import json as _j
-                    durations = _j.loads(rp.read_text(encoding="utf-8")).get("stages", {}).get("durations", [])
-                except Exception:
-                    durations = []
-            out_path = preview_frame(vp, durations, int(scene_index), float(t), __import__("pathlib").Path(out) if out else None)
-            return {"frame": str(out_path)}
-        except Exception as exc:
-            return {"error": f"preview error: {type(exc).__name__}: {exc}"}
-
-    def tool_lint_video(args: dict) -> dict:
-        video = args.get("video")
-        scene_durations = args.get("scene_durations", [])
-        if not video:
-            return {"error": "missing 'video' argument"}
-        try:
-            result = lint_video(
-                video,
-                scene_durations,
-                FrameLintConfig(enabled=True),
-            )
-            return {"findings": [f.__dict__ for f in result.findings], "warnings": lint_result_to_warnings(result)}
-        except Exception as exc:
-            return {"error": f"lint error: {type(exc).__name__}: {exc}"}
-
-    TOOLS = {
-        "list_components": tool_list_components,
-        "component_schema": tool_component_schema,
-        "validate_storyboard": tool_validate_storyboard,
-        "render_storyboard": tool_render_storyboard,
-        "preview_frame": tool_preview_frame,
-        "lint_video": tool_lint_video,
-    }
-
-    for line in sys.stdin:
-        line = line.strip()
-        if not line:
-            continue
-        try:
-            cmd = _json.loads(line)
-        except _json.JSONDecodeError as exc:
-            typer.echo(_json.dumps({"error": f"invalid JSON: {exc}"}))
-            continue
-        tool_name = cmd.get("tool")
-        args = cmd.get("args", {}) or {}
-        if tool_name not in TOOLS:
-            typer.echo(_json.dumps({"error": f"unknown tool {tool_name!r}; available: {', '.join(sorted(TOOLS))}"}))
-            continue
-        try:
-            result = TOOLS[tool_name](args)
-        except Exception as exc:
-            result = {"error": f"tool {tool_name} failed: {type(exc).__name__}: {exc}"}
-        typer.echo(_json.dumps(result))
-        sys.stdout.flush()
+    try:
+        asyncio.run(_run())
+    except KeyboardInterrupt:  # pragma: no cover - stdio server
+        pass
+    except BrokenPipeError:  # pragma: no cover - client disconnected
+        pass
 
 
 @app.command("edit")
