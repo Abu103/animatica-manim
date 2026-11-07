@@ -32,7 +32,7 @@ on:
 env:
   # "1" makes the run also commit the bundle into the branch, for hosts that can
   # only reach codeload.github.com. Off by default: artifacts keep the history clean.
-  COMMIT_BUNDLE: "1"
+  COMMIT_BUNDLE: "0"
 
 permissions:
   contents: write # only used by mode=commit
