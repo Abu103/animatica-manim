@@ -16,6 +16,7 @@ from animatica.config import load_config
 from animatica.encode.probe import pick_encoder, probe_encoders
 from animatica.encode.transcode import transcode
 from animatica.paths import long_path
+from animatica.progress import ProgressFn, ProgressTracker
 from animatica.report import write_report
 from animatica.storyboard.cache import StoryboardCache
 from animatica.storyboard.lint import lint_storyboard
@@ -99,6 +100,7 @@ def make_video(
     frame_lint: bool = False,
     vertical: bool = False,
     theme: str | None = None,
+    on_progress: ProgressFn | None = None,
 ) -> MakeResult:
     render_backend = resolve_backend(backend)  # fail fast: before any file write or LLM call
     out_dir = Path(out_dir)
@@ -106,6 +108,13 @@ def make_video(
     out_dir = long_path(out_dir)
     registry = default_registry()
     warnings: list[str] = []
+
+    # One unit per post-processing step the user actually asked for; the render
+    # backend contributes its own scene units and fixes the total when it starts.
+    post_units = 1 + (1 if encoder != "auto" else 0) + (1 if frame_lint else 0)
+    progress = ProgressTracker(on_progress, post_units=post_units)
+
+    progress.announce("storyboard", "resolving storyboard")
 
     # ---- storyboard: cache -> template -> provider ----
     if storyboard_path is not None:
@@ -171,7 +180,15 @@ def make_video(
     if preview:
         quality = "preview"
     render_result = render_backend.render(
-        sb, out_dir, RenderOptions(quality=quality, captions=captions, jobs=jobs, vertical=vertical)
+        sb,
+        out_dir,
+        RenderOptions(
+            quality=quality,
+            captions=captions,
+            jobs=jobs,
+            vertical=vertical,
+            progress=progress.backend,
+        ),
     )
     video = render_result.video
     warnings.extend(render_result.warnings)
@@ -182,6 +199,7 @@ def make_video(
         enc_infos = probe_encoders()
         enc = pick_encoder(encoder, enc_infos)
         encoder_used = enc.name
+        progress.advance("transcode", f"re-encoding with {enc.name}")
         transcode_result = transcode(video, out_dir / "video_transcoded.mp4", enc)
         video = transcode_result.path
         if transcode_result.warning:
@@ -189,6 +207,7 @@ def make_video(
 
     # ---- frame lint (non-fatal post-render quality check) ----
     if frame_lint:
+        progress.advance("lint", "checking frames")
         lint_config = FrameLintConfig(enabled=True)
         lint_result = lint_video(
             str(video),
@@ -198,6 +217,7 @@ def make_video(
         warnings.extend(lint_result_to_warnings(lint_result))
 
     # ---- captions + report (single writer) ----
+    progress.advance("captions", "writing captions and report")
     _write_captions(sb, registry, out_dir / "captions.vtt")
     write_report(
         out_dir / "report.json",
@@ -208,6 +228,7 @@ def make_video(
     )
 
     typer_print_provider(provider_used, encoder_used)
+    progress.finish(f"done: {video.name}")
 
     return MakeResult(
         video=video,

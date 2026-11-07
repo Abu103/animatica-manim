@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import os
+import sys
 
 import typer
 from pathlib import Path
@@ -10,6 +11,7 @@ from animatica import __version__
 from animatica.ai.base import ProviderError, RateLimited, StoryboardGenerationError
 from animatica.components.registry import ComponentRegistry
 from animatica.doctor import run_checks
+from animatica.cli_progress import TerminalProgress
 from animatica.pipeline import MakeResult, make_video
 from animatica.setup_wizard import setup
 from animatica.storyboard.models import load_storyboard, dump_storyboard
@@ -52,15 +54,38 @@ def _print_checks(checks) -> int:
 def doctor(
     fix: bool = typer.Option(False, "--fix", help="Offer to auto-fix missing dependencies."),
     yes: bool = typer.Option(False, "--yes", "-y", help="With --fix: do not prompt (for scripts/CI)."),
+    as_json: bool = typer.Option(
+        False, "--json", help="Machine-readable output (used by the install scripts)."
+    ),
 ) -> None:
     """Check Python, Manim, LaTeX, ffmpeg, encoders, and configured provider."""
-    failures = _print_checks(run_checks())
+    checks = run_checks()
+
+    def report(results) -> int:
+        if as_json:
+            import json
+
+            typer.echo(
+                json.dumps(
+                    [
+                        {"name": c.name, "ok": c.ok, "detail": c.detail, "fix": c.fix}
+                        for c in results
+                    ],
+                    indent=2,
+                )
+            )
+            return sum(1 for c in results if not c.ok)
+        return _print_checks(results)
+
+    failures = report(checks)
     if fix and failures and _offer_fix(assume_yes=yes):
-        typer.echo("\nRe-checking after fixes:")
-        failures = _print_checks(run_checks())  # exit status reflects the state AFTER the fix attempt
+        if not as_json:
+            typer.echo("\nRe-checking after fixes:")
+        failures = report(run_checks())  # exit status reflects the state AFTER the fix attempt
     if failures:
         raise typer.Exit(code=1)
-    typer.echo("\nAll checks passed.")
+    if not as_json:
+        typer.echo("\nAll checks passed.")
 
 
 def _offer_fix(assume_yes: bool = False) -> bool:
@@ -91,6 +116,13 @@ def bootstrap() -> None:
     pip = subprocess.run([sys.executable, "-m", "pip", "install", "-e", "."], check=False)
     if pip.returncode != 0:
         typer.echo(f"pip install failed (exit {pip.returncode}); fix that first, then re-run.")
+        typer.echo(
+            "If it mentions cairo, pango or pycairo, this machine has no cairo/pango and "
+            "nothing to compile them against.\n"
+            "The one-line installer handles that case (it fetches a prebuilt copy):\n"
+            "  curl -fsSL https://raw.githubusercontent.com/Abu103/animatica-manim/main/"
+            "scripts/bootstrap.sh | bash"
+        )
         raise typer.Exit(code=pip.returncode or 1)
     typer.echo("[2/3] system dependencies")
     for line in fix_dependencies():
@@ -799,10 +831,16 @@ def make(
     frame_lint: bool = typer.Option(False, "--frame-lint/--no-frame-lint", help="Run non-fatal frame-quality checks on the rendered video"),
     vertical: bool = typer.Option(False, "--vertical", help="9:16 vertical aspect ratio for mobile/social"),
     theme: str = typer.Option(None, "--theme", help="Color theme: dark-blue, light, high-contrast"),
+    progress: bool = typer.Option(
+        True,
+        "--progress/--no-progress",
+        help="Live progress line on stderr (only real render units; off in non-interactive shells)",
+    ),
 ) -> None:
     """Turn a plain-language prompt into an explainer video."""
     if model:
         os.environ["ANIMATICA_MODEL"] = model
+    reporter = TerminalProgress(enabled=progress and sys.stderr.isatty()).start()
     try:
         result = make_video(
             prompt=prompt or None,
@@ -819,6 +857,7 @@ def make(
             frame_lint=frame_lint,
             vertical=vertical,
             theme=theme,
+            on_progress=reporter,
         )
         typer.echo(f"Video: {result.video}")
         for w in result.warnings:
@@ -853,6 +892,9 @@ def make(
         typer.echo(f"Error: {type(exc).__name__}: {exc}")
         typer.echo("Re-run with --debug for the full traceback.")
         raise typer.Exit(code=1)
+    finally:
+        # a half-drawn progress line must never swallow the next shell prompt
+        reporter.close()
 
 
 

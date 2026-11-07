@@ -6,6 +6,7 @@ provides both the server and client SDK.
 """
 import asyncio
 import json
+import os
 import sys
 
 import pytest
@@ -19,6 +20,9 @@ async def _run_mcp_session(test_fn):
     params = StdioServerParameters(
         command=sys.executable,
         args=["-m", "animatica", "mcp"],
+        # The stdio transport filters the environment down to PATH/HOME/...,
+        # which drops PYTHONPATH and the native-library path the server needs.
+        env={**os.environ},
     )
     async with stdio_client(params) as (read, write):
         async with ClientSession(read, write) as session:

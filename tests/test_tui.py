@@ -1,35 +1,93 @@
-"""Headless tests for the Animatica TUI using Textual's pilot testing.
+"""Headless tests for the Animatica studio TUI (Textual pilot).
 
-These tests exercise screen navigation, input validation, and the
-offline template path without rendering a real video.
+These drive the real app at 80x24, which is the smallest terminal we promise to
+support. Nothing here renders a video: ``make_video`` is replaced by a fake.
 """
-
 from __future__ import annotations
 
 import asyncio
+import json
+import threading
 from pathlib import Path
-from unittest.mock import MagicMock, patch
 
 import pytest
 from typer.testing import CliRunner
 
+from animatica.ai.template import TemplateMatcher
 from animatica.cli import app as cli_app
+from animatica.pipeline import MakeResult
 from animatica.tui import AnimaticaTuiApp, TuiSettings, run_tui
 
 
 # ---------------------------------------------------------------------------
-# Module-level checks
+# Helpers
+# ---------------------------------------------------------------------------
+
+
+def _make_app():
+    wrapper = AnimaticaTuiApp()
+    return wrapper.create_app(), wrapper
+
+
+def _q(app, selector, *types):
+    return app.query_one(selector, *types)
+
+
+def _text(widget) -> str:
+    return str(getattr(widget, "content", ""))
+
+
+def _status(app) -> str:
+    return _text(_q(app, "#status"))
+
+
+async def _click(app, pilot, selector: str) -> None:
+    """Click a control, scrolling it into view first (panes scroll at 80x24)."""
+    widget = _q(app, selector)
+    widget.scroll_visible(top=True)
+    await pilot.pause()
+    await pilot.click(widget)
+    await pilot.pause()
+
+
+async def _settle(pilot, turns: int = 3) -> None:
+    for _ in range(turns):
+        await pilot.pause()
+
+
+async def _wait_for(app, pilot, predicate, timeout: float = 5.0) -> bool:
+    """Poll the app until predicate() is true (workers run off the UI thread)."""
+    deadline = asyncio.get_event_loop().time() + timeout
+    while asyncio.get_event_loop().time() < deadline:
+        await pilot.pause()
+        if predicate():
+            return True
+        await asyncio.sleep(0.02)
+    return False
+
+
+def _fake_result(tmp_path: Path, warnings: list[str] | None = None) -> MakeResult:
+    return MakeResult(
+        video=tmp_path / "video.mp4",
+        storyboard=tmp_path / "storyboard.json",
+        captions=tmp_path / "captions.vtt",
+        report=tmp_path / "report.json",
+        warnings=warnings or [],
+    )
+
+
+# ---------------------------------------------------------------------------
+# Module surface
 # ---------------------------------------------------------------------------
 
 
 def test_tui_module_imports():
-    """The tui module imports cleanly (textual is installed in this env)."""
-    from animatica.tui import AnimaticaTuiApp  # noqa: F401
-    assert AnimaticaTuiApp is not None
+    from animatica.tui import AnimaticaTuiApp as cls
+
+    assert cls is not None
 
 
 def test_tui_settings_defaults():
-    """TuiSettings has sensible defaults."""
     s = TuiSettings()
     assert s.provider == "template"
     assert s.quality == "preview"
@@ -41,22 +99,16 @@ def test_tui_settings_defaults():
 
 
 def test_tui_command_registered():
-    """The 'tui' CLI command is registered."""
-    cmd_names = [c.name for c in cli_app.registered_commands if c.name]
-    assert "tui" in cmd_names
+    assert "tui" in [c.name for c in cli_app.registered_commands if c.name]
 
 
 def test_tui_command_help():
-    """The tui command shows help text."""
-    runner = CliRunner()
-    result = runner.invoke(cli_app, ["tui", "--help"])
+    result = CliRunner().invoke(cli_app, ["tui", "--help"])
     assert result.exit_code == 0
     assert "Terminal User Interface" in result.output or "textual" in result.output
 
 
 def test_tui_missing_textual_error(monkeypatch):
-    """run_tui raises ImportError if textual is not installed."""
-    import animatica.tui as tui_mod
     import builtins
 
     original_import = builtins.__import__
@@ -72,448 +124,492 @@ def test_tui_missing_textual_error(monkeypatch):
 
 
 # ---------------------------------------------------------------------------
-# TUI screen tests (headless, using Textual pilot)
-# ---------------------------------------------------------------------------
-
-
-def _make_tui_app():
-    """Create an AnimaticaTuiApp and return its Textual app for run_test."""
-    wrapper = AnimaticaTuiApp()
-    return wrapper.create_app(), wrapper
-
-
-async def _run_test_with_size(app, size=(80, 24)):
-    """Run app at a given terminal size (default 80x24)."""
-    return app.run_test(size=size)
-
-
-def _q(app, selector, *types):
-    """Query a widget on the currently active screen."""
-    return app.screen.query_one(selector, *types)
-
-
-def _text(widget) -> str:
-    """Get text content from a widget (Static uses .content in Textual 8.x)."""
-    return str(getattr(widget, "content", ""))
-
-
-async def _fill_welcome_and_go_to_settings(app, pilot, prompt_text="hello world"):
-    """Navigate from Welcome to Settings using pilot clicks."""
-    await pilot.pause()
-    prompt_input = _q(app, "#prompt-input")
-    await pilot.click(prompt_input)
-    prompt_input.value = prompt_text
-    await pilot.pause()
-    await pilot.click(_q(app, "#next"))
-    await pilot.pause()
-    assert _q(app, "#output-dir") is not None
-    assert _q(app, "#quality-select") is not None
-
-
-@pytest.mark.tui
-async def test_welcome_screen_shows_widgets():
-    """Welcome screen displays prompt input, template select, provider select."""
-    textual_app, _ = _make_tui_app()
-    async with textual_app.run_test(size=(80, 24)) as pilot:
-        await pilot.pause()
-
-        # Welcome screen should be active
-        assert _q(textual_app, "#prompt-input") is not None
-        assert _q(textual_app, "#template-select") is not None
-        assert _q(textual_app, "#provider-select") is not None
-        assert _q(textual_app, "#sb-path-input") is not None
-        assert _q(textual_app, "#next") is not None
-
-
-@pytest.mark.tui
-async def test_welcome_empty_prompt_shows_error():
-    """Clicking Next with no input shows an error message."""
-    textual_app, _ = _make_tui_app()
-    async with textual_app.run_test(size=(80, 24)) as pilot:
-        await pilot.pause()
-
-        next_btn = _q(textual_app, "#next")
-        await pilot.click(next_btn)
-        await pilot.pause()
-
-        status = _q(textual_app, "#welcome-status")
-        assert "Please enter" in _text(status)
-
-
-@pytest.mark.tui
-async def test_welcome_prompt_navigates_to_settings():
-    """Entering a prompt and clicking Next advances to Settings screen."""
-    textual_app, _ = _make_tui_app()
-    async with textual_app.run_test(size=(80, 24)) as pilot:
-        await _fill_welcome_and_go_to_settings(textual_app, pilot)
-
-
-@pytest.mark.tui
-async def test_settings_navigates_to_review_at_80x24():
-    """Settings screen Next advances to Review screen at 80x24 (no resize)."""
-    textual_app, _ = _make_tui_app()
-    async with textual_app.run_test(size=(80, 24)) as pilot:
-        await _fill_welcome_and_go_to_settings(textual_app, pilot)
-
-        # On settings screen: Next button should be visible at 80x24
-        next_btn = _q(textual_app, "#next")
-        assert next_btn is not None
-        await pilot.click(next_btn)
-        await pilot.pause()
-
-        # Should now be on review screen
-        assert _q(textual_app, "#review-summary") is not None
-        assert _q(textual_app, "#start") is not None
-
-
-@pytest.mark.tui
-async def test_settings_navigates_to_review_at_80x30():
-    """Settings screen Next advances to Review screen at 80x30 (smaller than 100x50)."""
-    textual_app, _ = _make_tui_app()
-    async with textual_app.run_test(size=(80, 30)) as pilot:
-        await _fill_welcome_and_go_to_settings(textual_app, pilot)
-
-        # On settings screen: Next button should be visible at 80x30
-        next_btn = _q(textual_app, "#next")
-        assert next_btn is not None
-        await pilot.click(next_btn)
-        await pilot.pause()
-
-        # Should now be on review screen
-        assert _q(textual_app, "#review-summary") is not None
-        assert _q(textual_app, "#start") is not None
-
-
-@pytest.mark.tui
-async def test_review_shows_settings_summary_at_80x24():
-    """Review screen displays the collected settings at 80x24."""
-    textual_app, _ = _make_tui_app()
-    async with textual_app.run_test(size=(80, 24)) as pilot:
-        await _fill_welcome_and_go_to_settings(textual_app, pilot)
-        await pilot.click(_q(textual_app, "#next"))
-        await pilot.pause()
-
-        summary = _q(textual_app, "#review-summary")
-        text = _text(summary)
-        assert "hello world" in text
-        assert "preview" in text.lower()
-
-
-@pytest.mark.tui
-async def test_review_warns_on_existing_outputs(tmp_path):
-    """Review screen warns when output files already exist."""
-    textual_app, _ = _make_tui_app()
-    textual_app.settings.output_dir = tmp_path
-    textual_app.settings.prompt = "test"
-    (tmp_path / "video.mp4").write_bytes(b"fake")
-
-    async with textual_app.run_test(size=(80, 24)) as pilot:
-        await pilot.pause()
-
-        # Skip straight to review by pushing screens
-        textual_app.push_screen("review")
-        await pilot.pause()
-
-        warn = _q(textual_app, "#review-warning")
-        text = _text(warn)
-        assert "video.mp4" in text
-
-
-@pytest.mark.tui
-async def test_settings_back_returns_to_welcome_at_80x24():
-    """Settings screen Back returns to Welcome screen at 80x24."""
-    textual_app, _ = _make_tui_app()
-    async with textual_app.run_test(size=(80, 24)) as pilot:
-        await _fill_welcome_and_go_to_settings(textual_app, pilot)
-
-        # Go back
-        back_btn = _q(textual_app, "#back")
-        await pilot.click(back_btn)
-        await pilot.pause()
-
-        assert _q(textual_app, "#prompt-input") is not None
-
-
-# ---------------------------------------------------------------------------
-# Keyboard shortcut tests
+# Layout
 # ---------------------------------------------------------------------------
 
 
 @pytest.mark.tui
-async def test_keyboard_shortcuts_at_80x24():
-    """Alt+Left/Alt+Right work at 80x24 while input is focused.
-
-    Modifier shortcuts navigate even when an Input widget has focus;
-    ordinary typing (e.g. 'n', 'b') still inserts characters into the
-    input and does not trigger navigation.
-    """
-    textual_app, _ = _make_tui_app()
-    async with textual_app.run_test(size=(80, 24)) as pilot:
+async def test_prompt_step_has_its_controls_at_80x24():
+    app, _ = _make_app()
+    async with app.run_test(size=(80, 24)) as pilot:
         await pilot.pause()
-
-        # Alt+Right on Welcome navigates while input is focused (no unfocus needed)
-        prompt_input = _q(textual_app, "#prompt-input")
-        await pilot.click(prompt_input)
-        prompt_input.value = "test prompt"
-        await pilot.pause()
-        textual_app.screen.action_next()
-        await pilot.pause()
-        assert _q(textual_app, "#output-dir") is not None
-
-        # Alt+Left on Settings goes back to Welcome while input focused
-        textual_app.screen.action_back()
-        await pilot.pause()
-        assert _q(textual_app, "#prompt-input") is not None
-
-        # Go to Settings again
-        textual_app.screen.action_next()
-        await pilot.pause()
-        assert _q(textual_app, "#next") is not None
-
-        # Alt+Right on Settings goes to Review
-        textual_app.screen.action_next()
-        await pilot.pause()
-        assert _q(textual_app, "#review-summary") is not None
-        assert _q(textual_app, "#start") is not None
-
-        # Alt+Left on Review goes back to Settings
-        textual_app.screen.action_back()
-        await pilot.pause()
-        assert _q(textual_app, "#next") is not None
+        assert _q(app, "#prompt-input") is not None
+        assert _q(app, "#template-select") is not None
+        assert _q(app, "#sb-path-input") is not None
+        assert _q(app, "#next") is not None
+        assert "step 1/4" in _text(_q(app, "#topbar-step"))
+        assert "Ready" in _status(app)
 
 
 @pytest.mark.tui
-async def test_typing_in_input_does_not_navigate():
-    """Typing ordinary characters (b, n, c, q) in a prompt input inserts
-    them into the input field and does NOT trigger navigation. Navigation
-    only happens via Alt+Left/Alt+Right (or the Next/Back buttons)."""
-    textual_app, _ = _make_tui_app()
-    async with textual_app.run_test(size=(80, 24)) as pilot:
+async def test_job_step_exposes_options_at_80x24():
+    app, _ = _make_app()
+    async with app.run_test(size=(80, 24)) as pilot:
         await pilot.pause()
-
-        # Click the prompt input and type text containing b, n, c, q
-        prompt_input = _q(textual_app, "#prompt-input")
-        await pilot.click(prompt_input)
-        prompt_input.value = "explain taylor series with b n c q keys"
-        await pilot.pause()
-
-        # The text was entered into the input (not interpreted as navigation)
-        assert prompt_input.value == "explain taylor series with b n c q keys"
-        # Still on Welcome screen - typing characters doesn't navigate
-        assert _q(textual_app, "#prompt-input") is not None
-        assert _q(textual_app, "#welcome-status") is not None
-
-        # But Alt+Right (action_next) DOES navigate even while input focused
-        textual_app.screen.action_next()
-        await pilot.pause()
-        assert _q(textual_app, "#output-dir") is not None
+        for selector in (
+            "#output-dir",
+            "#quality-select",
+            "#theme-select",
+            "#orientation-select",
+            "#provider-select",
+            "#captions-switch",
+            "#frame-lint-switch",
+        ):
+            assert _q(app, selector) is not None, selector
 
 
 @pytest.mark.tui
-async def test_result_screen_actions_at_80x24():
-    """Result screen: Alt+N starts another job, F10 quits,
-    buttons reachable via Tab/Enter."""
-    textual_app, _ = _make_tui_app()
-    async with textual_app.run_test(size=(80, 24)) as pilot:
+async def test_switches_and_selects_write_through_to_settings():
+    app, wrapper = _make_app()
+    async with app.run_test(size=(80, 24)) as pilot:
         await pilot.pause()
+        _q(app, "#captions-switch").value = False
+        _q(app, "#quality-select").value = "high"
+        await _settle(pilot)
 
-        # Navigate Welcome → Settings → Review
-        await _fill_welcome_and_go_to_settings(textual_app, pilot)
-        await pilot.click(_q(textual_app, "#next"))
-        await pilot.pause()
-
-        # Push result screen directly (simulating post-render state)
-        textual_app.push_screen("result")
-        await pilot.pause()
-
-        # Verify Result screen widgets are present
-        assert _q(textual_app, "#result-paths") is not None
-        assert _q(textual_app, "#open-video") is not None
-        assert _q(textual_app, "#new-job") is not None
-        assert _q(textual_app, "#done") is not None
-
-        # Alt+N should return to a previous screen (not crash)
-        textual_app.screen.action_new_job()
-        await pilot.pause()
-
-        # Quit should call app.exit
-        textual_app.push_screen("result")
-        await pilot.pause()
-        textual_app.screen.action_quit()
-        await pilot.pause()
-
-
-@pytest.mark.tui
-async def test_enter_activates_buttons_on_review():
-    """Buttons on Review screen can be activated with Enter after Tab focus."""
-    textual_app, _ = _make_tui_app()
-    async with textual_app.run_test(size=(80, 24)) as pilot:
-        await pilot.pause()
-
-        # Navigate to Review
-        await _fill_welcome_and_go_to_settings(textual_app, pilot)
-        await pilot.click(_q(textual_app, "#next"))
-        await pilot.pause()
-
-        # Tab to the Start Render button and press Enter
-        start_btn = _q(textual_app, "#start")
-        await pilot.click(start_btn)  # focus it first
-        await pilot.pause()
-        await pilot.press("enter")
-        await pilot.pause()
-
-        # Should advance to Progress screen
-        assert _q(textual_app, "#progress-stage") is not None
-
-
-@pytest.mark.tui
-async def test_tab_reaches_buttons_on_settings():
-    """Tab navigation reaches Back and Next buttons on Settings screen."""
-    textual_app, _ = _make_tui_app()
-    async with textual_app.run_test(size=(80, 24)) as pilot:
-        await pilot.pause()
-
-        await _fill_welcome_and_go_to_settings(textual_app, pilot)
-        await pilot.pause()
-
-        # Tab through to reach the Next button
-        next_btn = _q(textual_app, "#next")
-        back_btn = _q(textual_app, "#back")
-        assert next_btn is not None
-        assert back_btn is not None
-
-        # Click Next button to verify it works
-        await pilot.click(next_btn)
-        await pilot.pause()
-        assert _q(textual_app, "#review-summary") is not None
+        assert wrapper.settings.captions is False
+        assert wrapper.settings.quality == "high"
 
 
 # ---------------------------------------------------------------------------
-# Output directory default test
-# ---------------------------------------------------------------------------
-
-
-def test_default_output_dir_is_home_based():
-    """Default output dir is a dedicated folder in home, not cwd/Downloads."""
-    s = TuiSettings()
-    assert str(s.output_dir).startswith(str(Path.home()))
-    assert s.output_dir.name == "animatica-output"
-    assert "Downloads" not in str(s.output_dir)
-
-
-# ---------------------------------------------------------------------------
-# Offline template path
+# Prompt validation
 # ---------------------------------------------------------------------------
 
 
 @pytest.mark.tui
-def test_template_matcher_provides_offline_options():
-    """TemplateMatcher returns offline templates for common prompts."""
-    from animatica.ai.template import TemplateMatcher
+async def test_empty_prompt_is_rejected_with_a_reason():
+    app, _ = _make_app()
+    async with app.run_test(size=(80, 24)) as pilot:
+        await pilot.pause()
+        await _click(app, pilot, "#next")
+        await _settle(pilot)
 
-    matcher = TemplateMatcher()
-    templates = matcher.list_templates()
-    assert len(templates) > 0
-    # Common prompts should match
-    assert matcher.match("make a title card about hello") is not None
-    assert matcher.match("graph of sin(x)") is not None
-    assert matcher.match("steps to bake a cake") is not None
+        assert "Enter a prompt" in _text(_q(app, "#prompt-status"))
+        assert "error" in _q(app, "#status").classes
+
+
+@pytest.mark.tui
+async def test_two_sources_are_rejected():
+    app, _ = _make_app()
+    async with app.run_test(size=(80, 24)) as pilot:
+        await pilot.pause()
+        _q(app, "#prompt-input").value = "explain tides"
+        _q(app, "#sb-path-input").value = "/tmp/nope.json"
+        await _click(app, pilot, "#next")
+        await _settle(pilot)
+
+        assert "only one" in _text(_q(app, "#prompt-status")).lower()
+        assert "Two sources" in _status(app)
+
+
+@pytest.mark.tui
+async def test_missing_storyboard_file_is_reported(tmp_path):
+    app, _ = _make_app()
+    async with app.run_test(size=(80, 24)) as pilot:
+        await pilot.pause()
+        _q(app, "#sb-path-input").value = str(tmp_path / "absent.json")
+        await _click(app, pilot, "#next")
+        await _settle(pilot)
+
+        assert "Not found" in _text(_q(app, "#prompt-status"))
+        assert "not found" in _status(app).lower()
+
+
+@pytest.mark.tui
+async def test_typing_does_not_navigate():
+    app, _ = _make_app()
+    async with app.run_test(size=(80, 24)) as pilot:
+        await pilot.pause()
+        _q(app, "#prompt-input").focus()
+        await pilot.press(*"explain entropy")
+        await _settle(pilot)
+
+        assert _q(app, "#prompt-input") is not None  # still on step 1
+        assert "step 1/4" in _text(_q(app, "#topbar-step"))
 
 
 # ---------------------------------------------------------------------------
-# Progress screen: cancelled render stops cleanly
+# Storyboard step
 # ---------------------------------------------------------------------------
 
 
 @pytest.mark.tui
-async def test_progress_cancel_stops_render(tmp_path, monkeypatch):
-    """Cancelling a render stops the worker and shows cancelled state."""
-    textual_app, wrapper = _make_tui_app()
-    textual_app.settings.output_dir = tmp_path
-    textual_app.settings.prompt = "test"
-    textual_app.settings.provider = "template"
-    textual_app.settings.storyboard_path = None
+async def test_template_loads_a_storyboard_into_the_table():
+    app, _ = _make_app()
+    template_name = TemplateMatcher().list_templates()[0][0]
+    async with app.run_test(size=(100, 30)) as pilot:
+        await pilot.pause()
+        _q(app, "#template-select").value = template_name
+        await _click(app, pilot, "#next")
+        await _settle(pilot)
 
-    # Mock make_video to block until cancelled, then complete
-    import animatica.tui as tui_mod
+        table = _q(app, "#storyboard-table")
+        assert app.storyboard is not None
+        assert table.row_count == sum(len(scene.beats) for scene in app.storyboard.scenes)
+        assert table.row_count >= 1
+        assert "template:" in _text(_q(app, "#side-source"))
+        assert "scenes" in _text(_q(app, "#side-duration"))
+        assert _q(app, "#steps").active == "pane-storyboard"
 
-    blocked = asyncio.Event()
-    released = asyncio.Event()
 
-    def blocking_make_video(*args, **kwargs):
-        blocked.wait(timeout=2)
-        released.set()
-        # Return a fake result
-        result = MagicMock()
-        result.video = tmp_path / "video.mp4"
-        result.storyboard = tmp_path / "storyboard.json"
-        result.report = tmp_path / "report.json"
-        result.captions = tmp_path / "captions.vtt"
-        result.warnings = []
+@pytest.mark.tui
+async def test_storyboard_json_edit_validates_and_updates_the_table():
+    app, _ = _make_app()
+    template_name = TemplateMatcher().list_templates()[0][0]
+    async with app.run_test(size=(100, 30)) as pilot:
+        await pilot.pause()
+        _q(app, "#template-select").value = template_name
+        await _click(app, pilot, "#next")
+        await _settle(pilot)
+
+        editor = _q(app, "#storyboard-json")
+        payload = json.loads(editor.text)
+        payload["scenes"][0]["beats"][0]["caption"] = "Edited caption"
+        editor.text = json.dumps(payload)
+        await _click(app, pilot, "#validate")
+        await _settle(pilot)
+
+        assert "Valid" in _text(_q(app, "#storyboard-status"))
+        assert "validated" in _status(app).lower()
+
+
+@pytest.mark.tui
+async def test_broken_json_is_reported_not_raised():
+    app, _ = _make_app()
+    template_name = TemplateMatcher().list_templates()[0][0]
+    async with app.run_test(size=(100, 30)) as pilot:
+        await pilot.pause()
+        _q(app, "#template-select").value = template_name
+        await _click(app, pilot, "#next")
+        await _settle(pilot)
+
+        _q(app, "#storyboard-json").text = '{"version": "1", '
+        await _click(app, pilot, "#validate")
+        await _settle(pilot)
+
+        assert "JSON error" in _text(_q(app, "#storyboard-status"))
+        assert "not valid JSON" in _status(app)
+
+
+@pytest.mark.tui
+async def test_unknown_component_is_rejected_by_the_registry():
+    app, _ = _make_app()
+    template_name = TemplateMatcher().list_templates()[0][0]
+    async with app.run_test(size=(100, 30)) as pilot:
+        await pilot.pause()
+        _q(app, "#template-select").value = template_name
+        await _click(app, pilot, "#next")
+        await _settle(pilot)
+
+        editor = _q(app, "#storyboard-json")
+        editor.text = editor.text.replace("title_card", "not_a_component", 1)
+        await _click(app, pilot, "#validate")
+        await _settle(pilot)
+
+        assert "problem" in _text(_q(app, "#storyboard-status"))
+        assert "cannot render" in _status(app)
+
+
+@pytest.mark.tui
+async def test_existing_outputs_are_flagged_before_rendering(tmp_path):
+    (tmp_path / "video.mp4").write_bytes(b"old")
+    (tmp_path / "report.json").write_text("{}")
+    app, _ = _make_app()
+    async with app.run_test(size=(100, 30)) as pilot:
+        await pilot.pause()
+        _q(app, "#output-dir").value = str(tmp_path)
+        await _settle(pilot)
+
+        warning = _text(_q(app, "#overwrite-warning"))
+        assert "overwritten" in warning
+        assert "video.mp4" in warning
+
+
+# ---------------------------------------------------------------------------
+# Render step (make_video is faked)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.tui
+async def test_render_bar_shows_real_units_from_the_pipeline(tmp_path, monkeypatch):
+    """The bar counts scene/post units the pipeline reports, not ticking time."""
+    from animatica.progress import ProgressEvent
+
+    result = _fake_result(tmp_path)
+    step1, step2 = threading.Event(), threading.Event()
+
+    def fake_make_video(**kwargs):
+        report = kwargs["on_progress"]
+        report(ProgressEvent(stage="storyboard", label="resolving storyboard", done=0, total=0))
+        step1.wait(timeout=10)  # main thread inspects the still-unknown bar
+        for done in range(1, 4):
+            report(ProgressEvent(stage="render", label=f"scene {done}/3: done", done=done, total=4))
+        report(ProgressEvent(stage="captions", label="writing captions and report", done=4, total=4))
+        step2.wait(timeout=10)  # main thread inspects 4/4 before the run finishes
         return result
 
-    monkeypatch.setattr(tui_mod, "make_video", blocking_make_video)
+    monkeypatch.setattr("animatica.tui.make_video", fake_make_video)
 
-    async with textual_app.run_test(size=(80, 24)) as pilot:
+    app, wrapper = _make_app()
+    async with app.run_test(size=(100, 30)) as pilot:
+        await _settle(pilot)
+        _q(app, "#prompt-input").value = "explain entropy"
+        await _settle(pilot)
+        app._goto("render")
+        await _settle(pilot)
+        await _click(app, pilot, "#start")
+
+        # unknown amount of work: no percentage until a real unit arrives
+        assert await _wait_for(app, pilot, lambda: _q(app, "#progress-bar").total is None)
+        step1.set()
+
+        assert await _wait_for(app, pilot, lambda: _q(app, "#progress-bar").progress == 4)
+        bar = _q(app, "#progress-bar")
+        assert bar.total == 4, "total must be the units the pipeline really has"
+        assert "writing captions" in _text(_q(app, "#render-stage"))
+        step2.set()
+
+        assert await _wait_for(app, pilot, lambda: "done" in _text(_q(app, "#status")).lower())
+        bar = _q(app, "#progress-bar")
+        assert (bar.total, bar.progress) == (4, 4), "the real unit scale survives completion"
+
+
+async def test_render_bar_stays_indeterminate_while_work_is_unknown(tmp_path, monkeypatch):
+    """A pipeline that reports nothing must not show a made-up percentage."""
+    result = _fake_result(tmp_path)
+    gate = threading.Event()
+
+    def fake_make_video(**kwargs):
+        gate.wait(timeout=10)
+        return result
+
+    monkeypatch.setattr("animatica.tui.make_video", fake_make_video)
+
+    app, wrapper = _make_app()
+    async with app.run_test(size=(100, 30)) as pilot:
+        await _settle(pilot)
+        _q(app, "#prompt-input").value = "explain entropy"
+        await _settle(pilot)
+        app._goto("render")
+        await _settle(pilot)
+        await _click(app, pilot, "#start")
+
+        assert await _wait_for(app, pilot, lambda: _q(app, "#cancel").disabled is False)
+        assert _q(app, "#progress-bar").total is None
+        gate.set()
+        assert await _wait_for(app, pilot, lambda: "done" in _text(_q(app, "#status")).lower())
+
+
+async def test_typed_prompt_reaches_the_job_settings_live():
+    """Regression: Start used to read a cached prompt and say "nothing to render"."""
+    app, wrapper = _make_app()
+    async with app.run_test(size=(80, 24)) as pilot:
+        await _settle(pilot)
+        _q(app, "#prompt-input").value = "explain why the sky is blue"
+        await _settle(pilot)
+
+        assert app.settings.prompt == "explain why the sky is blue"
+
+
+async def test_start_from_the_render_step_uses_the_typed_prompt(monkeypatch):
+    """The Render step is reachable directly, so Start must read the prompt field."""
+    calls = []
+
+    def fake_make_video(**kwargs):
+        calls.append(kwargs)
+        return _fake_result()
+
+    monkeypatch.setattr("animatica.tui.make_video", fake_make_video)
+    app, wrapper = _make_app()
+    async with app.run_test(size=(80, 24)) as pilot:
+        await _settle(pilot)
+        _q(app, "#prompt-input").value = "explain why the sky is blue"
+        await _settle(pilot)
+        app._goto("render")
+        await _settle(pilot)
+        await _click(app, pilot, "#start")
+
+        assert await _wait_for(app, pilot, lambda: bool(calls))
+        assert calls[0]["prompt"] == "explain why the sky is blue"
+
+
+async def test_render_completes_and_shows_the_video(tmp_path, monkeypatch):
+    result = _fake_result(tmp_path, warnings=["safe_area: caption close to the edge"])
+    monkeypatch.setattr("animatica.tui.make_video", lambda **kwargs: result)
+
+    app, wrapper = _make_app()
+    template_name = TemplateMatcher().list_templates()[0][0]
+    async with app.run_test(size=(100, 30)) as pilot:
         await pilot.pause()
+        _q(app, "#output-dir").value = str(tmp_path)
+        _q(app, "#template-select").value = template_name
+        await _click(app, pilot, "#next")
+        await _settle(pilot)
+        await _click(app, pilot, "#to-render")
+        await _settle(pilot)
+        await _click(app, pilot, "#start")
 
-        # Push progress screen directly
-        textual_app.push_screen("progress")
-        await pilot.pause()
-
-        # Cancel immediately using Escape key shortcut
-        await pilot.press("escape")
-        await pilot.pause()
-
-        # Should show cancelling then stopped
-        status = _q(textual_app, "#progress-status")
-        text = _text(status)
-        assert "Cancelling" in text or "Cancelled" in text or "stopped" in text
-
-        # Release the blocked render
-        blocked.set()
-        await pilot.pause()
-
-        await asyncio.sleep(0.5)
-        # Check render thread is done
-        if textual_app._render_thread is not None:
-            textual_app._render_thread.join(timeout=5)
-        assert not textual_app._render_thread.is_alive()
-
-
-# ---------------------------------------------------------------------------
-# Real offline render integration test
-# ---------------------------------------------------------------------------
+        assert await _wait_for(app, pilot, lambda: _text(_q(app, "#render-stage")) == "Complete.")
+        assert str(tmp_path / "video.mp4") in _text(_q(app, "#render-summary"))
+        assert "warning" in _text(_q(app, "#render-summary"))
+        assert _q(app, "#open-video").disabled is False
+        assert _q(app, "#progress-bar").progress == 100
+        assert app.result is not None
 
 
 @pytest.mark.tui
-@pytest.mark.render
-async def test_real_offline_render(tmp_path):
-    """Render a real offline preview video via the pipeline.
+async def test_render_failure_is_logged_and_does_not_crash(tmp_path, monkeypatch):
+    def boom(**kwargs):
+        raise RuntimeError("ffmpeg fell over")
 
-    Uses a checked-in gallery storyboard and preview quality so it is fast.
-    This is the "real offline preview render" verification.
-    """
-    from animatica.pipeline import make_video
+    monkeypatch.setattr("animatica.tui.make_video", boom)
 
-    # Use the sine gallery storyboard (simple, fast to render)
-    sb_path = Path("acceptance/gallery/sine/storyboard.json")
-    assert sb_path.is_file(), f"Gallery storyboard not found: {sb_path}"
+    app, _ = _make_app()
+    async with app.run_test(size=(100, 30)) as pilot:
+        await pilot.pause()
+        _q(app, "#prompt-input").value = "explain entropy"
+        await _click(app, pilot, "#next")
+        await _settle(pilot)
+        await _click(app, pilot, "#to-render")
+        await _settle(pilot)
+        await _click(app, pilot, "#start")
 
-    result = make_video(
-        storyboard_path=sb_path,
-        out_dir=tmp_path / "out",
-        preview=True,
-    )
+        assert await _wait_for(app, pilot, lambda: "failed" in _text(_q(app, "#status")).lower())
+        assert "Render failed" in _text(_q(app, "#render-stage"))
+        assert _q(app, "#start").disabled is False  # can try again
 
-    assert result.video.is_file(), f"Video not produced: {result.video}"
-    assert result.video.stat().st_size > 0, "Video is empty"
-    assert result.report.is_file(), f"Report not produced: {result.report}"
-    assert result.storyboard.is_file(), f"Storyboard not produced: {result.storyboard}"
 
-    # No parametric-graph fallback warnings
-    import json as _json
-    report = _json.loads(result.report.read_text(encoding="utf-8"))
-    warnings = report.get("warnings", [])
-    pg_warnings = [w for w in warnings if "parametric_graph" in str(w).lower()]
-    assert pg_warnings == [], f"parametric_graph fallback warnings: {pg_warnings}"
+@pytest.mark.tui
+async def test_cancel_requests_a_stop_and_reports_it(tmp_path, monkeypatch):
+    release = threading.Event()
+
+    def slow(**kwargs):
+        release.wait(5)
+        return _fake_result(tmp_path)
+
+    monkeypatch.setattr("animatica.tui.make_video", slow)
+
+    app, _ = _make_app()
+    async with app.run_test(size=(100, 30)) as pilot:
+        await pilot.pause()
+        _q(app, "#prompt-input").value = "explain entropy"
+        await _click(app, pilot, "#next")
+        await _settle(pilot)
+        await _click(app, pilot, "#to-render")
+        await _settle(pilot)
+        await _click(app, pilot, "#start")
+        await pilot.pause()
+
+        assert _q(app, "#cancel").disabled is False
+        await _click(app, pilot, "#cancel")
+        await _settle(pilot)
+        assert app.cancel_event.is_set()
+
+        release.set()
+        assert await _wait_for(app, pilot, lambda: _text(_q(app, "#render-stage")) == "Cancelled.")
+        assert "cancelled" in _status(app).lower()
+
+
+@pytest.mark.tui
+async def test_nothing_to_render_is_refused():
+    app, _ = _make_app()
+    async with app.run_test(size=(80, 24)) as pilot:
+        await pilot.pause()
+        app.action_start_render()
+        await _settle(pilot)
+
+        assert "Nothing to render" in _status(app)
+
+
+@pytest.mark.tui
+async def test_ctrl_j_advances_from_prompt_to_render():
+    app, _ = _make_app()
+    async with app.run_test(size=(80, 24)) as pilot:
+        await pilot.pause()
+        _q(app, "#prompt-input").value = "explain tides"
+        await pilot.press("ctrl+j")
+        await _settle(pilot)
+
+        assert _q(app, "#steps").active == "pane-render"
+        assert "prompt" in _text(_q(app, "#side-source"))
+
+
+@pytest.mark.tui
+async def test_ctrl_b_goes_back_a_step():
+    app, _ = _make_app()
+    async with app.run_test(size=(80, 24)) as pilot:
+        await pilot.pause()
+        _q(app, "#prompt-input").value = "explain tides"
+        await pilot.press("ctrl+j")
+        await _settle(pilot)
+        await pilot.press("ctrl+b")
+        await _settle(pilot)
+
+        assert _q(app, "#steps").active == "pane-job"
+
+
+# ---------------------------------------------------------------------------
+# Defaults: the Job step is the only place users configure anything, and the
+# choices stick for the next launch.
+# ---------------------------------------------------------------------------
+
+
+def _picker(app, widget_id):
+    from animatica.tui_picker import FilterSelect
+
+    return _q(app, f"#{widget_id}", FilterSelect)
+
+
+async def test_job_step_uses_searchable_pickers(monkeypatch, tmp_path):
+    monkeypatch.setenv("ANIMATICA_CONFIG_DIR", str(tmp_path))
+    app, _ = _make_app()
+    async with app.run_test(size=(80, 24)) as pilot:
+        await pilot.pause()
+        for widget_id in ("quality-select", "theme-select", "provider-select", "orientation-select"):
+            picker = _picker(app, widget_id)
+            assert picker._options, f"{widget_id} has no choices"
+            assert picker.value, f"{widget_id} starts without a value"
+
+
+async def test_typing_in_a_picker_filters_and_commits(monkeypatch, tmp_path):
+    monkeypatch.setenv("ANIMATICA_CONFIG_DIR", str(tmp_path))
+    app, _ = _make_app()
+    async with app.run_test(size=(80, 24)) as pilot:
+        await pilot.pause()
+        quality = _picker(app, "quality-select")
+        app.set_focus(quality.query_one("#fs-input"))
+        await pilot.pause()
+        await pilot.press("h", "i")
+        await pilot.pause()
+        assert [label for label, _ in quality._filtered] == ["High 1080p"]
+        await pilot.press("enter")
+        await pilot.pause()
+    assert app.settings.quality == "high"
+
+
+async def test_choices_are_remembered_for_the_next_session(monkeypatch, tmp_path):
+    monkeypatch.setenv("ANIMATICA_CONFIG_DIR", str(tmp_path))
+    app, _ = _make_app()
+    async with app.run_test(size=(80, 24)) as pilot:
+        await pilot.pause()
+        theme = _picker(app, "theme-select")
+        app.set_focus(theme.query_one("#fs-input"))
+        await pilot.pause()
+        await pilot.press("l", "i", "g")  # -> Light
+        await pilot.press("enter")
+        await pilot.pause()
+    assert app.settings.theme == "light"
+
+    from animatica.config import load_config
+
+    assert load_config().theme == "light"
+
+    fresh = TuiSettings()
+    assert fresh.theme == "light"
+
+
+async def test_saved_defaults_survive_a_broken_config_file(monkeypatch, tmp_path):
+    monkeypatch.setenv("ANIMATICA_CONFIG_DIR", str(tmp_path))
+    (tmp_path / "config.toml").write_text("this is not toml = = =\n", encoding="utf-8")
+    fresh = TuiSettings()  # must fall back to built-in defaults, not raise
+    assert fresh.quality in {"preview", "standard", "high"}

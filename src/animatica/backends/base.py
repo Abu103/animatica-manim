@@ -5,6 +5,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import ClassVar, Literal, Protocol, runtime_checkable
 
+from animatica.progress import BackendProgressFn
 from animatica.storyboard.models import Storyboard
 
 
@@ -14,6 +15,10 @@ class RenderOptions:
     jobs: int | None = None
     captions: bool = True  # burn each beat's caption into the video
     vertical: bool = False  # 9:16 aspect ratio for mobile/social
+    progress: BackendProgressFn | None = None
+    """Optional ``(label, done, total)`` reporter. Backends should call it for
+    each unit they can actually observe, and stay silent about what they cannot.
+    """
 
 
 @dataclass(frozen=True)

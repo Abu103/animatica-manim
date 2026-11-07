@@ -1,83 +1,244 @@
 #!/usr/bin/env bash
-# Animatica fast full-quality bootstrap (~25-40s on a normal connection).
-# Self-contained: installs uv if missing, installs Python deps and downloads the
-# pre-baked TinyTeX zip IN PARALLEL, then verifies with animatica doctor.
-# Usage: curl -fsSL <raw>/scripts/bootstrap.sh | bash
+# Animatica one-command setup.
+#
+#   curl -fsSL https://raw.githubusercontent.com/Abu103/animatica-manim/main/scripts/bootstrap.sh | bash
+#
+# Gets you from a bare machine to a working render: python + manim + the cairo/pango
+# libraries manim needs (system packages when available, otherwise a prebuilt
+# bundle — no manual downloads), ffmpeg, and optionally LaTeX. Afterwards it opens
+# nothing and asks nothing: run `animatica tui` and set your defaults there.
+#
+# Environment (all optional):
+#   ANIMATICA_HOME        where to put the checkout        (default ~/animatica-manim)
+#   ANIMATICA_REF         git branch/tag to install        (default main)
+#   ANIMATICA_NATIVE_URL  tar.gz with wheels/ + lib/       (default: repo release)
+#   ANIMATICA_TEX=0       skip the LaTeX (TinyTeX) step
+#   ANIMATICA_NATIVE=0    never touch cairo/pango
+#
+# Flags: --full (always try LaTeX), --native-only (stop after the native deps),
+#        --help
 set -euo pipefail
-GH_REPO="${ANIMATICA_GH_REPO:-Abu103/animatica-manim}"
-if [ -n "${BASH_SOURCE[0]:-}" ] && [ -f "$(dirname "${BASH_SOURCE[0]}")/../src/animatica/__init__.py" ]; then
-  cd "$(dirname "${BASH_SOURCE[0]}")/.."
-else
-  # piped via curl|bash: clone into ~/animatica-manim
-  ROOT="$HOME/animatica-manim"
-  [ -f "$ROOT/src/animatica/__init__.py" ] || git clone "https://github.com/$GH_REPO.git" "$ROOT"
-  cd "$ROOT"
-fi
-ROOT="$PWD"
-TINYTEX_ZIP_URL="${ANIMATICA_TINYTEX_URL:-}"
-TINYTEX_DIR="$ROOT/.tex"
 
-# --- 0. uv (10s if missing) ---
-if ! command -v uv >/dev/null 2>&1; then
-  echo "[0/3] installing uv"
-  curl -fsSL https://astral.sh/uv/install.sh | sh
+GH_REPO="${ANIMATICA_GH_REPO:-Abu103/animatica-manim}"
+GH_REF="${ANIMATICA_REF:-main}"
+ROOT="${ANIMATICA_HOME:-$HOME/animatica-manim}"
+DO_TEX="${ANIMATICA_TEX:-1}"
+DO_NATIVE="${ANIMATICA_NATIVE:-1}"
+MODE="install"
+
+for arg in "$@"; do
+  case "$arg" in
+    --full) DO_TEX=1 ;;
+    --native-only) MODE="native" ;;
+    --help|-h) sed -n '2,20p' "$0" 2>/dev/null || true; exit 0 ;;
+    *) echo "unknown flag: $arg (try --help)" >&2; exit 2 ;;
+  esac
+done
+
+say() { printf '%s\n' "$*"; }
+step() { printf '\n[%s] %s\n' "$1" "$2"; }
+have() { command -v "$1" >/dev/null 2>&1; }
+
+# --------------------------------------------------------------------------- #
+# 0. get the source (works from a checkout, a git clone, or a plain tarball)
+# --------------------------------------------------------------------------- #
+self_dir=""
+if [ -n "${BASH_SOURCE[0]:-}" ] && [ -f "${BASH_SOURCE[0]}" ]; then
+  self_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+fi
+
+if [ -n "$self_dir" ] && [ -f "$self_dir/../src/animatica/__init__.py" ]; then
+  ROOT="$(cd "$self_dir/.." && pwd)"
+  say "Using the checkout at $ROOT"
+elif [ -f "$ROOT/src/animatica/__init__.py" ]; then
+  say "Using the existing checkout at $ROOT"
+else
+  step "0/4" "downloading Animatica ($GH_REF)"
+  if have git; then
+    git clone --depth 1 --branch "$GH_REF" "https://github.com/$GH_REPO.git" "$ROOT"
+  else
+    mkdir -p "$ROOT"
+    curl -fsSL "https://codeload.github.com/$GH_REPO/tar.gz/refs/heads/$GH_REF" |
+      tar xz -C "$ROOT" --strip-components=1
+  fi
+fi
+cd "$ROOT"
+say "  -> $ROOT"
+
+# --------------------------------------------------------------------------- #
+# 1. cairo + pango: the libraries manim's pycairo/manimpango need
+# --------------------------------------------------------------------------- #
+LIB_READY=0
+BUNDLE_USED=0
+INSTALLER=""
+
+has_lib() { ldconfig -p 2>/dev/null | grep -q "lib${1}\.so"; }
+
+if has_lib cairo && has_lib pango-1.0 && has_lib pangocairo-1.0; then
+  LIB_READY=1
+fi
+
+pick_installer() {
+  if [ "$(id -u)" = "0" ]; then INSTALLER=""
+  elif have sudo; then INSTALLER="sudo"
+  else INSTALLER="none"; fi
+  if ! have apt-get && ! have dnf && ! have apk && ! have brew; then INSTALLER="none"; fi
+}
+
+install_system_libs() {
+  pick_installer
+  [ "$INSTALLER" = "none" ] && return 1
+  if have apt-get; then
+    $INSTALLER apt-get update -qq >/dev/null 2>&1 || true
+    $INSTALLER apt-get install -y -qq --no-install-recommends \
+      libcairo2-dev libpango1.0-dev pkg-config >/dev/null 2>&1
+  elif have dnf; then
+    $INSTALLER dnf install -y -q cairo-devel pango-devel pkgconf-pkg-config >/dev/null 2>&1
+  elif have apk; then
+    $INSTALLER apk add -q --no-progress cairo-dev pango-dev pkgconf >/dev/null 2>&1
+  elif have brew; then
+    brew install -q cairo pango pkg-config >/dev/null 2>&1
+  fi
+  has_lib cairo && has_lib pango-1.0 && has_lib pangocairo-1.0
+}
+
+fetch_native_bundle() {
+  local out="$1"
+  if [ -n "${ANIMATICA_NATIVE_URL:-}" ]; then
+    curl -fsSL --max-time 240 "$ANIMATICA_NATIVE_URL" -o "$out" && return 0
+  fi
+  # published by .github/workflows/native-deps.yml (release asset)
+  curl -fsSL --max-time 240 \
+    "https://github.com/$GH_REPO/releases/latest/download/animatica-native.tar.gz" \
+    -o "$out" 2>/dev/null && return 0
+  # last resort: the repo tree, where the workflow can also commit it
+  local tmp; tmp="$(mktemp -d)"
+  if curl -fsSL --max-time 240 \
+       "https://codeload.github.com/$GH_REPO/tar.gz/refs/heads/$GH_REF" -o "$tmp/tree.tgz" 2>/dev/null; then
+    if tar xzf "$tmp/tree.tgz" -C "$tmp" --strip-components=1 "*/native/animatica-native.tar.gz" 2>/dev/null; then
+      mv "$tmp/native/animatica-native.tar.gz" "$out" && rm -rf "$tmp" && return 0
+    fi
+  fi
+  rm -rf "$tmp"
+  return 1
+}
+
+if [ "$LIB_READY" = "1" ]; then
+  say "[1/4] cairo/pango: already installed"
+elif [ "$DO_NATIVE" = "0" ]; then
+  say "[1/4] cairo/pango: skipped (ANIMATICA_NATIVE=0)"
+else
+  step "1/4" "cairo/pango (manim needs them; there are no Linux wheels)"
+  if install_system_libs; then
+    LIB_READY=1
+    say "  -> installed from the system package manager"
+  else
+    say "  -> no usable package manager, fetching a prebuilt bundle instead"
+    if fetch_native_bundle "$ROOT/animatica-native.tar.gz"; then
+      rm -rf "$ROOT/native"
+      mkdir -p "$ROOT/native"
+      tar xzf "$ROOT/animatica-native.tar.gz" -C "$ROOT/native"
+      rm -f "$ROOT/animatica-native.tar.gz"
+      BUNDLE_USED=1
+      LIB_READY=1
+      say "  -> bundle unpacked into $ROOT/native (no shell setup needed)"
+    else
+      say "  !! could not get cairo/pango; manim renders will fail."
+      say "     Retry with ANIMATICA_NATIVE_URL=<tar.gz> or install libcairo2-dev + libpango1.0-dev."
+    fi
+  fi
+fi
+
+[ "$MODE" = "native" ] && { say "\nNative dependency step finished."; exit 0; }
+
+# --------------------------------------------------------------------------- #
+# 2. python env + animatica
+# --------------------------------------------------------------------------- #
+step "2/4" "python environment"
+if have uv; then
+  :
+else
+  say "  installing uv (fast installer, no sudo needed)"
+  curl -fsSL https://astral.sh/uv/install.sh | sh >/dev/null 2>&1 || true
   export PATH="$HOME/.local/bin:$PATH"
 fi
 
-# --- 1+2 in parallel: python deps | pre-baked TinyTeX ---
-if [ ! -x "$ROOT/.venv/bin/python" ]; then
-  uv venv "$ROOT/.venv"
+if [ -x "$ROOT/.venv/bin/python" ]; then
+  PY="$ROOT/.venv/bin/python"
+elif have uv; then
+  uv venv "$ROOT/.venv" >/dev/null
+  PY="$ROOT/.venv/bin/python"
+else
+  python3 -m venv "$ROOT/.venv"
+  PY="$ROOT/.venv/bin/python"
 fi
-uv pip install --python "$ROOT/.venv/bin/python" -e "$ROOT" &
-PIP_PID=$!
+say "  -> $PY"
 
-TEX_OK=0
-fetch_tex() {
-  # 1) explicit URL (public repo or signed URL), 2) gh CLI (works for PRIVATE repos
-  #    when the user is logged in), 3) GITHUB_TOKEN against the API
-  if [ -n "$TINYTEX_ZIP_URL" ]; then
-    curl -fsSL --max-time 120 "$TINYTEX_ZIP_URL" -o /tmp/tinytex-manim.zip && return 0
-  fi
-  if command -v gh >/dev/null 2>&1 && gh auth status >/dev/null 2>&1; then
-    gh release download --repo "$GH_REPO" --pattern tinytex-manim.zip -O /tmp/tinytex-manim.zip 2>/dev/null && return 0
-  fi
-  if [ -n "${GITHUB_TOKEN:-}" ]; then
-    curl -fsSL -H "Authorization: Bearer $GITHUB_TOKEN" -H "Accept: application/octet-stream" \
-      "https://api.github.com/repos/$GH_REPO/releases/latest/assets?per_page=100" >/dev/null 2>&1 || true
-    url=$(curl -fsSL -H "Authorization: Bearer $GITHUB_TOKEN" \
-      "https://api.github.com/repos/$GH_REPO/releases/latest" | grep -o '"browser_download_url": *"[^"]*tinytex-manim.zip"' | cut -d'"' -f4)
-    [ -n "$url" ] && curl -fsSL -H "Authorization: Bearer $GITHUB_TOKEN" -L "$url" -o /tmp/tinytex-manim.zip && return 0
-  fi
-  return 1
+pip_install() {
+  if have uv; then uv pip install --python "$PY" "$@"; else "$PY" -m pip install -q "$@"; fi
 }
-fetch_tex && TEX_OK=1 &
-TEX_PID=$!
 
-wait "$PIP_PID"
-if wait $TEX_PID; then TEX_OK=1; fi
+if [ "$BUNDLE_USED" = "1" ]; then
+  # Install the prebuilt extensions first: pip then sees them as satisfied and
+  # never tries to compile pycairo/manimpango against missing headers.
+  pip_install --no-deps "$ROOT"/native/wheels/*.whl
+fi
+say "  installing animatica + manim (this is the slow part, ~1 min)"
+pip_install -e "$ROOT"
 
-if [ "$TEX_OK" = "1" ]; then
-  mkdir -p "$TINYTEX_DIR" && unzip -oq /tmp/tinytex-manim.zip -d "$TINYTEX_DIR"
-  TEX_BIN=$(ls -d "$TINYTEX_DIR"/bin/*/ 2>/dev/null | head -1 || true)
-  if [ -z "$TEX_BIN" ]; then
-    echo "TinyTeX archive has no bin directory" >&2
-    exit 1
+# --------------------------------------------------------------------------- #
+# 3. LaTeX (optional: needed for MathTex, not for text or shapes)
+# --------------------------------------------------------------------------- #
+if [ "$DO_TEX" = "1" ] && ! have latex; then
+  step "3/4" "LaTeX for equations (optional)"
+  TEX_DIR="$ROOT/.tex"
+  if [ ! -x "$TEX_DIR/tlmgr" ] && [ ! -d "$TEX_DIR/bin" ]; then
+    if curl -fsSL --max-time 300 \
+        "https://github.com/$GH_REPO/releases/latest/download/tinytex-manim.zip" -o /tmp/tinytex-manim.zip 2>/dev/null; then
+      mkdir -p "$TEX_DIR" && (cd "$TEX_DIR" && python3 -c "import zipfile,sys;zipfile.ZipFile('/tmp/tinytex-manim.zip').extractall('.')") 2>/dev/null || true
+    fi
   fi
-  export PATH="$TEX_BIN:$PATH"
-  echo "[2/3] TinyTeX available in this bootstrap process at $TEX_BIN"
-  echo "      for future shells, add to PATH: $TEX_BIN"
+  if [ -d "$TEX_DIR/bin" ]; then
+    say "  -> TeX in $TEX_DIR/bin (animatica finds it automatically)"
+  else
+    say "  -> skipped; equations will warn. Text and shapes render fine."
+  fi
 else
-  echo "[2/3] pre-baked TinyTeX zip unavailable (release not published?) -- falling back to doctor --fix"
-  # --yes: no prompt (stdin is the script itself under curl|bash). Failures are caught by the final check.
-  "$ROOT/.venv/bin/animatica" doctor --fix --yes || true
+  step "3/4" "LaTeX: not needed / already installed"
 fi
 
-echo "[3/3] verifying"
-if "$ROOT/.venv/bin/animatica" doctor; then
-  echo ""
-  echo "Done. Then: source .venv/bin/activate && animatica make \"graph of sin(x)\" -o out/"
+# --------------------------------------------------------------------------- #
+# 4. verify
+# --------------------------------------------------------------------------- #
+step "4/4" "verifying"
+export PATH="$ROOT/.venv/bin:$PATH"
+DOCTOR_OUT="$("$ROOT/.venv/bin/animatica" doctor 2>&1 || true)"
+printf '%s\n' "$DOCTOR_OUT"
+# LaTeX is optional (equations only): a missing TeX must not fail the setup.
+# pipefail: grep exits 1 when it filters everything, so every stage tolerates that
+FAIL_LINES="$(printf '%s\n' "$DOCTOR_OUT" | grep '^\[FAIL\]' || true)"
+REQUIRED_FAILS="$(printf '%s\n' "$FAIL_LINES" | grep -v 'latex' | wc -l | tr -d ' ' || true)"
+if [ "${REQUIRED_FAILS:-1}" = "0" ]; then
+  if printf '%s\n' "$DOCTOR_OUT" | grep -q '^\[FAIL\] latex' || true; then
+    say ""
+    say "Note: LaTeX is missing, so MathTex/equation scenes will warn."
+    say "      Text, shapes, charts and everything else render fine."
+    say "      Add it later with: animatica doctor --fix"
+  fi
+  cat <<'EOF'
+
+Ready. Two commands from here:
+
+  animatica tui                 # do everything, and set your defaults, here
+  animatica make "graph of sin(x)" -o out/
+
+`animatica tui` is the place to tweak quality, theme, provider and API keys:
+pick with the arrow keys or start typing to filter the list. Nothing else to
+configure and no environment variables to export.
+EOF
 else
-  echo ""
-  echo "Setup is NOT complete: see the FAIL lines above (re-run after fixing them)." >&2
+  say ""
+  say "Some checks failed (see the FAIL lines above). Re-run this script, or:"
+  say "  $ROOT/.venv/bin/animatica doctor --fix --yes"
   exit 1
 fi

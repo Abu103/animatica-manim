@@ -7,6 +7,7 @@ import os
 import shutil
 import subprocess
 import sys
+import threading
 from typing import ClassVar
 from pathlib import Path
 
@@ -78,7 +79,18 @@ class ManimBackend:
                 scene_dur += comp.duration(params)
             durations.append(scene_dur)
 
+        n_scenes = len(sb.scenes)
+        progress = opts.progress
+        finished_scenes = 0
+        progress_lock = threading.Lock()
+
+        def _note(label: str, done: int) -> None:
+            if progress is not None:
+                progress(label, done, n_scenes)
+
         def _render_scene(i: int) -> Path:
+            nonlocal finished_scenes
+            _note(f"scene {i + 1}/{n_scenes}: rendering", finished_scenes)
             with timer.stage(f"render_scene_{i}"):
                 env = dict(os.environ)
                 env.setdefault("PYTHONUTF8", "1")  # Windows defaults to cp1252; titles/captions may be Unicode
@@ -113,7 +125,12 @@ class ManimBackend:
                 except subprocess.CalledProcessError as exc:
                     tail = "\n".join(((exc.stderr or "") + "\n" + (exc.stdout or "")).strip().splitlines()[-25:])
                     raise RuntimeError(f"manim failed on scene {i} (exit {exc.returncode}):\n{tail}") from exc
-                return _find_mp4(media_dir, f"scene_{i}")
+                clip = _find_mp4(media_dir, f"scene_{i}")
+            with progress_lock:
+                finished_scenes += 1
+                done = finished_scenes
+            _note(f"scene {i + 1}/{n_scenes}: done", done)
+            return clip
 
         scene_mp4s = render_scenes_parallel(_render_scene, len(sb.scenes), jobs=opts.jobs or 1)
 
@@ -124,6 +141,7 @@ class ManimBackend:
                 warnings.extend(json.loads(wpath.read_text(encoding="utf-8")))
                 wpath.unlink()
 
+        _note(f"merging {n_scenes} scene(s)", n_scenes)
         with timer.stage("concat"):
             video = out_dir / "video.mp4"
             if len(scene_mp4s) == 1:

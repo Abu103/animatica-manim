@@ -20,6 +20,39 @@ def pytest_collection_modifyitems(config, items):
 
 
 @pytest.fixture
+def tiny_video(tmp_path):
+    """A real 2-second mp4, made with the ffmpeg binary the project already ships.
+
+    Tests that need actual pixels used to depend on a checked-in gallery video,
+    which made them fail (not skip) on a fresh clone.
+    """
+    import subprocess
+
+    try:
+        import imageio_ffmpeg
+
+        exe = imageio_ffmpeg.get_ffmpeg_exe()
+    except Exception:  # pragma: no cover - system ffmpeg only
+        exe = shutil.which("ffmpeg")
+    if not exe:
+        pytest.skip("no ffmpeg available to build a test video")
+    out = tmp_path / "clip.mp4"
+    subprocess.run(
+        [exe, "-y", "-f", "lavfi", "-i", "testsrc=size=160x90:rate=15:duration=2",
+         "-pix_fmt", "yuv420p", "-loglevel", "error", str(out)],
+        check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+    )
+    assert out.is_file() and out.stat().st_size > 0
+    return out
+
+
+@pytest.fixture(autouse=True)
+def _isolated_config(tmp_path, monkeypatch):
+    """Tests never read or write the developer's real ~/.config/animatica."""
+    monkeypatch.setenv("ANIMATICA_CONFIG_DIR", str(tmp_path / "animatica-config"))
+
+
+@pytest.fixture
 def run_component(tmp_path):
     """Run one component on a real manim Scene (480p15, no movie written). Returns (scene, warnings)."""
     def _run(component, params, colors=None):

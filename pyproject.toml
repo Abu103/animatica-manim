@@ -34,7 +34,7 @@ animatica = "animatica.cli:app"
 where = ["src"]
 
 [tool.setuptools.package-data]
-animatica = ["ai/providers.toml", "docs/*.md"]
+animatica = ["ai/providers.toml", "docs/*.md", "backends/hyperframes/template.html"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
@@ -43,4 +43,11 @@ markers = [
     "tui: needs the optional textual package",
 ]
 asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"
+filterwarnings = [
+    # Any warning is a failure; the one exception is pydub (a manim dependency)
+    # still importing the audioop module, which we cannot fix upstream.
+    "error",
+    "ignore:'audioop' is deprecated:DeprecationWarning",
+]
 

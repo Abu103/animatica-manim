@@ -214,6 +214,18 @@ class TemplateMatcher:
         """Return (name, example_prompt) for every template."""
         return [(t["name"], t["example"]) for t in _TEMPLATES]
 
+    def by_name(self, name: str) -> Storyboard | None:
+        """Return the storyboard of the template called exactly `name`.
+
+        ``match()`` is keyword-based and works on prompts, so it cannot be used
+        with a template name ("title_card" has no whole-word boundary before
+        the underscore). Menus that list templates use this instead.
+        """
+        for tmpl in _TEMPLATES:
+            if tmpl["name"] == name:
+                return Storyboard.model_validate(tmpl["storyboard"])
+        return None
+
     def match(self, prompt: str) -> Storyboard | None:
         """Return a Storyboard if `prompt` matches a template, else None."""
         lowered = prompt.lower()

@@ -4,37 +4,56 @@ Describe something, get an explainer video. Built on Manim; works with free AI m
 
 ## Install (Windows / Mac / Linux)
 
-One command sets everything up with full quality (real LaTeX + real ffmpeg). Expect a few minutes the first time (downloading LaTeX is the slow part); later runs are quick. Supported and CI-tested: **Linux** and **Windows**; macOS is best-effort.
-
+One command, same result on Linux, macOS and Windows. It installs Python, manim,
+ffmpeg and LaTeX, and it solves the cairo/pango problem for you: on Linux it uses
+the system packages when they exist and otherwise fetches a prebuilt bundle (no
+manual downloads, no `apt` knowledge needed); on Windows the wheels already carry
+the DLLs, so there is nothing to fetch. First run takes a few minutes because of
+LaTeX; later runs are instant. Supported and CI-tested: **Linux** and **Windows**;
+macOS is best-effort.
 
 ```
 # Linux/macOS
 curl -fsSL https://raw.githubusercontent.com/Abu103/animatica-manim/main/scripts/bootstrap.sh | bash
-# Windows
+
+# Windows (PowerShell)
 irm https://raw.githubusercontent.com/Abu103/animatica-manim/main/scripts/bootstrap.ps1 | iex
 ```
 
-How it stays fast: `uv` installs manim + the bundled static ffmpeg wheel (`imageio-ffmpeg`,
-no winget/brew needed), and LaTeX comes from a pre-baked `tinytex-manim.zip` release asset
-(no TinyTeX installer, no tlmgr). Equivalent manual path: `animatica bootstrap` / `animatica doctor --fix`.
+You do not have to set environment variables, and you do not have to install
+cairo or pango yourself: where they are needed the installer puts them in the
+project folder and Animatica activates them on import. Windows PowerShell only:
+if script execution is blocked, use
+`powershell -ExecutionPolicy Bypass -File scripts\bootstrap.ps1` from a clone.
 
-Not sure it worked? Run `animatica doctor` (it lists what is missing and how to fix it); `animatica doctor --fix --yes` repairs what it can.
-
-Manual equivalent:
-
-```
-1.  Install Python 3.10+ and ffmpeg      (Windows: winget install ffmpeg)
-2.  pip install -e .
-3.  animatica doctor --fix               (auto-installs ffmpeg + TinyTeX packages)
-```
-
-LaTeX is needed for nice equations. Install TinyTeX (yihui.org/tinytex), then **this one line**, then run `animatica doctor` again:
+Then everything else happens in one place:
 
 ```
-tlmgr install standalone preview babel-english amsmath amsfonts dvisvgm
+animatica tui
 ```
 
-Without it everything still works, equations just show as plain text.
+The studio is where you pick quality, theme, orientation and provider (arrow
+keys, or just start typing to filter the list), paste an API key, and render.
+Your job-step choices are remembered, so the next session starts where you left
+off. The equivalent non-interactive path, when you already know what you want:
+
+```
+animatica doctor                  # what is installed, what is missing
+animatica doctor --fix --yes      # repair ffmpeg / LaTeX automatically
+animatica make "graph of sin(x)" -o out/
+```
+
+LaTeX is optional: without it equations fall back to plain text and everything
+else renders normally. `animatica doctor --fix` installs it later if you want it.
+
+<details><summary>Manual install (if you prefer apt/pip)</summary>
+
+```
+sudo apt install libcairo2-dev libpango1.0-dev pkg-config ffmpeg   # Debian/Ubuntu
+pip install -e .
+animatica doctor --fix
+```
+</details>
 
 ## First video (no key needed)
 

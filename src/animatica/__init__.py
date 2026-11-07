@@ -2,3 +2,8 @@
 
 __version__ = "0.1.0"
 
+# Activate a bootstrap-installed cairo/pango bundle (no-op and silent when absent)
+# so neither the CLI nor the TUI needs LD_LIBRARY_PATH set by hand.
+from . import _nativelibs as _nativelibs
+
+_nativelibs.ensure()

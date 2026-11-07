@@ -19,6 +19,13 @@ class Config:
     provider: str = "auto"
     cloud_allowed: bool = False
     max_runtime_secs: int = 300
+    # Defaults the TUI remembers, so `animatica tui` is the only place a user
+    # ever has to choose anything.
+    quality: str = "preview"
+    theme: str = "dark-blue"
+    orientation: str = "landscape"
+    captions: bool = True
+    frame_lint: bool = False
 
 
 def config_dir() -> Path:

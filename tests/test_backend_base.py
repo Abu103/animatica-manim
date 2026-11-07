@@ -64,7 +64,7 @@ def test_preview_frame_t_beyond_scene_duration(tmp_path):
         preview_frame(tmp_path / "v.mp4", [1.0], 0, 1.5)
 
 
-def test_preview_frame_scene1_t0_selects_second_scene(tmp_path):
+def test_preview_frame_scene1_t0_selects_second_scene(tmp_path, tiny_video):
     """Scene 1 at t=0 must select the absolute time at the start of scene 1.
 
     scene_durations=[3.2, 4.1] means scene 0 is 0-3.2s, scene 1 is 3.2-7.3s.
@@ -72,23 +72,20 @@ def test_preview_frame_scene1_t0_selects_second_scene(tmp_path):
     """
     from animatica.pipeline import preview_frame
 
-    # Use an existing gallery video as a stand-in for a real file
-    video = Path(__file__).parent.parent / "acceptance/gallery/fibonacci/video.mp4"
-    assert video.is_file(), f"missing test video: {video}"
-    result = preview_frame(str(video), [3.2, 4.1], 1, 0.0)
+    video = tiny_video
+    result = preview_frame(str(video), [0.9, 1.1], 1, 0.0)
     # Expected output: video_path.with_suffix(f".scene{scene_index}.t{t:.1f}.png")
-    expected = video.with_name("video.scene1.t0.0.png")
+    expected = video.with_name(f"{video.stem}.scene1.t0.0.png")
     assert result == expected
 
 
-def test_preview_frame_scene0_t0_selects_first_scene():
+def test_preview_frame_scene0_t0_selects_first_scene(tiny_video):
     """Scene 0 at t=0 must select abs_ts=0 (start of scene 0)."""
     from animatica.pipeline import preview_frame
 
-    video = Path(__file__).parent.parent / "acceptance/gallery/fibonacci/video.mp4"
-    assert video.is_file(), f"missing test video: {video}"
-    result = preview_frame(str(video), [3.2, 4.1], 0, 0.0)
-    expected = video.with_name("video.scene0.t0.0.png")
+    video = tiny_video
+    result = preview_frame(str(video), [0.9, 1.1], 0, 0.0)
+    expected = video.with_name(f"{video.stem}.scene0.t0.0.png")
     assert result == expected
 
 

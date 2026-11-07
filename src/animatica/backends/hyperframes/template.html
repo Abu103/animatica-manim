@@ -1,0 +1,136 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=1280, height=720">
+<title>__ANIMATICA_TITLE__</title>
+<style>
+  :root {
+    --c-bg: #0b151b;
+    --c-bg-2: #101f26;
+    --c-text: #eef4ef;
+    --c-muted: #a9bfb9;
+    --c-accent: #a5f5cc;
+    --c-rule: #b0d9ce33;
+    /* Bundling OFL webfonts (@font-face from local .woff2) is the next typography step;
+     until then name only fonts a render machine already has, or the linter errors. */
+    --font: "DejaVu Sans", "Segoe UI", system-ui, sans-serif;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; width: 100%; height: 100%; background: var(--c-bg); }
+  body { font-family: var(--font); color: var(--c-text); -webkit-font-smoothing: antialiased; }
+
+  #stage { position: relative; width: 1280px; height: 720px; overflow: hidden; isolation: isolate; background: var(--c-bg); }
+
+  .backdrop {
+    position: absolute; inset: 0; z-index: 0;
+    background:
+      radial-gradient(ellipse 780px 620px at 94% 4%, #17463c 0%, transparent 62%),
+      radial-gradient(ellipse 820px 500px at 2% 98%, #16343c 0%, transparent 66%),
+      linear-gradient(130deg, #0b1620 0%, #0a141b 55%, #0d1c23 100%);
+  }
+  .backdrop::after {
+    content: ""; position: absolute; left: 47px; top: 50px; width: 1186px; height: 618px;
+    border: 1px solid #acd7c419; border-radius: 30px;
+  }
+
+  .masthead {
+    position: absolute; top: 32px; left: 80px; width: 1120px; z-index: 8;
+    display: flex; justify-content: space-between;
+    font-size: 12px; font-weight: 700; letter-spacing: 2.6px; color: #9fbdb5;
+    text-transform: uppercase;
+  }
+  .masthead .right { color: #7e9f9d; letter-spacing: 1.8px; text-transform: none; }
+
+  .footer-rule { position: absolute; left: 80px; right: 80px; bottom: 27px; height: 2px; background: var(--c-rule); z-index: 8; }
+  .footer-progress { position: absolute; left: 80px; bottom: 27px; width: 0; height: 2px; z-index: 9; background: var(--c-accent); }
+
+  .beat { position: absolute; inset: 0; z-index: 2; visibility: hidden; }
+  .line {
+    position: absolute;
+    white-space: nowrap;
+    line-height: 1.32;
+    opacity: 0;
+    will-change: opacity, transform;
+  }
+  .c-text { color: var(--c-text); }
+  .c-muted { color: var(--c-muted); }
+  .c-accent { color: var(--c-accent); }
+  .role-number { color: var(--c-accent); }
+  .l-caption { color: var(--c-muted); }
+</style>
+</head>
+<body>
+<div id="stage" __ANIMATICA_STAGE_ATTRS__>
+  <div class="backdrop" aria-hidden="true"></div>
+  <div class="masthead"><span>Animatica</span><span class="right">__ANIMATICA_TITLE__</span></div>
+  <div class="footer-rule"></div>
+  <div class="footer-progress" id="progress"></div>
+  __ANIMATICA_BEATS__
+</div>
+<script>
+/* Trusted renderer code. It contains no storyboard text and no model-authored
+   code: it only reads geometry and reveal times from data-attributes that the
+   Python composer wrote, and draws those exact numbers for a given time t. */
+(() => {
+  'use strict';
+
+  const stage = document.getElementById('stage');
+  const duration = parseFloat(stage.dataset.duration) || 0;
+  const progressBar = document.getElementById('progress');
+  const FADE = 0.32;
+
+  const beats = Array.from(stage.querySelectorAll('.beat')).map((section) => {
+    const start = parseFloat(section.dataset.start) || 0;
+    return {
+      section,
+      start,
+      end: start + (parseFloat(section.dataset.duration) || 0),
+      lines: Array.from(section.querySelectorAll('.line')).map((el) => ({
+        el,
+        at: start + (parseFloat(el.dataset.reveal) || 0),
+      })),
+    };
+  });
+
+  function applyTime(t) {
+    const now = Math.max(0, Math.min(duration, Number(t) || 0));
+    for (const beat of beats) {
+      const visible = now >= beat.start - 1e-6 && now < beat.end - 1e-6;
+      beat.section.style.visibility = visible ? 'visible' : 'hidden';
+      for (const line of beat.lines) {
+        const p = Math.max(0, Math.min(1, (now - line.at) / FADE));
+        const eased = 1 - Math.pow(1 - p, 3);
+        line.el.style.opacity = eased.toFixed(4);
+        line.el.style.transform = 'translateY(' + ((1 - eased) * 14).toFixed(2) + 'px)';
+      }
+    }
+    if (progressBar) {
+      const ratio = duration > 0 ? now / duration : 0;
+      progressBar.style.width = (1120 * Math.max(0, Math.min(1, ratio))).toFixed(2) + 'px';
+    }
+  }
+
+  applyTime(0);
+
+  /* Seek contract: same shape as the timeline object the HyperFrames pilots
+     registered under window.__timelines[compositionId]. No GSAP, no wall clock. */
+  const timeline = {
+    duration: () => duration,
+    totalDuration: () => duration,
+    time: (t) => { applyTime(t); return timeline; },
+    seek: (t) => { applyTime(t); return timeline; },
+    progress: (p) => { applyTime((Number(p) || 0) * duration); return timeline; },
+    pause: () => timeline,
+    paused: () => true,
+    play: () => timeline,
+    kill: () => {},
+  };
+
+  window.__timelines = window.__timelines || {};
+  window.__timelines[stage.dataset.compositionId] = timeline;
+  window.__animaticaApplyTime = applyTime;
+})();
+</script>
+</body>
+</html>
