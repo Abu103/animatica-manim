@@ -195,16 +195,34 @@ pip_install -e "$ROOT"
 if [ "$DO_TEX" = "1" ] && ! have latex; then
   step "3/4" "LaTeX for equations (optional)"
   TEX_DIR="$ROOT/.tex"
-  if [ ! -x "$TEX_DIR/tlmgr" ] && [ ! -d "$TEX_DIR/bin" ]; then
-    if curl -fsSL --max-time 300 \
-        "https://github.com/$GH_REPO/releases/latest/download/tinytex-manim.zip" -o /tmp/tinytex-manim.zip 2>/dev/null; then
-      mkdir -p "$TEX_DIR" && (cd "$TEX_DIR" && python3 -c "import zipfile,sys;zipfile.ZipFile('/tmp/tinytex-manim.zip').extractall('.')") 2>/dev/null || true
-    fi
-  fi
   if [ -d "$TEX_DIR/bin" ]; then
-    say "  -> TeX in $TEX_DIR/bin (animatica finds it automatically)"
+    say "  -> already unpacked in $TEX_DIR"
   else
-    say "  -> skipped; equations will warn. Text and shapes render fine."
+    mkdir -p "$TEX_DIR"
+    # 1) the small curated bundle (latex + dvisvgm + the packages Manim uses)
+    for asset in animatica-tex.tar.xz tinytex-manim.zip; do
+      url="https://github.com/$GH_REPO/releases/latest/download/$asset"
+      [ -n "${ANIMATICA_TEX_URL:-}" ] && url="$ANIMATICA_TEX_URL"
+      if curl -fsSL --max-time 600 "$url" -o "/tmp/$asset" 2>/dev/null; then
+        say "  -> downloaded $asset"
+        case "$asset" in
+          *.tar.xz)
+            tar xf "/tmp/$asset" -C "$TEX_DIR" 2>/dev/null ||
+              (cd "$TEX_DIR" && "$PY" -m tarfile -e "/tmp/$asset" .) 2>/dev/null || true
+            ;;
+          *.zip)
+            (cd "$TEX_DIR" && "$PY" -c "import zipfile,sys; zipfile.ZipFile(sys.argv[1]).extractall('.')" "/tmp/$asset") 2>/dev/null || true
+            ;;
+        esac
+        [ -d "$TEX_DIR/bin" ] && break
+      fi
+    done
+    if [ -d "$TEX_DIR/bin" ]; then
+      say "  -> TeX unpacked in $TEX_DIR (animatica finds it automatically)"
+    else
+      say "  -> skipped; equations will warn. Text and shapes render fine."
+      say "     Add it later with: animatica doctor --fix"
+    fi
   fi
 else
   step "3/4" "LaTeX: not needed / already installed"
@@ -220,7 +238,10 @@ printf '%s\n' "$DOCTOR_OUT"
 # LaTeX is optional (equations only): a missing TeX must not fail the setup.
 # pipefail: grep exits 1 when it filters everything, so every stage tolerates that
 FAIL_LINES="$(printf '%s\n' "$DOCTOR_OUT" | grep '^\[FAIL\]' || true)"
-REQUIRED_FAILS="$(printf '%s\n' "$FAIL_LINES" | grep -v 'latex' | wc -l | tr -d ' ' || true)"
+REQUIRED_FAILS=0
+if [ -n "$FAIL_LINES" ]; then
+  REQUIRED_FAILS="$(printf '%s\n' "$FAIL_LINES" | grep -v 'latex' | wc -l | tr -d ' ' || true)"
+fi
 if [ "${REQUIRED_FAILS:-1}" = "0" ]; then
   if printf '%s\n' "$DOCTOR_OUT" | grep -q '^\[FAIL\] latex' || true; then
     say ""

@@ -176,6 +176,25 @@ def run_checks(run=subprocess.run, which=shutil.which, deep_latex: bool = True) 
 TINYTEX_WIN_INSTALLER_URL = "https://raw.githubusercontent.com/rstudio/tinytex/main/tools/install-bin-windows.ps1"
 
 
+def project_roots() -> list[Path]:
+    """Where a project-local TeX bundle may be: the checkout, then the CWD."""
+    here = Path(__file__).resolve()
+    candidates = []
+    try:
+        candidates.append(here.parents[2])
+    except IndexError:  # pragma: no cover - installed layout without a checkout
+        pass
+    try:
+        candidates.append(Path.cwd())
+    except OSError:  # pragma: no cover
+        pass
+    seen: list[Path] = []
+    for path in candidates:
+        if path not in seen:
+            seen.append(path)
+    return seen
+
+
 def tinytex_bin_dirs(platform: str = sys.platform, env=None) -> list[Path]:
     """Places a TinyTeX `bin` directory may live, most likely first.
 
@@ -191,7 +210,17 @@ def tinytex_bin_dirs(platform: str = sys.platform, env=None) -> list[Path]:
         dirs.append(Path("C:/tools/tinytex/bin/windows"))
     else:
         home = Path(env.get("HOME") or Path.home())
-        for root in (home / ".TinyTeX" / "bin", home / "Library" / "TinyTeX" / "bin"):
+        # An explicit override, then a TeX unpacked next to the project (that is
+        # where the one-line installer puts the prebuilt bundle), then the user's
+        # own TinyTeX.
+        roots: list[Path] = []
+        explicit = env.get("ANIMATICA_TEX_DIR")
+        if explicit:
+            roots.append(Path(explicit) / "bin")
+        for base in project_roots():
+            roots.append(base / ".tex" / "bin")
+        roots.extend([home / ".TinyTeX" / "bin", home / "Library" / "TinyTeX" / "bin"])
+        for root in roots:
             if root.is_dir():
                 dirs.extend(sorted(p for p in root.iterdir() if p.is_dir()))
     return dirs
