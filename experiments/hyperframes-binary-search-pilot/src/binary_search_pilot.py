@@ -55,12 +55,17 @@ def render_html(bs_data: dict, output_path: Path) -> None:
     output_path.write_text(html, encoding="utf-8")
 
 
-def run(fixture_path: Path, output_name: str) -> dict:
-    """Full pilot: load, validate, compute, render. Returns computation result."""
+def run(fixture_path: Path, output_name: str, output_dir: Path | None = None) -> dict:
+    """Full pilot: load, validate, compute, render. Returns computation result.
+
+    If output_dir is provided, the HTML is written there instead of the
+    default OUTPUT_DIR.
+    """
     raw = load_fixture(fixture_path)
     validated = validate_binary_search_data(raw)
     bs_data = build_binary_search_data(validated)
-    out_path = OUTPUT_DIR / output_name
+    out_dir = output_dir if output_dir is not None else OUTPUT_DIR
+    out_path = out_dir / output_name
     render_html(bs_data, out_path)
     return bs_data
 
