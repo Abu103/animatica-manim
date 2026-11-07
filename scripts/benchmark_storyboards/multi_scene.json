@@ -1,0 +1,51 @@
+{
+  "version": "1",
+  "title": "Benchmark: Multi-Scene",
+  "theme": {
+    "palette": "dark-blue",
+    "font": "default"
+  },
+  "scenes": [
+    {
+      "beats": [
+        {
+          "component": "title_card",
+          "params": {
+            "title": "Multi-Scene Benchmark",
+            "subtitle": "Three different component types"
+          },
+          "caption": "Opening title card."
+        }
+      ]
+    },
+    {
+      "beats": [
+        {
+          "component": "equation",
+          "params": {
+            "mode": "reveal",
+            "latex": [
+              "E = mc^2"
+            ]
+          },
+          "caption": "Einstein's mass-energy equivalence."
+        }
+      ]
+    },
+    {
+      "beats": [
+        {
+          "component": "steps_list",
+          "params": {
+            "items": [
+              "Step one: prepare the scene",
+              "Step two: render the components",
+              "Step three: measure the time"
+            ]
+          },
+          "caption": "A simple three-step process."
+        }
+      ]
+    }
+  ]
+}

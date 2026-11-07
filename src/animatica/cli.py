@@ -522,6 +522,22 @@ def mcp() -> None:
         pass
 
 
+@app.command("tui")
+def tui_cmd() -> None:
+    """Launch the Animatica Terminal User Interface (TUI).
+
+    Requires the optional 'textual' package:
+        pip install 'animatica[tui]'
+
+    Provides a guided, full-screen workflow: enter a prompt or pick a
+    template, configure render settings, review before starting, watch
+    progress, and open the finished video.
+    """
+    from animatica.tui import run_tui
+
+    run_tui()
+
+
 @app.command("edit")
 def edit_cmd(
     out_dir: Path = typer.Argument(..., help="Output directory containing storyboard.json"),

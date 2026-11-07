@@ -1,0 +1,22 @@
+{
+  "version": "1",
+  "title": "Benchmark: Text Scene",
+  "theme": {
+    "palette": "dark-blue",
+    "font": "default"
+  },
+  "scenes": [
+    {
+      "beats": [
+        {
+          "component": "title_card",
+          "params": {
+            "title": "Hello World",
+            "subtitle": "A simple text-only benchmark scene"
+          },
+          "caption": "A title card with a title and subtitle."
+        }
+      ]
+    }
+  ]
+}
