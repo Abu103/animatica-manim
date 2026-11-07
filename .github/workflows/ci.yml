@@ -84,3 +84,39 @@ jobs:
           Write-Host "---- t.log (first error + context)"
           Select-String -Path t.log -Pattern '^!' -Context 0,8 | Select-Object -First 1 | ForEach-Object { $_.Line; $_.Context.PostContext }
           Pop-Location
+
+  # The HyperFrames backend has never been validated against a real browser:
+  # this job gives it Node, Chrome and ffmpeg, renders a storyboard through the
+  # pinned CLI, and checks the decoded frames instead of the exit code.
+  hyperframes:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: pip
+          cache-dependency-path: pyproject.toml
+      - name: System libs (cairo/pango for the manim import path, ffmpeg for the CLI)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends libcairo2-dev pkg-config libpango1.0-dev ffmpeg
+      - run: pip install -e ".[dev]"
+      - name: The pinned HyperFrames CLI
+        run: |
+          npm install -g hyperframes@0.9.19
+          hyperframes --version || true
+          node --version
+      - name: Browser the CLI can drive
+        run: |
+          google-chrome --version || chromium --version || chromium-browser --version || echo "no system browser"
+      - name: Real render (Node + Chrome)
+        run: python scripts/ci_hyperframes.py
+      - name: Diagnostics (only on failure)
+        if: failure()
+        run: |
+          node --version; npm --version
+          hyperframes --version || true
+          google-chrome --version || true
+          ls -la /usr/bin | grep -i chrom | head -5 || true
