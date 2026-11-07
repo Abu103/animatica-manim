@@ -1,4 +1,5 @@
 import pytest
+from pathlib import Path
 from typing import ClassVar
 
 from animatica.pipeline import cache_variant, make_video, resolve_backend
@@ -99,3 +100,101 @@ def test_unknown_backend_fails_before_provider_call_or_any_file(tmp_path, monkey
         make_video("explain quicksort", out_dir=out, provider="nim", backend="nope")
     assert calls == []  # no LLM spend on a typo'd backend
     assert not out.exists()  # nothing written
+
+
+def test_guidance_notes_appear_in_pipeline_warnings(tmp_path):
+    """A storyboard whose caption describes production mechanics should
+    surface a guidance note in make_video warnings."""
+    import json as _json
+
+    # Hand-written storyboard with a "title card introducing" caption
+    sb_path = tmp_path / "storyboard.json"
+    sb_path.write_text(
+        _json.dumps({
+            "version": "1",
+            "title": "Guidance Test",
+            "scenes": [
+                {
+                    "beats": [
+                        {
+                            "component": "title_card",
+                            "params": {"title": "Guidance Test"},
+                            "caption": "A title card introducing the guidance test topic.",
+                        }
+                    ]
+                }
+            ],
+        }),
+        encoding="utf-8",
+    )
+
+    result = make_video(
+        storyboard_path=sb_path,
+        out_dir=tmp_path / "out",
+        preview=True,
+    )
+    assert result.video.exists()
+    guidance_warnings = [w for w in result.warnings if "guidance" in w.lower() or "production mechanics" in w.lower()]
+    assert len(guidance_warnings) >= 1, f"expected guidance note, got warnings: {result.warnings}"
+
+
+# ---------------------------------------------------------------------------
+# End-to-end graph comparison regression test
+# ---------------------------------------------------------------------------
+
+_CYAN = (56, 189, 248)   # dark-blue theme accent: original curve (e^x)
+_WHITE = (255, 255, 255)  # dark-blue theme text: approximation curve
+
+
+def _curve_colors_present(video_path: str, t: float) -> dict[str, object]:
+    """Extract a frame at `t` and report whether cyan and white curve pixels
+    appear in the plot area (above the caption band)."""
+    import av
+    import numpy as np
+    from PIL import Image
+
+    container = av.open(video_path)
+    try:
+        video_stream = next(s for s in container.streams if s.type == "video")
+        target = None
+        for frame in container.decode(video_stream):
+            ts = float(frame.time) if frame.time is not None else 0
+            if ts >= t:
+                target = frame
+                break
+        if target is None:
+            return {"cyan": False, "white": False, "error": "no frame"}
+        img = Image.fromarray(target.to_ndarray(format="rgb24")).convert("RGB")
+    finally:
+        container.close()
+
+    arr = np.array(img)
+    h, w, _ = arr.shape
+    # Plot area: above the bottom caption band (last ~8% of height)
+    plot = arr[: int(h * 0.85), :, :]
+
+    def color_present(rgb, tol=40):
+        mask = np.all(np.abs(plot.astype(int) - np.array(rgb)) <= tol, axis=2)
+        return bool(mask.sum() > 50)  # at least 50 pixels of that color
+
+    return {"cyan": color_present(_CYAN), "white": color_present(_WHITE)}
+
+
+@pytest.mark.render
+def test_taylor_graph_end_to_end_both_curves_visible(tmp_path):
+    """End-to-end: rendering the Taylor storyboard produces a graph frame
+    where both the original function (cyan) and the approximation (white)
+    curves are visible and distinguishable."""
+    result = make_video(
+        storyboard_path=Path("acceptance/gallery/taylor/storyboard.json"),
+        out_dir=tmp_path / "taylor_e2e",
+        preview=True,
+    )
+    assert result.video.exists()
+
+    # Graph beat is the last beat in the single scene; sample late in the
+    # video after both Create animations should have finished.
+    info = _curve_colors_present(str(result.video), t=8.0)
+    assert not info.get("error"), f"frame extraction failed: {info.get('error')}"
+    assert info["cyan"], "original function curve (cyan/e^x) not visible in graph frame"
+    assert info["white"], "approximation curve (white/Taylor polynomial) not visible in graph frame"

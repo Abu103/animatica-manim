@@ -7,6 +7,7 @@ from pathlib import Path
 from animatica.ai.router import get_provider
 from animatica.ai.template import TemplateMatcher
 from animatica.ai.repair import generate_storyboard, generate_storyboard_two_stage
+from animatica.ai.guidance import check_generation_guidance
 from animatica.backends.base import RenderBackend, RenderOptions
 from animatica.backends.manim_backend import ManimBackend
 from animatica.backends import default_backends
@@ -147,6 +148,12 @@ def make_video(
     if storyboard_path is None and not provider_used.startswith("template"):
         sb, lint_notes = lint_storyboard(sb)  # model output only; never touch a hand-written --from file
         warnings.extend(lint_notes)
+
+    # Generation guidance applies to any storyboard: flag captions that
+    # describe production mechanics instead of teaching, and comparisons
+    # that lack a visual. These are notes, not errors.
+    guidance_notes = check_generation_guidance(sb)
+    warnings.extend(guidance_notes)
 
     errors = registry.validate(sb)
     if errors:
