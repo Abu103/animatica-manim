@@ -1,0 +1,95 @@
+name: native-deps
+
+# Builds the native pieces manim needs (cairo + pango shared libs, and the two
+# Python extensions that have no Linux wheels: pycairo, manimpango) inside a
+# Debian bookworm container, so the result matches a Debian 12 host: glibc 2.36,
+# CPython 3.11, x86_64.
+#
+# Why this exists: a sandbox/CI box without apt access cannot install
+# libcairo2/libpango-1.0-0, and pip cannot even build pycairo without cairo
+# headers. The runner has full internet, so it can.
+#
+# Modes (workflow_dispatch input):
+#   smoke  - tiny artifact round-trip; proves the download path works
+#   full   - build the bundle and upload it as an artifact
+#   commit - build the bundle and also commit it to this branch, for hosts that
+#            can only reach codeload.github.com
+on:
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: "smoke | full | commit"
+        required: true
+        default: "smoke"
+        type: choice
+        options: [smoke, full, commit]
+
+permissions:
+  contents: write # only used by mode=commit
+  actions: read
+
+jobs:
+  bundle:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.ref_name }}
+
+      - name: Smoke artifact
+        if: inputs.mode == 'smoke'
+        run: |
+          mkdir -p bundle
+          echo "smoke $(date -u +%FT%TZ) on ${{ github.ref_name }}" > bundle/smoke.txt
+          cat bundle/smoke.txt
+
+      - name: Build cairo + pango wheels and shared libraries (bookworm = glibc 2.36)
+        if: inputs.mode != 'smoke'
+        run: |
+          mkdir -p bundle
+          docker run --rm -v "$PWD/bundle:/out" python:3.11-slim-bookworm bash -lc '
+            set -euo pipefail
+            apt-get update -qq
+            DEBIAN_FRONTEND=noninteractive apt-get install -y -qq --no-install-recommends \
+              build-essential pkg-config libcairo2-dev libpango1.0-dev \
+              libcairo2 libpixman-1-0 libpng16-16 libxrender1 libxext6 liblzo2-2 \
+              libpango-1.0-0 libpangoft2-1.0-0 libpangocairo-1.0-0 \
+              libharfbuzz0b libfribidi0 libthai0 libdatrie1 libgraphite2-3 \
+              libxcb-render0 libxcb-shm0
+            python -V
+            pip wheel --no-cache-dir --wheel-dir /out/wheels "pycairo>=1.14,<2" "manimpango>=0.6.1,<1"
+            mkdir -p /out/lib
+            cp -aL /usr/lib/x86_64-linux-gnu/lib{cairo,pixman-1,png16,xrender,Xext,lzo2,pango-1.0,pangoft2-1.0,pangocairo-1.0,harfbuzz,fribidi,thai,datrie,graphite2,xcb-render,xcb-shm}.so* /out/lib/ 2>/dev/null || true
+            # fail loudly rather than shipping an incomplete bundle
+            test -e /out/lib/libcairo.so.2
+            test -e /out/lib/libpango-1.0.so.0
+            ls /out/lib | head -50
+            ls /out/wheels
+          '
+
+      - name: Pack bundle
+        if: inputs.mode != 'smoke'
+        run: |
+          tar czf animatica-native.tar.gz -C bundle wheels lib
+          ls -lh animatica-native.tar.gz
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: animatica-native
+          path: |
+            bundle/smoke.txt
+            animatica-native.tar.gz
+          if-no-files-found: ignore
+          retention-days: 2
+
+      - name: Commit the bundle to the branch (codeload-only hosts)
+        if: inputs.mode == 'commit'
+        run: |
+          mkdir -p native
+          cp animatica-native.tar.gz native/
+          git config user.name "animatica-native-bot"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add native/animatica-native.tar.gz
+          git commit -m "chore(native): cairo+pango wheels and shared libs for offline hosts"
+          git push origin "HEAD:${{ github.ref_name }}"
