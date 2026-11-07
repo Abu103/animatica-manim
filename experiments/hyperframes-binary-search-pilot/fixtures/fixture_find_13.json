@@ -1,0 +1,5 @@
+{
+  "array": [1, 3, 5, 7, 9, 11, 13],
+  "target": 13,
+  "case_label": "FIND 13 • SORTED ARRAY"
+}
