@@ -1,0 +1,512 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=1280, height=720" />
+  <title>3-SAT Visual Explainer — HyperFrames data-driven pilot</title>
+  <!-- All art, typography and animation load from this project; no remote resources. -->
+  <script src="./vendor/gsap.min.js"></script>
+  <style>
+    @font-face { font-family: Manrope; src: url('./assets/manrope-regular.woff2') format('woff2'); font-weight:400; font-display:block; }
+    @font-face { font-family: Manrope; src: url('./assets/manrope-semibold.woff2') format('woff2'); font-weight:600; font-display:block; }
+    @font-face { font-family: Manrope; src: url('./assets/manrope-bold.woff2') format('woff2'); font-weight:700; font-display:block; }
+    @font-face { font-family: Space; src: url('./assets/space-grotesk-medium.woff2') format('woff2'); font-weight:500; font-display:block; }
+    @font-face { font-family: Space; src: url('./assets/space-grotesk-bold.woff2') format('woff2'); font-weight:700; font-display:block; }
+    :root { --paper:#eef4ef; --muted:#a5b8b9; --mint:#a5f5cc; --mint-deep:#163a35; --coral:#ffcebb; --coral-deep:#3c2d2a; --edge:#314b50; }
+    * { box-sizing:border-box; }
+    html, body { margin:0; width:100%; height:100%; background:#0a151b; }
+    body { font-family:Manrope, DejaVu Sans, sans-serif; color:var(--paper); -webkit-font-smoothing:antialiased; }
+    #stage { width:1280px; height:720px; position:relative; overflow:hidden; isolation:isolate; background:#0b151b; }
+    .backdrop { position:absolute; inset:0; z-index:0; background:radial-gradient(ellipse 780px 680px at 94% 5%, #183e3b 0%, transparent 64%),radial-gradient(ellipse 850px 500px at 3% 97%, #17383e 0%, transparent 68%),linear-gradient(130deg,#0b1520 0%,#0a141b 53%,#0d1c23 100%); }
+    .backdrop::before { content:""; position:absolute; inset:0; opacity:.24; background-image:linear-gradient(#5d828133 1px,transparent 1px),linear-gradient(90deg,#5d828133 1px,transparent 1px); background-size:48px 48px; mask-image:linear-gradient(180deg,transparent 6%,#000 48%,transparent 97%); }
+    .backdrop::after { content:""; position:absolute; left:47px; top:50px; width:1186px; height:618px; border:1px solid #acd7c419; border-radius:30px; pointer-events:none; }
+    .masthead { position:absolute; top:32px; left:80px; width:1120px; display:flex; justify-content:space-between; z-index:8; color:#b5cdc6; font-size:12px; font-weight:700; letter-spacing:2.8px; }
+    .masthead .right { color:#7e9f9d; letter-spacing:2px; }
+    .footer-rule { position:absolute; left:80px; right:80px; bottom:27px; height:2px; background:#b0d9ce20; z-index:8; }
+    .footer-progress { position:absolute; left:80px; bottom:27px; width:0; height:2px; z-index:9; background:var(--mint); box-shadow:0 0 14px #9ff5c788; }
+    .clip { position:absolute; inset:0; }
+    .section-label { font-size:15px; font-weight:700; letter-spacing:3.4px; color:var(--mint); text-transform:uppercase; }
+    .section-label .index { color:#659c95; margin-right:14px; }
+    .math { font-family:Space,DejaVu Sans,sans-serif; font-weight:500; white-space:nowrap; }
+    .math sub { font-size:.58em; line-height:0; position:relative; bottom:-.12em; vertical-align:baseline; margin-left:1px; }
+    .truth-icon { font-family:DejaVu Sans, sans-serif; font-weight:700; display:inline-block; font-size:1.16em; line-height:1; vertical-align:-.06em; margin-right:8px; }
+    .true { color:var(--mint); } .false { color:var(--coral); }
+
+    /* ACT I — formula preview */
+    #intro { z-index:1; }
+    .intro-copy { position:absolute; top:128px; left:80px; width:1000px; }
+    #intro-label { opacity:0; }
+    #intro-title { font:700 72px/1.06 Space,DejaVu Sans,sans-serif; letter-spacing:-3.3px; margin:23px 0 0; opacity:0; }
+    #intro-title span { color:var(--mint); }
+    #intro-sub { font-size:25px; line-height:1.45; color:#c0d1cf; margin:25px 0 0; opacity:0; }
+    .intro-orbit { position:absolute; right:103px; top:172px; width:194px; height:194px; opacity:0; }
+    .intro-orbit .orbit { position:absolute; inset:0; border:1.3px solid #98d7c766; border-radius:50%; }
+    .intro-orbit .orbit:nth-child(2) { inset:33px; border-style:dashed; border-color:#87c8bb4d; }
+    .intro-orbit .orbit:nth-child(3) { inset:66px; border:1px solid #a5f5cc99; background:#1b403766; }
+    .intro-orbit .orbit-center { position:absolute; inset:71px; border-radius:50%; display:grid; place-items:center; font:700 28px Space,sans-serif; color:var(--mint); }
+    .intro-orbit .satellite { position:absolute; width:14px; height:14px; border:3px solid #0a181c; border-radius:50%; background:var(--mint); box-shadow:0 0 0 1px #a5f5cc66; }
+    .intro-orbit .satellite.a { left:4px; top:87px; } .intro-orbit .satellite.b { right:14px; top:23px; background:var(--coral); } .intro-orbit .satellite.c { left:84px; bottom:0; }
+    .intro-formula { position:absolute; left:80px; top:501px; width:1120px; height:111px; display:flex; align-items:center; justify-content:space-between; }
+    .formula-preview { height:106px; width:497px; background:linear-gradient(130deg,#19333aee,#14272eee); border:1px solid #85c7bc72; border-radius:20px; padding:15px 21px; opacity:0; box-shadow:0 16px 40px #07101833; }
+    .preview-kicker { color:#b3d2c9; font-size:15px; letter-spacing:2.2px; font-weight:700; }
+    .preview-equation { height:55px; display:flex; align-items:center; gap:12px; font:500 24px Space,DejaVu Sans,sans-serif; white-space:nowrap; }
+    .preview-equation .p { color:#65938d; font-size:39px; font-weight:400; }
+    .preview-equation .op { color:#d5dbd3; font:700 17px Manrope,sans-serif; letter-spacing:1px; }
+    .preview-equation .neg { color:var(--coral); font:700 18px Manrope,sans-serif; letter-spacing:.3px; }
+    #preview-and { border:1px solid #88c5b765; background:#1c3839; color:var(--mint); border-radius:50%; width:72px; height:72px; display:grid; place-items:center; font:700 15px Manrope,sans-serif; letter-spacing:1px; opacity:0; }
+
+    /* ACT II — lab */
+    #lab { z-index:2; }
+    .lab-head { position:absolute; left:80px; top:68px; width:1120px; }
+    #lab-label { opacity:0; }
+    #lab-title { font:700 37px Space,DejaVu Sans,sans-serif; letter-spacing:-1.1px; margin:8px 0 0; opacity:0; }
+    #lab-note { position:absolute; left:550px; top:46px; font-size:17px; color:#bdceca; white-space:nowrap; opacity:0; }
+    #lab-note > span { position:absolute; top:0; left:0; white-space:nowrap; opacity:0; }
+    .lab-tally { position:absolute; right:1px; top:26px; font:700 12px Manrope,sans-serif; letter-spacing:1.7px; color:#9cb9b6; opacity:0; }
+    .assignment { position:absolute; top:150px; left:64px; width:1152px; height:77px; border-radius:20px; border:1px solid #4b6b68; background:linear-gradient(90deg,#182f32ef,#16282bef); box-shadow:0 12px 32px #0002; opacity:0; }
+    .assignment .assign-label { position:absolute; left:27px; top:13px; color:var(--mint); font-size:16px; letter-spacing:2.1px; font-weight:700; }
+    .assignment .assign-help { position:absolute; left:27px; top:41px; font-size:14px; color:#9ab4ad; }
+    .var-chip { position:absolute; width:180px; height:51px; top:12px; border-radius:13px; border:1px solid #607a78; background:#203b3e; display:flex; align-items:center; justify-content:space-between; padding:0 14px; opacity:0; }
+    .var-chip.v1 { left:185px; } .var-chip.v2 { left:417px; } .var-chip.v3 { left:649px; }
+    .var-chip .math { font-size:28px; color:#eef4ef; }
+    .var-chip .equals { color:#c7e0d8; margin:0 5px; font-size:20px; }
+    .var-chip .value { font:700 18px Manrope,sans-serif; color:var(--mint); white-space:nowrap; }
+    .var-chip .value .truth-icon { font-size:19px; margin-right:4px; }
+    .case-label { position:absolute; right:27px; top:22px; color:#a0bdb4; font:700 13px Manrope,sans-serif; letter-spacing:1.8px; }
+    .clause-card { position:absolute; left:64px; width:1152px; height:140px; border-radius:22px; border:1px solid #425a5d; background:linear-gradient(110deg,#15252c 0%,#13242a 67%,#1a3032 100%); box-shadow:0 13px 37px #020b0f4a; opacity:0; overflow:hidden; }
+    .clause-card::before { content:""; position:absolute; left:0; top:0; bottom:0; width:4px; background:#80b6aa; opacity:.6; }
+    #clause1 { top:243px; } #clause2 { top:397px; }
+    .clause-caption { display:none; position:absolute; top:12px; left:184px; font-size:11px; letter-spacing:1.8px; font-weight:700; color:#819e9b; }
+    .clause-meta { position:absolute; top:45px; left:30px; width:120px; display:flex; flex-direction:column; align-items:flex-start; }
+    .clause-meta strong { font:700 32px Space,DejaVu Sans,sans-serif; color:#b5d7ce; line-height:1; }
+    .clause-meta .or-name { font-size:15px; font-weight:700; letter-spacing:1.6px; color:#9bb9b4; margin-top:5px; }
+    .clause-meta .rule { font-size:13px; color:#6e9290; margin-top:2px; white-space:nowrap; }
+    .beam { position:absolute; z-index:0; top:118px; left:354px; width:570px; height:2px; background:linear-gradient(90deg,#a5f5cc,#b3e4b7,#bdfbcf); transform-origin:left center; transform:scaleX(0); opacity:0; box-shadow:0 0 14px #a5f5cc; }
+    .literal { position:absolute; z-index:2; top:45px; width:180px; height:82px; border-radius:14px; border:1px solid #476167; background:#203039; overflow:hidden; }
+    .literal.col1 { left:184px; } .literal.col2 { left:416px; } .literal.col3 { left:648px; }
+    .literal .lit-label { position:absolute; left:15px; top:7px; font:500 26px Space,DejaVu Sans,sans-serif; white-space:nowrap; }
+    .literal .lit-label .notword { font:700 16px Manrope,sans-serif; padding:3px 6px 2px; border-radius:5px; margin-right:7px; border:1px solid #e5a88f9c; color:var(--coral); vertical-align:3px; display:inline-block; }
+    .literal .lit-pending, .literal .lit-result { position:absolute; left:16px; bottom:8px; font:700 19px Manrope,sans-serif; letter-spacing:1.5px; white-space:nowrap; }
+    .literal .lit-pending { color:#92a8a8; } .literal .lit-result { opacity:0; }
+    .literal .lit-result .truth-icon { font-size:20px; margin-right:5px; }
+    .literal .impact { position:absolute; z-index:0; right:17px; top:19px; width:47px; height:47px; border:2px solid #b6efd4; border-radius:50%; opacity:0; pointer-events:none; }
+    .or-word { position:absolute; z-index:3; top:78px; font:700 18px Manrope,sans-serif; letter-spacing:1px; color:#a0b6b1; }
+    .or-word.first { left:376px; } .or-word.second { left:608px; }
+    .result-arrow { position:absolute; left:868px; top:62px; color:#7ca59d; font:500 28px Space,sans-serif; }
+    .clause-result { position:absolute; z-index:2; left:923px; top:45px; width:197px; height:82px; border:1px solid #55716b; background:#253638; border-radius:15px; overflow:hidden; }
+    .clause-result .result-kicker { position:absolute; top:8px; left:17px; font-size:14px; letter-spacing:1.6px; color:#dbf4e8; font-weight:700; }
+    .clause-result .waiting, .clause-result .resolved { position:absolute; left:16px; top:35px; font:700 22px Space,DejaVu Sans,sans-serif; white-space:nowrap; }
+    .clause-result .waiting { color:#bdcac5; } .clause-result .resolved { opacity:0; color:var(--mint); }
+    .clause-result .resolved .truth-icon { font-size:25px; margin-right:7px; }
+    .packet { position:absolute; z-index:6; top:216px; width:44px; height:44px; border-radius:50%; display:grid; place-items:center; box-shadow:0 0 0 5px #8cecb12a,0 0 26px #a6ffd799; font:700 23px DejaVu Sans,sans-serif; opacity:0; will-change:transform,opacity; }
+    .packet.t { background:#c0fbd8; color:#12372d; border:2px solid #f2ffe8; }
+    .packet.f { background:#ffb49b; color:#3d2623; border:2px solid #ffe1cf; box-shadow:0 0 0 5px #f5997e2a,0 0 26px #ffb49b99; }
+    .packet-trail { display:none; position:absolute; z-index:1; width:2px; background:linear-gradient(#a5f5cc00,#a5f5cc94,#a5f5cc00); top:218px; height:330px; opacity:.17; }
+    .packet-trail:nth-of-type(1) { left:338px; } .packet-trail:nth-of-type(2) { left:570px; } .packet-trail:nth-of-type(3) { left:802px; }
+    .and-card { position:absolute; left:64px; top:554px; width:1152px; height:111px; border:1px solid #57736a; border-radius:20px; background:linear-gradient(100deg,#182e30,#1d3532); overflow:hidden; opacity:0; }
+    .and-card .and-title { position:absolute; top:24px; left:28px; font:700 18px Space,sans-serif; color:#c8dfd5; letter-spacing:1.2px; }
+    .and-card .and-sub { position:absolute; top:55px; left:28px; font-size:14px; color:#98afa6; }
+    .and-input { position:absolute; top:23px; width:170px; height:60px; border-radius:13px; border:1px solid #54736e; background:#203b3b; overflow:hidden; }
+    .and-input.i1 { left:206px; } .and-input.i2 { left:516px; }
+    .and-input .small-label { position:absolute; top:5px; left:13px; font-size:13px; letter-spacing:1.5px; color:#dbf4e8; font-weight:700; }
+    .and-input .initial, .and-input .reveal { position:absolute; left:13px; top:27px; font:700 20px Space,sans-serif; white-space:nowrap; }
+    .and-input .initial { color:#becfc9; } .and-input .reveal { opacity:0; color:var(--mint); }
+    .and-input .reveal .truth-icon { font-size:17px; margin-right:4px; }
+    .and-word { position:absolute; top:39px; left:399px; color:#c6dace; font:700 17px Manrope,sans-serif; letter-spacing:1px; }
+    .and-arrow { position:absolute; top:34px; left:733px; color:#a4c6b8; font:500 26px Space,sans-serif; }
+    .and-output { position:absolute; top:16px; left:818px; width:304px; height:76px; border:1px solid #728e80; border-radius:15px; background:#263e3a; overflow:hidden; }
+    .and-output .small-label { position:absolute; top:7px; left:17px; font-size:14px; font-weight:700; letter-spacing:1.8px; color:#b2c9b9; }
+    .and-output .initial, .and-output .reveal { position:absolute; top:29px; left:16px; font:700 25px Space,sans-serif; }
+    .and-output .initial { color:#cfddd3; } .and-output .reveal { opacity:0; color:var(--mint); }
+    .and-output .reveal .truth-icon { font-size:28px; }
+    .lab-foot { position:absolute; left:80px; bottom:42px; color:#87a8a1; font-size:12px; letter-spacing:1.2px; opacity:0; }
+
+    /* ACT III — outro */
+    #outro { z-index:5; }
+    .outro-wash { position:absolute; inset:0; opacity:0; background:radial-gradient(ellipse 770px 460px at 55% 55%,#17463c 0%,#112b2d 58%,#0b171b 100%); }
+    #outro-label { position:absolute; left:80px; top:111px; opacity:0; }
+    #outro-title { position:absolute; left:80px; top:151px; margin:0; font:700 60px Space,sans-serif; letter-spacing:-2.5px; opacity:0; }
+    #outro-sub { position:absolute; left:82px; top:239px; margin:0; font-size:23px; color:#c3d9cb; opacity:0; }
+    .summary-card { position:absolute; top:333px; width:489px; height:127px; border-radius:19px; border:1px solid #8ac3a9; background:#1d423b; box-shadow:0 12px 42px #07191066; opacity:0; padding:15px 22px; }
+    .summary-card.s1 { left:80px; } .summary-card.s2 { right:80px; }
+    .summary-card .summary-kicker { font-size:16px; letter-spacing:2px; font-weight:700; color:#a6cfb6; }
+    .summary-card .summary-truth { font:700 34px Space,sans-serif; color:var(--mint); margin-top:1px; }
+    .summary-card .summary-truth .truth-icon { font-size:30px; margin-right:9px; }
+    .summary-card .summary-formula { font:500 20px Space,sans-serif; color:#c6dfd3; margin-top:1px; white-space:nowrap; }
+    .summary-and { position:absolute; left:592px; top:370px; width:96px; height:54px; border-radius:27px; border:1px solid #a5f5cc; background:#153d33; display:grid; place-items:center; font:700 17px Manrope,sans-serif; color:var(--mint); opacity:0; box-shadow:0 0 32px #a5f5cc36; }
+    .final-result { position:absolute; left:80px; top:486px; width:1120px; height:74px; border:1px solid #a9f4bd; background:linear-gradient(90deg,#1b513c,#183d35); border-radius:17px; display:flex; align-items:center; gap:20px; padding:0 22px; opacity:0; }
+    .final-result .final-check { width:38px; height:38px; border-radius:50%; background:#b5f5ce; display:grid; place-items:center; font:700 25px DejaVu Sans,sans-serif; color:#12402e; }
+    .final-result strong { font:700 28px Space,sans-serif; letter-spacing:-.4px; }
+    #outro-take-label { position:absolute; top:595px; left:80px; font-size:12px; letter-spacing:2.3px; color:#a5f5cc; font-weight:700; opacity:0; }
+    #outro-take { position:absolute; top:617px; left:80px; margin:0; font-size:24px; line-height:1.38; color:#edf5ee; opacity:0; }
+    
+    /* Pilot override: show computed content without timeline seeking */
+    #stage .assignment, #stage .clause-card, #stage .and-card,
+    #stage .var-chip, #stage .lit-result,
+    #stage .clause-result .resolved, #stage .and-input .reveal,
+    #stage .and-output .reveal, #stage .summary-card,
+    #stage .final-result { opacity:1 !important; }
+  </style>
+</head>
+<body>
+<div id="stage" data-composition-id="three-sat-pilot" data-start="0" data-duration="28.5" data-width="1280" data-height="720" data-fps="24" data-no-timeline>
+  <div class="backdrop" aria-hidden="true"></div>
+  <div class="masthead"><span>FIELD NOTES / LOGIC</span><span class="right" id="masthead-right">3-SAT VISUAL EXPLAINER &nbsp; • &nbsp; PILOT</span></div>
+  <div class="footer-rule"></div><div class="footer-progress" id="progress"></div>
+
+  <section id="intro" class="clip" data-start="0" data-duration="4.1" data-track-index="0" aria-label="Introduce the 3-SAT problem and both clauses">
+    <div class="intro-copy">
+      <div class="section-label" id="intro-label"><span class="index">01 /</span> THE QUESTION</div>
+      <h1 id="intro-title">Can one choice<br>satisfy <span>every rule?</span></h1>
+      <p id="intro-sub">That is the puzzle behind 3-SAT.</p>
+    </div>
+    <div class="intro-orbit" id="intro-orbit" aria-hidden="true">
+      <div class="orbit"></div><div class="orbit"></div><div class="orbit"></div>
+      <div class="orbit-center">?</div><div class="satellite a"></div><div class="satellite b"></div><div class="satellite c"></div>
+    </div>
+    <div class="intro-formula" aria-label="The example formula has two OR clauses connected by AND">
+      <div id="preview-c1" class="formula-preview">
+        <div class="preview-kicker">CLAUSE 01 &middot; ONE OF THREE</div>
+        <div class="preview-equation" id="preview-c1-eq"></div>
+      </div>
+      <div id="preview-and">AND</div>
+      <div id="preview-c2" class="formula-preview">
+        <div class="preview-kicker">CLAUSE 02 &middot; ONE OF THREE</div>
+        <div class="preview-equation" id="preview-c2-eq"></div>
+      </div>
+    </div>
+  </section>
+
+  <section id="lab" class="clip" data-start="3.3" data-duration="20.1" data-track-index="1" aria-label="Evaluate literals, clauses, and the AND result from data">
+    <div class="lab-head">
+      <div class="section-label" id="lab-label"><span class="index">02 /</span> TEST THE FORMULA</div>
+      <h2 id="lab-title">Choose one assignment.</h2>
+      <div id="lab-note">
+        <span id="note-0">Two OR clauses. Both must pass the AND.</span>
+        <span id="note-1">Set x1, x2 and x3 to the assigned values.</span>
+        <span id="note-2">NOT reverses the value: TRUE becomes FALSE.</span>
+        <span id="note-3">OR passes when at least one literal is TRUE.</span>
+        <span id="note-4">AND passes only when both clauses are TRUE.</span>
+      </div>
+      <div class="lab-tally">3 VARIABLES &nbsp; / &nbsp; 2 CLAUSES</div>
+    </div>
+    <div class="assignment" id="assignment">
+      <div class="assign-label">ASSIGNMENT</div><div class="assign-help">one choice per variable</div>
+      <!-- var chips injected by script -->
+      <div class="case-label" id="case-label"></div>
+    </div>
+    <div class="packet-trail" style="left:338px"></div><div class="packet-trail" style="left:570px"></div><div class="packet-trail" style="left:802px"></div>
+
+    <div class="clause-card" id="clause1" data-clause="1">
+      <span class="clause-caption">OR GROUP / AT LEAST ONE TRUE</span>
+      <div class="clause-meta"><strong id="c1-num">01</strong><span class="or-name">OR CLAUSE</span><span class="rule">one true is enough</span></div>
+      <div class="beam"></div>
+      <!-- literals injected by script -->
+      <span class="or-word first">OR</span><span class="or-word second">OR</span>
+      <span class="result-arrow">&rarr;</span>
+      <div class="clause-result"><div class="result-kicker">CLAUSE 01</div><div class="waiting">? &nbsp; WAITING</div><div class="resolved"><span class="truth-icon">&#10003;</span>TRUE</div></div>
+    </div>
+
+    <div class="clause-card" id="clause2" data-clause="2">
+      <span class="clause-caption">OR GROUP / AT LEAST ONE TRUE</span>
+      <div class="clause-meta"><strong id="c2-num">02</strong><span class="or-name">OR CLAUSE</span><span class="rule">one true is enough</span></div>
+      <div class="beam"></div>
+      <!-- literals injected by script -->
+      <span class="or-word first">OR</span><span class="or-word second">OR</span>
+      <span class="result-arrow">&rarr;</span>
+      <div class="clause-result"><div class="result-kicker">CLAUSE 02</div><div class="waiting">? &nbsp; WAITING</div><div class="resolved"><span class="truth-icon">&#10003;</span>TRUE</div></div>
+    </div>
+
+    <div class="and-card" id="and-card">
+      <div class="and-title">THE AND TEST</div><div class="and-sub">both clauses must pass</div>
+      <div class="and-input i1" id="and-c1"><div class="small-label">CLAUSE 01</div><div class="initial">C&#8321; &nbsp; ?</div><div class="reveal"><span class="truth-icon">&#10003;</span>TRUE</div></div>
+      <div class="and-word" id="and-word">AND</div>
+      <div class="and-input i2" id="and-c2"><div class="small-label">CLAUSE 02</div><div class="initial">C&#8322; &nbsp; ?</div><div class="reveal"><span class="truth-icon">&#10003;</span>TRUE</div></div>
+      <div class="and-arrow">&rarr;</div>
+      <div class="and-output" id="and-final"><div class="small-label">THE WHOLE FORMULA</div><div class="initial">? &nbsp; WAITING</div><div class="reveal"><span class="truth-icon">&#10003;</span>TRUE</div></div>
+    </div>
+  </section>
+
+  <section id="outro" class="clip" data-start="22.7" data-duration="5.8" data-track-index="2" aria-label="Conclusion from computed data">
+    <div class="outro-wash" id="outro-wash"></div>
+    <div class="section-label" id="outro-label"><span class="index">03 /</span> THE ANSWER</div>
+    <h2 id="outro-title">A satisfying assignment.</h2>
+    <p id="outro-sub">Both OR clauses pass. Their AND is TRUE.</p>
+    <div class="summary-card s1" id="summary-1"><div class="summary-kicker">CLAUSE 01 &nbsp; &middot; &nbsp; OR</div><div class="summary-truth"><span class="truth-icon">&#10003;</span>TRUE</div><div class="summary-formula math" id="summary-f1"></div></div>
+    <div class="summary-and" id="summary-and">AND</div>
+    <div class="summary-card s2" id="summary-2"><div class="summary-kicker">CLAUSE 02 &nbsp; &middot; &nbsp; OR</div><div class="summary-truth"><span class="truth-icon">&#10003;</span>TRUE</div><div class="summary-formula math" id="summary-f2"></div></div>
+    <div class="final-result" id="final-result"><div class="final-check">&#10003;</div><strong id="final-text">The whole formula is TRUE.</strong></div>
+    <div id="outro-take-label">THE TAKEAWAY</div>
+    <p id="outro-take">3-SAT asks whether there exists an assignment<br>that makes every clause true.</p>
+  </section>
+
+  <audio id="original-soundtrack" src="./assets/logic-chimes.wav" data-start="0" data-duration="28.5" data-volume="0.56" aria-label="Original synthesized sound accents, no narration"></audio>
+
+  <!-- Safe data injection: only validated JSON, never raw HTML or JS -->
+  <script type="application/json" id="pilot-data"></script>
+  <script>
+(() => {
+  'use strict';
+  const tl = gsap.timeline({ paused: true });
+  window.__timelines = window.__timelines || {};
+  window.__timelines['three-sat-pilot'] = tl;
+  try {
+    const dataEl = document.getElementById('pilot-data');
+  const data = JSON.parse(dataEl.textContent || '{}');
+  const esc = (s) => {
+    const m = { '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":"&#x27;",'/':'&#x2F;','`':'&#x60;','=':'&#x3D;' };
+    return String(s).replace(/[&<>"'/`=]/g, (ch) => m[ch]);
+  };
+  const sub = { '1':'\u2081','2':'\u2082','3':'\u2083' };
+  const varLabel = (vid) => 'x' + (sub[vid[1]] || vid[1]);
+  const litLabel = (v, neg) => (neg ? 'NOT ' : '') + varLabel(v);
+  const truthIcon = (val) => val ? '\u2713' : '\u00D7';
+  const truthWord = (val) => val ? 'TRUE' : 'FALSE';
+  const truthCls = (val) => val ? 'true' : 'false';
+
+  // ---- Build formula preview equations from data ----
+  const buildEq = (clause) => {
+    const parts = [];
+    parts.push('<span class="p">(</span>');
+    clause.literals.forEach((lit, idx) => {
+      if (idx > 0) parts.push('<span class="op">OR</span>');
+      const label = litLabel(lit.var, lit.negated);
+      parts.push(lit.negated ? '<span class="neg">NOT</span> <span class="math">' + esc(label.replace('NOT ', '')) + '</span>' : '<span class="math">' + esc(label) + '</span>');
+    });
+    parts.push('<span class="p">)</span>');
+    return parts.join('');
+  };
+  document.getElementById('preview-c1-eq').innerHTML = buildEq(data.clauses[0]);
+  document.getElementById('preview-c2-eq').innerHTML = buildEq(data.clauses[1]);
+
+  // ---- Build variable chips from data ----
+  const bankX = [339, 571, 803];
+  data.variables.forEach((v, i) => {
+    const val = data.assignment[v.id];
+    const chip = document.createElement('div');
+    chip.className = 'var-chip v' + (i + 1);
+    chip.innerHTML =
+      '<span class="math">' + varLabel(v.id) + '</span>' +
+      '<span class="equals">=</span>' +
+      '<span class="value"><span class="truth-icon">' + truthIcon(val) + '</span>' + truthWord(val) + '</span>';
+    document.getElementById('assignment').appendChild(chip);
+  });
+  document.getElementById('case-label').textContent = esc(data.case_label);
+
+  // ---- Build clause literals from data ----
+  const buildLiteral = (clauseIdx, litIdx, lit) => {
+    const el = document.createElement('div');
+    const col = litIdx + 1;
+    const nodeId = 'clause' + (clauseIdx + 1) + '-l' + col;
+    el.id = nodeId;
+    el.className = 'literal col' + col;
+    el.dataset.var = lit.var;
+    el.dataset.negated = lit.negated ? 'true' : 'false';
+    const labelHtml = lit.negated
+      ? '<span class="notword">NOT</span> <span class="math">' + varLabel(lit.var) + '</span>'
+      : '<span class="math">' + varLabel(lit.var) + '</span>';
+    el.innerHTML =
+      '<div class="lit-label math">' + labelHtml + '</div>' +
+      '<div class="lit-pending">VALUE &nbsp; ?</div>' +
+      '<div class="lit-result"><span class="truth-icon"></span><span class="result-text"></span></div>' +
+      '<div class="impact"></div>';
+    document.getElementById('clause' + (clauseIdx + 1)).querySelector('.or-word.second').insertAdjacentElement('beforebegin', el);
+    return el;
+  };
+  const literalNodes = [];
+  data.clauses.forEach((clause, ci) => {
+    clause.literals.forEach((lit, li) => {
+      literalNodes.push(buildLiteral(ci, li, lit));
+    });
+  });
+
+  // ---- Boolean evaluation from data ----
+  const evaluateLiteral = (node) => {
+    const input = data.assignment[node.dataset.var];
+    return node.dataset.negated === 'true' ? !input : input;
+  };
+  const literalValues = literalNodes.map(evaluateLiteral);
+  const clauseValues = [
+    literalValues.slice(0, 3).some(Boolean),
+    literalValues.slice(3, 6).some(Boolean),
+  ];
+  const formulaValue = clauseValues.every(Boolean);
+
+  // ---- Apply computed truth values to DOM ----
+  literalNodes.forEach((node, i) => {
+    const value = literalValues[i];
+    const res = node.querySelector('.lit-result');
+    res.classList.add(value ? 'true' : 'false');
+    res.querySelector('.truth-icon').textContent = truthIcon(value);
+    res.querySelector('.result-text').textContent = truthWord(value);
+    node.setAttribute('aria-label', (node.dataset.negated === 'true' ? 'NOT ' : '') + node.dataset.var + ' is ' + truthWord(value));
+  });
+
+  const resolveClause = (cardId, resolvedValue, revealValue) => {
+    const card = document.getElementById(cardId);
+    const result = card.querySelector('.clause-result');
+    const andInput = document.getElementById('and-' + cardId.replace('clause', 'c'));
+    const waiting = result.querySelector('.waiting');
+    const resolvedDiv = result.querySelector('.resolved');
+    waiting.textContent = '';
+    resolvedDiv.innerHTML = '<span class="truth-icon">' + truthIcon(resolvedValue) + '</span>' + truthWord(resolvedValue);
+    resolvedDiv.className = 'resolved ' + truthCls(resolvedValue);
+    andInput.querySelector('.reveal').innerHTML = '<span class="truth-icon">' + truthIcon(revealValue) + '</span>' + truthWord(revealValue);
+  };
+
+  // Clause results now show computed values
+  resolveClause('clause1', clauseValues[0], clauseValues[0]);
+  resolveClause('clause2', clauseValues[1], clauseValues[1]);
+
+  // AND output from computed formula value
+  const andFinal = document.getElementById('and-final');
+  andFinal.querySelector('.reveal').innerHTML = '<span class="truth-icon">' + truthIcon(formulaValue) + '</span>' + truthWord(formulaValue);
+  document.getElementById('final-text').textContent = 'The whole formula is ' + truthWord(formulaValue) + '.';
+
+  // Summary cards from data
+  document.getElementById('summary-f1').innerHTML = data.clauses[0].literals.map(l => litLabel(l.var, l.negated)).join(' &nbsp;OR&nbsp; ');
+  document.getElementById('summary-f2').innerHTML = data.clauses[1].literals.map(l => litLabel(l.var, l.negated)).join(' &nbsp;OR&nbsp; ');
+
+  // ---- Timeline (finite, paused, for HyperFrames seeking) ----
+  const tl = gsap.timeline({ paused: true });
+  const ease = 'power3.out';
+  const from = (selector, vars, end, at) => tl.fromTo(selector, vars, { ...end, ease }, at);
+  const note = (id, showAt, hideAt) => {
+    from('#' + id, { opacity:0, y:9 }, { opacity:1, y:0, duration:.28 }, showAt);
+    if (hideAt) tl.to('#' + id, { opacity:0, y:-7, duration:.22 }, hideAt);
+  };
+
+  // Act I
+  from('#intro-label', {opacity:0,y:16}, {opacity:1,y:0,duration:.48}, .16);
+  from('#intro-title', {opacity:0,y:36}, {opacity:1,y:0,duration:.78}, .42);
+  from('#intro-sub', {opacity:0,y:22}, {opacity:1,y:0,duration:.55}, 1.13);
+  from('#intro-orbit', {opacity:0,scale:.7,rotation:-32}, {opacity:.85,scale:1,rotation:0,duration:1.08}, .72);
+  tl.to('#intro-orbit', {rotation:82,duration:2.2,ease:'none'}, 1.38);
+  tl.to('.intro-orbit .orbit-center', {rotation:-82,duration:2.2,ease:'none'}, 1.38);
+  from('#preview-c1', {opacity:0,x:-105,y:18,rotation:-2}, {opacity:1,x:0,y:0,rotation:0,duration:.72}, 1.66);
+  from('#preview-c2', {opacity:0,x:105,y:18,rotation:2}, {opacity:1,x:0,y:0,rotation:0,duration:.72}, 1.84);
+  from('#preview-and', {opacity:0,scale:.4,rotation:-60}, {opacity:1,scale:1,rotation:0,duration:.55}, 2.10);
+  tl.to(['#intro-title','#intro-sub','#intro-label','#intro-orbit'], {opacity:0,y:-35,duration:.43}, 3.28);
+  tl.to(['#preview-c1','#preview-c2'], {y:92,opacity:0,scale:.95,duration:.48,ease:'power2.in'}, 3.52);
+  tl.to('#preview-and', {opacity:0,scale:.5,duration:.38}, 3.52);
+
+  // Act II
+  from('#lab-label', {opacity:0,y:24}, {opacity:1,y:0,duration:.52}, 3.48);
+  from('#lab-title', {opacity:0,y:25}, {opacity:1,y:0,duration:.54}, 3.6);
+  from('#lab-note', {opacity:0}, {opacity:1,duration:.3}, 3.79);
+  from('.lab-tally', {opacity:0,x:22}, {opacity:1,x:0,duration:.48}, 3.80);
+  note('note-0', 3.78, 6.12);
+  note('note-1', 6.40, 9.35);
+  note('note-2', 9.65, 17.4);
+  note('note-3', 17.58, 20.10);
+  note('note-4', 20.35, 22.7);
+  from('#assignment', {opacity:0,y:-34}, {opacity:1,y:0,duration:.62}, 4.12);
+  from('#clause1', {opacity:0,x:-68,y:14}, {opacity:1,x:0,y:0,duration:.70}, 4.44);
+  from('#clause2', {opacity:0,x:68,y:14}, {opacity:1,x:0,y:0,duration:.70}, 4.71);
+  from('#and-card', {opacity:0,y:43}, {opacity:1,y:0,duration:.62}, 5.0);
+  // Variable chips: use .var-chip.v1/v2/v3
+  ['.var-chip.v1','.var-chip.v2','.var-chip.v3'].forEach((sel, i) => {
+    from(sel, {opacity:0,y:-12,scale:.77}, {opacity:1,y:0,scale:1,duration:.40}, 5.96 + i*.28);
+  });
+  tl.to('#assignment', {borderColor:'#a1dfc0',boxShadow:'0 0 0 1px #a6eac059, 0 14px 36px #0003',duration:.45}, 6.7);
+
+  const travel = (tileId, start, negated, bankIndex, row) => {
+    const tile = document.getElementById(tileId);
+    const lab = document.getElementById('lab');
+    const bankCenterX = bankX[bankIndex];
+    const bankCenterY = 238;
+    const targetX = bankCenterX + 51;
+    const targetY = row === 1 ? 329 : 483;
+    const createPacket = (kind) => {
+      const el = document.createElement('div');
+      el.className = 'packet ' + kind;
+      el.setAttribute('aria-hidden', 'true');
+      el.textContent = kind === 't' ? '\u2713' : '\u00D7';
+      el.style.left = (bankCenterX - 22) + 'px';
+      lab.appendChild(el);
+      return el;
+    };
+    const packet = createPacket('t');
+    const deltaY = targetY - bankCenterY;
+    from(packet, {x:0,y:0,scale:.3,opacity:0}, {x:0,y:0,scale:1,opacity:1,duration:.20}, start);
+    tl.to(packet, {x:51,y:deltaY,duration:row === 1 ? .73 : .88,ease:'power2.inOut'}, start+.18);
+    const arrived = start + (row === 1 ? .91 : 1.06);
+    const impact = tile.querySelector('.impact');
+    from(impact, {opacity:0,scale:.28}, {opacity:.8,scale:1,duration:.12}, arrived-.08);
+    tl.to(impact, {opacity:0,scale:1.65,duration:.41,ease:'power2.out'}, arrived+.04);
+    if (negated) {
+      const falsePacket = createPacket('f');
+      tl.to(packet, {opacity:0,scaleX:0,rotationY:90,duration:.17,ease:'power2.in'}, arrived+.02);
+      from(falsePacket, {x:51,y:deltaY,scaleX:0,opacity:0,rotationY:-90},
+        {x:51,y:deltaY,scaleX:1,opacity:1,rotationY:0,duration:.19}, arrived+.18);
+      tl.to(tile.querySelector('.notword'), {backgroundColor:'#493330',borderColor:'#ffcebb',scale:1.08,duration:.20}, arrived+.13);
+      tl.to(falsePacket, {opacity:0,scale:.65,duration:.27}, arrived+.46);
+    } else {
+      tl.to(packet, {opacity:0,scale:.64,duration:.30}, arrived+.13);
+    }
+    const reveal = arrived + (negated ? .36 : .12);
+    tl.to(tile, {backgroundColor: negated ? '#3a2f2d' : '#22473b', borderColor: negated ? '#ffad95' : '#a5f5cc', duration:.30}, reveal);
+    tl.to(tile.querySelector('.lit-pending'), {opacity:0,duration:.13}, reveal);
+    from(tile.querySelector('.lit-result'), {opacity:0,y:8}, {opacity:1,y:0,duration:.28}, reveal+.06);
+  };
+
+  // Travel schedule: clause-major order of literals
+  data.clauses.forEach((clause, ci) => {
+    clause.literals.forEach((lit, li) => {
+      const nodeId = 'clause' + (ci + 1) + '-l' + (li + 1);
+      // Find which column this literal is in by matching var+negated
+      const actualNode = document.getElementById(nodeId);
+      travel(nodeId, 7.64 + (ci * 4.52) + (li * 1.52), lit.negated, li, ci + 1);
+    });
+  });
+
+  const resolveClause = (num, at, witnessIds) => {
+    const card = document.getElementById('clause' + num);
+    const result = card.querySelector('.clause-result');
+    const andInput = document.getElementById('and-c' + num);
+    witnessIds.forEach((id) => {
+      tl.to('#' + id, {boxShadow:'0 0 0 2px #a5f5ccee, 0 0 24px #6df7b257',scale:1.035,duration:.39}, at);
+    });
+    tl.to(card.querySelectorAll('.or-word'), {color:'#a5f5cc',duration:.3,stagger:.12}, at+.12);
+    from(card.querySelector('.beam'), {scaleX:0,opacity:.3}, {scaleX:1,opacity:1,duration:.47}, at+.13);
+    tl.to(card, {borderColor:'#9ad6af',boxShadow:'0 14px 37px #020b0f61, 0 0 0 1px #a5f5cc37',duration:.5}, at+.18);
+    tl.to(result, {borderColor:'#a5f5cc',backgroundColor:'#24523f',duration:.38}, at+.31);
+    tl.to(result.querySelector('.waiting'), {opacity:0,duration:.16}, at+.40);
+    from(result.querySelector('.resolved'), {opacity:0,x:-12}, {opacity:1,x:0,duration:.36}, at+.44);
+    tl.to(andInput, {borderColor:'#a5f5cc',backgroundColor:'#255243',duration:.35}, at+.55);
+    tl.to(andInput.querySelector('.initial'), {opacity:0,duration:.15}, at+.58);
+    from(andInput.querySelector('.reveal'), {opacity:0,y:8}, {opacity:1,y:0,duration:.34}, at+.64);
+  };
+  resolveClause(1, 17.55, ['clause1-l1','clause1-l3']);
+  resolveClause(2, 18.73, ['clause2-l2']);
+
+  tl.to('#and-word', {color:'#a5f5cc',scale:1.22,textShadow:'0 0 16px #95e3af',duration:.39,ease:'back.out(2)'}, 20.5);
+  tl.to('#and-card', {borderColor:'#b2eeb9',boxShadow:'0 0 0 1px #a5f5cc44,0 0 45px #a5f5cc25',duration:.53}, 20.64);
+  tl.to('#and-final', {borderColor:'#bafaca',backgroundColor:'#28674a',duration:.53}, 20.91);
+  tl.to('#and-final .initial', {opacity:0,duration:.17}, 21.08);
+  from('#and-final .reveal', {opacity:0,y:14,scale:.78}, {opacity:1,y:0,scale:1,duration:.55}, 21.18);
+  tl.to('#and-final', {boxShadow:'0 0 0 4px #a5f5cc22, 0 0 40px #a5f5cc53',duration:.48}, 21.28);
+
+  // Act III
+  from('#outro-wash', {opacity:0}, {opacity:1,duration:.65}, 22.7);
+  tl.to(['#lab-label','#lab-title','#lab-note','.lab-tally','#assignment','#clause1','#clause2','#and-card'], {opacity:0,duration:.24}, 22.72);
+  from('#outro-label', {opacity:0,y:18}, {opacity:1,y:0,duration:.43}, 22.88);
+  from('#outro-title', {opacity:0,y:29}, {opacity:1,y:0,duration:.60}, 23.04);
+  from('#outro-sub', {opacity:0,y:14}, {opacity:1,y:0,duration:.51}, 23.43);
+  from('#summary-1', {opacity:0,x:-129,y:-53,scale:.82,rotation:-5}, {opacity:1,x:0,y:0,scale:1,rotation:0,duration:.67}, 23.79);
+  from('#summary-2', {opacity:0,x:129,y:-53,scale:.82,rotation:5}, {opacity:1,x:0,y:0,scale:1,rotation:0,duration:.67}, 23.96);
+  from('#summary-and', {opacity:0,scale:.2,rotation:-70}, {opacity:1,scale:1,rotation:0,duration:.52}, 24.36);
+  from('#final-result', {opacity:0,scaleX:.72,y:20}, {opacity:1,scaleX:1,y:0,duration:.55}, 24.76);
+  from('#outro-take-label', {opacity:0,y:9}, {opacity:1,y:0,duration:.37}, 24.86);
+  from('#outro-take', {opacity:0,y:15}, {opacity:1,y:0,duration:.50}, 25.05);
+  tl.fromTo('#progress', {width:0}, {width:1120,duration:28.25,ease:'none'}, .10);
+  } catch (e) {
+    console.error('Pilot render error:', e);
+  }
+  window.__timelines = window.__timelines || {};
+  window.__timelines['three-sat-pilot'] = tl;
+})();
+  </script>
+</div>
+</body>
+</html>
