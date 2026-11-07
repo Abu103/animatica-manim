@@ -40,9 +40,15 @@ jobs:
       - name: Strip docs, sources and unused engines
         run: |
           set -euo pipefail
-          TLMGR=$(find "$HOME" -name tlmgr -path "*/bin/*" | head -1)
-          TEXBIN=$(dirname "$TLMGR")
+          # ~/bin/latex is a symlink into ~/.TinyTeX/bin/<arch>/latex; resolving it is
+          # the only reliable way to find the root (tlmgr.pl lives inside texmf-dist).
+          LATEX_BIN=$(command -v latex || echo "$HOME/bin/latex")
+          REAL=$(readlink -f "$LATEX_BIN")
+          echo "latex: $LATEX_BIN -> $REAL"
+          TEXBIN=$(dirname "$REAL")
           TEXROOT=$(dirname "$(dirname "$TEXBIN")")
+          [ -d "$TEXROOT/bin" ] || { echo "::error title=no bin::$TEXROOT has no bin/ directory"; exit 1; }
+          echo "TEXROOT=$TEXROOT" >> "$GITHUB_ENV"
           echo "TinyTeX root: $TEXROOT"
           du -sh "$TEXROOT" || true
 
@@ -90,11 +96,8 @@ jobs:
       - name: Pack the bundle
         run: |
           set -uo pipefail
-          # $HOME/bin/tlmgr is a symlink the installer drops on PATH; resolve it.
-          TLMGR=$(find "$HOME" -name tlmgr -type f -path "*/bin/*" 2>/dev/null | head -1)
-          [ -n "$TLMGR" ] || TLMGR=$(readlink -f "$(find "$HOME" -name tlmgr -path "*/bin/*" 2>/dev/null | head -1)")
-          TEXROOT=$(find "$HOME" -maxdepth 4 -type d -name "TinyTeX*" 2>/dev/null | head -1)
-          [ -n "$TEXROOT" ] || TEXROOT=$(dirname "$(dirname "$(dirname "${TLMGR:-/nonexistent}")")")
+          TEXROOT="${{ env.TEXROOT }}"
+          [ -d "$TEXROOT/bin" ] || TEXROOT=$(dirname "$(dirname "$(dirname "$(readlink -f "$(command -v latex)")")")")
           echo "::notice title=diag::tlmgr=$TLMGR root=$TEXROOT exists=$([ -d "$TEXROOT" ] && echo yes || echo no)"
           if [ ! -d "$TEXROOT" ]; then
             echo "::error title=no tex root::looked for tlmgr under $HOME; candidates: $(find "$HOME" -name tlmgr -maxdepth 6 2>/dev/null | head -3 | tr '\n' ' ')"
@@ -105,6 +108,8 @@ jobs:
           cp -a "$TEXROOT" bundle/tex || { echo "::error title=copy failed::$TEXROOT"; exit 1; }
           UNPACKED=$(du -sm bundle/tex | cut -f1)
           tar -C bundle -cf - tex | xz -9e -T0 > animatica-tex.tar.xz || { echo "::error title=xz failed::"; exit 1; }
+          tar tf animatica-tex.tar.xz | grep -q "/bin/" || { echo "::error title=bundle has no binaries::"; exit 1; }
+          tar tf animatica-tex.tar.xz | grep -q "dvisvgm" || { echo "::error title=bundle has no dvisvgm::"; exit 1; }
           ls -lh animatica-tex.tar.xz
           echo "::notice title=tex bundle size::$(du -m animatica-tex.tar.xz | cut -f1) MB compressed, ${UNPACKED} MB unpacked"
 
