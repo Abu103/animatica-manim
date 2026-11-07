@@ -118,7 +118,7 @@ def test_graph_renders_original_and_approximation(run_component):
     """A graph with approx_fn draws both curves and produces no warnings."""
     params = Graph.Params(
         fn="exp(x)", approx_fn="1 + x + x**2/2",
-        x_range=(-2, 2), y_range=(0, 4),
+        x_range=(-2, 2), y_range=(0, 8),
         label="e^x", approx_label="2nd-order Taylor",
     )
     scene, warnings = run_component(Graph(), params)

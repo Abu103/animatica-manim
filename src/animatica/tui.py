@@ -220,10 +220,6 @@ class AnimaticaTuiApp:
                     self._go_next()
 
             def action_next(self) -> None:
-                # Don't navigate if the user is typing in an input field
-                focused = self.app.focused
-                if isinstance(focused, (w["Input"], w["TextArea"])):
-                    return
                 self._go_next()
 
             def _go_next(self) -> None:
@@ -330,17 +326,9 @@ class AnimaticaTuiApp:
                     self.action_next()
 
             def action_back(self) -> None:
-                # Don't navigate if the user is typing in an input field
-                focused = self.app.focused
-                if isinstance(focused, (w["Input"], w["TextArea"])):
-                    return
                 self.app.pop_screen()
 
             def action_next(self) -> None:
-                # Don't navigate if the user is typing in an input field
-                focused = self.app.focused
-                if isinstance(focused, (w["Input"], w["TextArea"])):
-                    return
                 out_input = self.query_one("#output-dir", w["Input"])
                 quality_select = self.query_one("#quality-select", w["Select"])
                 orientation_select = self.query_one("#orientation-select", w["Select"])
@@ -395,17 +383,9 @@ class AnimaticaTuiApp:
                     self.action_next()
 
             def action_back(self) -> None:
-                # Don't navigate if the user is typing in an input field
-                focused = self.app.focused
-                if isinstance(focused, (w["Input"], w["TextArea"])):
-                    return
                 self.app.pop_screen()
 
             def action_next(self) -> None:
-                # Don't navigate if the user is typing in an input field
-                focused = self.app.focused
-                if isinstance(focused, (w["Input"], w["TextArea"])):
-                    return
                 self.app.push_screen("progress")
 
             def _refresh_summary(self) -> None:
@@ -570,8 +550,17 @@ class AnimaticaTuiApp:
                     app._render_thread.join(timeout=15)
 
                 self._stop_poll()
-                stage.update("Cancelled")
-                status.update("Render stopped. Press any key to return.")
+                # Never claim rendering has stopped while the worker is still
+                # alive. If the thread is still running after the join timeout,
+                # tell the user rendering may continue and output may still be
+                # written. A full cancellation redesign is outside this
+                # milestone.
+                if app._render_thread is not None and app._render_thread.is_alive():
+                    stage.update("Cancelling…")
+                    status.update("Cancel requested. Render may still be running; output may still be written.")
+                else:
+                    stage.update("Cancelled")
+                    status.update("Render stopped. Press any key to return.")
 
         class ResultScreen(w["Screen"]):
             BINDINGS = [

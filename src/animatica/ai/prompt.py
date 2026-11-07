@@ -80,6 +80,12 @@ def build_prompt(request: str, registry: ComponentRegistry, errors: list[str] | 
         "- For equations use plain LaTeX that compiles on its own (no \\usepackage, no $ signs, no text-mode commands). "
         "- Captions teach the topic in one sentence of plain language; they never describe production mechanics "
         "(avoid 'A title card introducing X', 'This scene shows', 'The graph displays'). "
+        "- A Taylor polynomial is an *approximation* of a function near a center point, not the function itself. "
+        "Describe it as such (e.g. 'approximates', 'follows near', 'tracks locally'), never as an equality. "
+        "- An infinite-series equality (e.g. e^x = sum ...) is only true under specific conditions (radius of "
+        "convergence, center point). Do not present it as true for every smooth function without qualification. "
+        "- Prompt guidance improves caption tone and visual comparison coverage; it does not guarantee "
+        "mathematical correctness. "
         "- If the explanation compares two things (original vs approximation, option A vs B), show both visually: "
         "use graph with approx_fn for functions, or bar_chart/compare for options. Do not only describe the comparison in words.",
         "",
@@ -99,7 +105,6 @@ def build_prompt(request: str, registry: ComponentRegistry, errors: list[str] | 
             *errors[:6],
         ]
     return "\n".join(parts)
-
 
 
 _OUTLINE_SHAPE = (

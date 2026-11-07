@@ -241,29 +241,26 @@ async def test_settings_back_returns_to_welcome_at_80x24():
 
 @pytest.mark.tui
 async def test_keyboard_shortcuts_at_80x24():
-    """Keyboard shortcuts (Alt+Left, Alt+Right) work at 80x24 without resizing.
+    """Alt+Left/Alt+Right work at 80x24 while input is focused.
 
-    We call the screen action methods directly (which is what the key
-    bindings trigger) rather than relying on pilot.press(), which sends
-    keys to the focused widget and can be swallowed by Input widgets.
+    Modifier shortcuts navigate even when an Input widget has focus;
+    ordinary typing (e.g. 'n', 'b') still inserts characters into the
+    input and does not trigger navigation.
     """
     textual_app, _ = _make_tui_app()
     async with textual_app.run_test(size=(80, 24)) as pilot:
         await pilot.pause()
 
-        # Alt+Right on Welcome should go to Settings (need to enter a prompt first)
+        # Alt+Right on Welcome navigates while input is focused (no unfocus needed)
         prompt_input = _q(textual_app, "#prompt-input")
         await pilot.click(prompt_input)
         prompt_input.value = "test prompt"
-        await pilot.pause()
-        # Unfocus the input so the navigation shortcut can fire
-        await pilot.press("tab")
         await pilot.pause()
         textual_app.screen.action_next()
         await pilot.pause()
         assert _q(textual_app, "#output-dir") is not None
 
-        # Alt+Left on Settings should go back to Welcome
+        # Alt+Left on Settings goes back to Welcome while input focused
         textual_app.screen.action_back()
         await pilot.pause()
         assert _q(textual_app, "#prompt-input") is not None
@@ -273,23 +270,23 @@ async def test_keyboard_shortcuts_at_80x24():
         await pilot.pause()
         assert _q(textual_app, "#next") is not None
 
-        # Alt+Right on Settings should go to Review
+        # Alt+Right on Settings goes to Review
         textual_app.screen.action_next()
         await pilot.pause()
         assert _q(textual_app, "#review-summary") is not None
         assert _q(textual_app, "#start") is not None
 
-        # Alt+Left on Review should go back to Settings
+        # Alt+Left on Review goes back to Settings
         textual_app.screen.action_back()
         await pilot.pause()
         assert _q(textual_app, "#next") is not None
 
 
 @pytest.mark.tui
-async def test_typing_b_n_c_q_in_input_does_not_navigate():
-    """Typing characters b, n, c, q in a prompt input must not trigger
-    navigation shortcuts. The focus guard in action_next/action_back
-    prevents navigation while an Input/TextArea has focus."""
+async def test_typing_in_input_does_not_navigate():
+    """Typing ordinary characters (b, n, c, q) in a prompt input inserts
+    them into the input field and does NOT trigger navigation. Navigation
+    only happens via Alt+Left/Alt+Right (or the Next/Back buttons)."""
     textual_app, _ = _make_tui_app()
     async with textual_app.run_test(size=(80, 24)) as pilot:
         await pilot.pause()
@@ -300,16 +297,13 @@ async def test_typing_b_n_c_q_in_input_does_not_navigate():
         prompt_input.value = "explain taylor series with b n c q keys"
         await pilot.pause()
 
-        # Input is still focused - action_next must NOT navigate
-        textual_app.screen.action_next()
-        await pilot.pause()
-        # Still on Welcome screen
+        # The text was entered into the input (not interpreted as navigation)
+        assert prompt_input.value == "explain taylor series with b n c q keys"
+        # Still on Welcome screen - typing characters doesn't navigate
         assert _q(textual_app, "#prompt-input") is not None
         assert _q(textual_app, "#welcome-status") is not None
 
-        # Unfocus and try again - should navigate now
-        await pilot.press("tab")
-        await pilot.pause()
+        # But Alt+Right (action_next) DOES navigate even while input focused
         textual_app.screen.action_next()
         await pilot.pause()
         assert _q(textual_app, "#output-dir") is not None

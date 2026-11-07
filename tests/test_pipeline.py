@@ -182,11 +182,42 @@ def _curve_colors_present(video_path: str, t: float) -> dict[str, object]:
 
 @pytest.mark.render
 def test_taylor_graph_end_to_end_both_curves_visible(tmp_path):
-    """End-to-end: rendering the Taylor storyboard produces a graph frame
-    where both the original function (cyan) and the approximation (white)
-    curves are visible and distinguishable."""
+    """End-to-end: rendering a Taylor storyboard produces a graph frame
+    where both the original function and the approximation curves are
+    visible and distinguishable.
+
+    Uses a hand-written fixture stored inline (not an untracked acceptance
+    artifact) so the test works on a clean checkout.
+    """
+    import json as _json
+
+    sb_path = tmp_path / "taylor_fixture.json"
+    sb_path.write_text(
+        _json.dumps({
+            "version": "1",
+            "title": "Taylor Series",
+            "theme": {"palette": "dark-blue", "font": "default"},
+            "scenes": [{
+                "beats": [
+                    {"component": "title_card", "params": {"title": "Taylor Series",
+                        "subtitle": "Approximating functions with polynomials"},
+                        "caption": "Taylor series approximate smooth functions with polynomials."},
+                    {"component": "equation", "params": {"mode": "reveal",
+                        "latex": ["f(x) = \\sum_{n=0}^{\\infty} \\frac{f^{(n)}(a)}{n!}(x-a)^n"]},
+                        "caption": "The series adds derivative-based terms to match a function at a point."},
+                    {"component": "graph", "params": {
+                        "fn": "exp(x)", "approx_fn": "1 + x + x**2/2 + x**3/6",
+                        "x_range": [-2, 2], "y_range": [0, 8],
+                        "label": "e^x", "approx_label": "3rd-degree Taylor polynomial"},
+                        "caption": "A low-degree polynomial follows e^x near zero but drifts away at the edges."},
+                ]
+            }],
+        }),
+        encoding="utf-8",
+    )
+
     result = make_video(
-        storyboard_path=Path("acceptance/gallery/taylor/storyboard.json"),
+        storyboard_path=sb_path,
         out_dir=tmp_path / "taylor_e2e",
         preview=True,
     )
@@ -198,3 +229,48 @@ def test_taylor_graph_end_to_end_both_curves_visible(tmp_path):
     assert not info.get("error"), f"frame extraction failed: {info.get('error')}"
     assert info["cyan"], "original function curve (cyan/e^x) not visible in graph frame"
     assert info["white"], "approximation curve (white/Taylor polynomial) not visible in graph frame"
+
+
+@pytest.mark.render
+def test_graph_end_to_end_legend_and_clipping_warning(tmp_path):
+    """End-to-end: a graph with approx_fn produces a legend, and a curve
+    clipped by the y-range produces a warning (it does not silently vanish)."""
+    import json as _json
+
+    sb_path = tmp_path / "graph_fixture.json"
+    sb_path.write_text(
+        _json.dumps({
+            "version": "1",
+            "title": "Graph Fixture",
+            "theme": {"palette": "dark-blue", "font": "default"},
+            "scenes": [{
+                "beats": [{
+                    "component": "graph", "params": {
+                        "fn": "exp(x)", "approx_fn": "1 + x",
+                        "x_range": [-2, 2], "y_range": [0, 2],
+                        "label": "e^x", "approx_label": "linear approx",
+                        "caption": "e^x is clipped at y=2; the linear approximation stays in range.",
+                    }
+                }]
+            }],
+        }),
+        encoding="utf-8",
+    )
+
+    result = make_video(
+        storyboard_path=sb_path,
+        out_dir=tmp_path / "graph_e2e",
+        preview=True,
+    )
+    assert result.video.exists()
+
+    # The graph scene renders scene index 0; extract warnings from the report.
+    report_path = result.report
+    assert report_path.exists()
+    report = _json.loads(report_path.read_text(encoding="utf-8"))
+    warnings = report.get("warnings", [])
+
+    # exp(x) at x=2 gives e^2 ≈ 7.39, which exceeds y_range [0, 2], so it
+    # should be flagged as clipped.
+    clipped_warnings = [w for w in warnings if "clipped" in w.lower()]
+    assert len(clipped_warnings) >= 1, f"expected clipping warning, got warnings: {warnings}"
