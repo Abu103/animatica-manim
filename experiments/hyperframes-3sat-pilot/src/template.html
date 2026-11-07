@@ -139,17 +139,10 @@
     .final-result strong { font:700 28px Space,sans-serif; letter-spacing:-.4px; }
     #outro-take-label { position:absolute; top:595px; left:80px; font-size:12px; letter-spacing:2.3px; color:#a5f5cc; font-weight:700; opacity:0; }
     #outro-take { position:absolute; top:617px; left:80px; margin:0; font-size:24px; line-height:1.38; color:#edf5ee; opacity:0; }
-    
-    /* Pilot override: show computed content without timeline seeking */
-    #stage .assignment, #stage .clause-card, #stage .and-card,
-    #stage .var-chip, #stage .lit-result,
-    #stage .clause-result .resolved, #stage .and-input .reveal,
-    #stage .and-output .reveal, #stage .summary-card,
-    #stage .final-result { opacity:1 !important; }
   </style>
 </head>
 <body>
-<div id="stage" data-composition-id="three-sat-pilot" data-start="0" data-duration="28.5" data-width="1280" data-height="720" data-fps="24" data-no-timeline>
+<div id="stage" data-composition-id="three-sat-pilot" data-start="0" data-duration="28.5" data-width="1280" data-height="720" data-fps="24">
   <div class="backdrop" aria-hidden="true"></div>
   <div class="masthead"><span>FIELD NOTES / LOGIC</span><span class="right" id="masthead-right">3-SAT VISUAL EXPLAINER &nbsp; • &nbsp; PILOT</span></div>
   <div class="footer-rule"></div><div class="footer-progress" id="progress"></div>
@@ -247,9 +240,7 @@
   <script>
 (() => {
   'use strict';
-  const tl = gsap.timeline({ paused: true });
-  window.__timelines = window.__timelines || {};
-  window.__timelines['three-sat-pilot'] = tl;
+  let tl;
   try {
     const dataEl = document.getElementById('pilot-data');
   const data = JSON.parse(dataEl.textContent || '{}');
@@ -342,7 +333,7 @@
     node.setAttribute('aria-label', (node.dataset.negated === 'true' ? 'NOT ' : '') + node.dataset.var + ' is ' + truthWord(value));
   });
 
-  const resolveClause = (cardId, resolvedValue, revealValue) => {
+  const applyComputedClauseResult = (cardId, resolvedValue, revealValue) => {
     const card = document.getElementById(cardId);
     const result = card.querySelector('.clause-result');
     const andInput = document.getElementById('and-' + cardId.replace('clause', 'c'));
@@ -355,8 +346,8 @@
   };
 
   // Clause results now show computed values
-  resolveClause('clause1', clauseValues[0], clauseValues[0]);
-  resolveClause('clause2', clauseValues[1], clauseValues[1]);
+  applyComputedClauseResult('clause1', clauseValues[0], clauseValues[0]);
+  applyComputedClauseResult('clause2', clauseValues[1], clauseValues[1]);
 
   // AND output from computed formula value
   const andFinal = document.getElementById('and-final');
@@ -368,7 +359,7 @@
   document.getElementById('summary-f2').innerHTML = data.clauses[1].literals.map(l => litLabel(l.var, l.negated)).join(' &nbsp;OR&nbsp; ');
 
   // ---- Timeline (finite, paused, for HyperFrames seeking) ----
-  const tl = gsap.timeline({ paused: true });
+  tl = gsap.timeline({ paused: true });
   const ease = 'power3.out';
   const from = (selector, vars, end, at) => tl.fromTo(selector, vars, { ...end, ease }, at);
   const note = (id, showAt, hideAt) => {
