@@ -67,6 +67,11 @@ jobs:
           set -euo pipefail
           TEXBIN=$(find "$HOME" -name tlmgr -path "*/bin/*" | head -1 | xargs dirname)
           export PATH="$TEXBIN:$PATH"
+          # tlmgr sometimes drops dvisvgm outside bin/<arch>; find it wherever it is
+          DVISVGM=$(find "$HOME" -name dvisvgm -type f | head -1)
+          echo "dvisvgm: ${DVISVGM:-MISSING}"
+          [ -n "$DVISVGM" ] && export PATH="$(dirname "$DVISVGM"):$PATH"
+          echo "latex: $(command -v latex)"
           mkdir -p /tmp/probe && cd /tmp/probe
           cat > t.tex <<'TEX'
           \documentclass[preview]{standalone}
@@ -93,7 +98,9 @@ jobs:
           printf '%s\n' "$(cd bundle/tex && find . -maxdepth 2 -type d -name bin -exec ls {} \;)" > bundle/README.txt
           tar -C bundle -cf - tex | xz -9e -T0 > animatica-tex.tar.xz
           ls -lh animatica-tex.tar.xz
-          echo "size=$(( $(stat -c %s animatica-tex.tar.xz) / 1024 / 1024 )) MB"
+          MB=$(( $(stat -c %s animatica-tex.tar.xz) / 1024 / 1024 ))
+          echo "size=$MB MB"
+          echo "::notice title=tex bundle size::animatica-tex.tar.xz is $MB MB"
 
       - name: Commit to the artifacts branch (codeload-only hosts)
         run: |
