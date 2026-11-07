@@ -237,6 +237,49 @@ def lint(storyboard: Path = typer.Argument(..., help="model-written storyboard.j
     typer.echo(_json.dumps({"storyboard": _json.loads(sb.model_dump_json()), "notes": notes}, indent=2))
 
 
+@app.command("preview")
+def preview_cmd(
+    video: Path = typer.Argument(..., help="Rendered video.mp4"),
+    scene_index: int = typer.Argument(..., help="Scene index (0-based)"),
+    t: float = typer.Argument(0.0, help="Seconds within the scene"),
+    out: Path = typer.Option(None, "--out", "-o", help="Output PNG path (default: next to video)"),
+    report: Path = typer.Option(None, "--report", help="Path to report.json for scene durations"),
+) -> None:
+    """Extract a single frame from a rendered video at scene+t.
+
+    Scene durations are loaded from report.json (next to the video by default,
+    or via --report). Use this to verify rendered output quality without
+    writing code.
+    """
+    import json as _json
+
+    from animatica.pipeline import preview_frame
+
+    if not video.is_file():
+        typer.echo(f"Error: video not found: {video}")
+        raise typer.Exit(code=1)
+
+    # Load scene durations from report.json
+    scene_durations: list[float] = []
+    report_path = report or (video.parent / "report.json")
+    if report_path and report_path.is_file():
+        try:
+            report_data = _json.loads(report_path.read_text(encoding="utf-8"))
+            scene_durations = report_data.get("stages", {}).get("durations", [])
+        except Exception:
+            scene_durations = []
+
+    if not scene_durations:
+        typer.echo(
+            f"Error: no scene durations available. Pass --report with report.json "
+            f"(looked for {report_path})."
+        )
+        raise typer.Exit(code=1)
+
+    out_path = preview_frame(video, scene_durations, scene_index, t, out)
+    typer.echo(f"Frame: {out_path}")
+
+
 @app.command("mcp")
 def mcp() -> None:
     """Run the Animatica MCP server on stdio (Model Context Protocol).

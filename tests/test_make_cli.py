@@ -113,3 +113,58 @@ def test_cli_jobs_zero_rejected():
     r = CliRunner().invoke(app, ["make", "graph of sin(x)", "--jobs", "0"])
     assert r.exit_code != 0
 
+
+# ---------------------------------------------------------------------------
+# preview command
+# ---------------------------------------------------------------------------
+
+def test_preview_missing_video(tmp_path):
+    """preview with nonexistent video exits nonzero."""
+    runner = CliRunner()
+    result = runner.invoke(app, ["preview", str(tmp_path / "nope.mp4"), "0", "0.0"])
+    assert result.exit_code != 0
+    assert "not found" in result.output.lower()
+
+
+def test_preview_no_report(tmp_path):
+    """preview without scene durations exits nonzero."""
+    video = tmp_path / "video.mp4"
+    video.write_bytes(b"fake video bytes")
+    runner = CliRunner()
+    result = runner.invoke(app, ["preview", str(video), "0", "0.0"])
+    assert result.exit_code != 0
+    assert "no scene durations" in result.output.lower()
+
+
+def test_preview_invalid_scene_index(tmp_path):
+    """preview with out-of-range scene_index exits nonzero."""
+    video = tmp_path / "video.mp4"
+    video.write_bytes(b"fake video bytes")
+    report = tmp_path / "report.json"
+    report.write_text('{"stages": {"durations": [4.0]}}')
+    runner = CliRunner()
+    result = runner.invoke(app, ["preview", str(video), "5", "0.0", "--report", str(report)])
+    assert result.exit_code != 0
+
+
+def test_preview_negative_t(tmp_path):
+    """preview with negative t exits nonzero."""
+    video = tmp_path / "video.mp4"
+    video.write_bytes(b"fake video bytes")
+    report = tmp_path / "report.json"
+    report.write_text('{"stages": {"durations": [4.0]}}')
+    runner = CliRunner()
+    result = runner.invoke(app, ["preview", str(video), "0", "-1.0", "--report", str(report)])
+    assert result.exit_code != 0
+
+
+def test_preview_t_beyond_scene_duration(tmp_path):
+    """preview with t beyond scene duration exits nonzero."""
+    video = tmp_path / "video.mp4"
+    video.write_bytes(b"fake video bytes")
+    report = tmp_path / "report.json"
+    report.write_text('{"stages": {"durations": [4.0]}}')
+    runner = CliRunner()
+    result = runner.invoke(app, ["preview", str(video), "0", "5.0", "--report", str(report)])
+    assert result.exit_code != 0
+
