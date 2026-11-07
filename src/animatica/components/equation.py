@@ -39,7 +39,8 @@ class Equation(Component):
         clear_stage(scene)
         group = VGroup(*[MarkupText(latex_to_markup(s), font_size=56, color=colors.text) for s in p.latex])
         group.arrange(DOWN, buff=0.6)
-        fit(group)
+        from manim import config
+        fit(group, scale_up=False, max_width=config.frame_width * 0.9)
         clock = Clock(scene, total)
         per = max(0.4, (total - 0.8) / len(group))
         for line in group:
@@ -47,7 +48,7 @@ class Equation(Component):
         clock.finish()
 
     def play(self, scene, p, colors) -> None:
-        from manim import DOWN, FadeIn, MathTex, ReplacementTransform, TransformMatchingTex, VGroup, Write
+        from manim import DOWN, FadeIn, MathTex, ReplacementTransform, TransformMatchingTex, VGroup, Write, config
         prepare(scene, colors)
         total = self.duration(p)
         try:
@@ -62,17 +63,17 @@ class Equation(Component):
         clock = Clock(scene, total)
         if p.mode == "reveal":
             group = VGroup(*rendered).arrange(DOWN, buff=0.6)
-            fit(group)
+            fit(group, scale_up=False, max_width=config.frame_width * 0.9)
             per = max(0.4, (total - 0.8) / len(rendered))
             for line in group:
                 clock.play(Write(line), run_time=min(1.2, per))
         else:
             # Budget: 1.2 + 0.6 + k*(1.2 + 0.4) + closing fade fits inside 2.0 + 2.0*k for every k >= 1.
-            current = fit(rendered[0])
+            current = fit(rendered[0], scale_up=False, max_width=config.frame_width * 0.9)
             clock.play(Write(current), run_time=1.2)
             clock.wait(0.6)
             for nxt in rendered[1:]:
-                fit(nxt)
+                fit(nxt, scale_up=False, max_width=config.frame_width * 0.9)
                 try:
                     clock.play(TransformMatchingTex(current, nxt), run_time=1.2)
                 except Exception:

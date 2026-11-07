@@ -219,3 +219,46 @@ def test_fit_portrait_scales_up_to_fill_height():
         assert abs(m.scale_calls[-1] - 1.867) < 1e-2
         assert abs(m.width - 5.0 * 1.867) < 1e-2
         assert abs(m.height - 3.0 * 1.867) < 1e-2
+
+
+# ---------------------------------------------------------------------------
+# scale_up=False: no upscaling, keeps side margins
+# ---------------------------------------------------------------------------
+
+def test_fit_scale_up_false_does_not_enlarge():
+    """With scale_up=False, small content is not enlarged to fill the frame."""
+    with _frame_dims(14.22, 8.0):
+        m = _FakeMobject(width=3.0, height=2.0)
+        fit(m, scale_up=False)
+        assert len(m.scale_calls) == 0
+        assert m.width == 3.0
+        assert m.height == 2.0
+
+
+def test_fit_scale_up_false_still_scales_down():
+    """With scale_up=False, oversized content is still scaled down."""
+    with _frame_dims(14.22, 8.0):
+        m = _FakeMobject(width=20.0, height=5.0)
+        fit(m, scale_up=False)
+        assert abs(m.width - 13.22) < 1e-6
+        assert abs(m.height - 5.0 * (13.22 / 20.0)) < 1e-6
+
+
+def test_fit_scale_up_false_with_max_width():
+    """With scale_up=False and max_width, content is capped at max_width."""
+    with _frame_dims(14.22, 8.0):
+        # 90% of frame width = 12.78; content at 8 wide stays at 8
+        m = _FakeMobject(width=8.0, height=2.0)
+        fit(m, scale_up=False, max_width=14.22 * 0.9)
+        assert len(m.scale_calls) == 0
+        assert m.width == 8.0
+        assert m.height == 2.0
+
+
+def test_fit_scale_up_false_max_width_clips_wide_content():
+    """With scale_up=False and max_width, wide content is clipped to max_width."""
+    with _frame_dims(14.22, 8.0):
+        m = _FakeMobject(width=20.0, height=5.0)
+        fit(m, scale_up=False, max_width=14.22 * 0.9)
+        assert abs(m.width - 14.22 * 0.9) < 1e-6
+        assert abs(m.height - 5.0 * (14.22 * 0.9 / 20.0)) < 1e-6

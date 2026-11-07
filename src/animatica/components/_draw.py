@@ -54,15 +54,23 @@ def wrap(text: str, width: int) -> str:
     return "\n".join(out)
 
 
-def fit(mobject: Any, max_width: float | None = None, max_height: float | None = None) -> Any:
+def fit(
+    mobject: Any,
+    max_width: float | None = None,
+    max_height: float | None = None,
+    scale_up: bool = True,
+) -> Any:
     """Scale a mobject to fit inside the frame with margins.
 
-    First scales down if the mobject exceeds the frame bounds, then scales up
-    proportionally to fill the available space. Content never overflows the
-    frame because the up-scale is limited by whichever dimension is more
-    constraining. This makes landscape-sized content fill more of the frame in
-    portrait (9:16) videos without changing behavior for content that already
-    fills the width in landscape mode.
+    First scales down if the mobject exceeds the frame bounds, then optionally
+    scales up proportionally to fill the available space. Content never
+    overflows the frame because the up-scale is limited by whichever dimension
+    is more constraining.
+
+    Set ``scale_up=False`` to only shrink content that is too large, leaving
+    smaller content at its natural size. This is useful for text/math content
+    that should keep comfortable side margins rather than expanding to fill
+    the frame.
     """
     from manim import config
     max_width = max_width or config.frame_width - 1.0
@@ -73,11 +81,12 @@ def fit(mobject: Any, max_width: float | None = None, max_height: float | None =
         mobject.scale_to_fit_height(max_height)
     # Scale up proportionally to fill the frame when content is smaller than
     # the bounds. Limited by min(scale_w, scale_h) so content never overflows.
-    scale_w = max_width / mobject.width if mobject.width > 0 else 1.0
-    scale_h = max_height / mobject.height if mobject.height > 0 else 1.0
-    scale = min(scale_w, scale_h)
-    if scale > 1.0:
-        mobject.scale(scale)
+    if scale_up:
+        scale_w = max_width / mobject.width if mobject.width > 0 else 1.0
+        scale_h = max_height / mobject.height if mobject.height > 0 else 1.0
+        scale = min(scale_w, scale_h)
+        if scale > 1.0:
+            mobject.scale(scale)
     return mobject
 
 
@@ -111,12 +120,42 @@ class Clock:
 
 
 def make_caption(text: str, colors: ThemeColors) -> Any:
-    """Burned-in caption pinned to the bottom edge."""
-    from manim import DOWN, Text
-    cap = Text(wrap(text, 62), font_size=28, color=colors.muted, line_spacing=0.8)
-    if cap.width > 12.4:
-        cap.scale_to_fit_width(12.4)
-    return cap.to_edge(DOWN, buff=0.3)
+    """Burned-in caption pinned to the bottom edge, sized for actual frame dimensions.
+
+    Uses ``config.frame_width`` / ``config.frame_height`` (set by ``manim render
+    -r ...``) so caption font and wrap width adapt to portrait (9:16) and
+    landscape frames. For a 5.6x10.0 frame the font scales up ~1.8x and the
+    wrap width scales down to ~28 chars so the caption stays readable and
+    within the safe area.
+
+    The caption is only scaled *down* when it would overflow the frame with
+    horizontal margins; short captions are never enlarged to fill the frame,
+    which previously made tiny captions unreadably large and edge-to-edge.
+    """
+    from manim import DOWN, Text, config
+
+    frame_width = config.frame_width
+    frame_height = config.frame_height
+
+    # Baseline: landscape (12.4 x 5.6). Scale font with frame height.
+    font_size = 28 * (frame_height / 5.6)
+    # Cap at 40 so very tall frames don't produce unreadably large text.
+    font_size = min(font_size, 40)
+    # Wrap width scales with frame width, but never below 20 chars so very
+    # narrow frames still produce readable (if narrow) captions.
+    wrap_width = max(20, int(62 * (frame_width / 12.4)))
+
+    cap = Text(wrap(text, wrap_width), font_size=font_size, color=colors.muted, line_spacing=0.8)
+
+    # Only scale down if the caption is too wide for the frame with margins.
+    # Never scale up: short captions stay at their natural readable size.
+    # 5% horizontal margin on each side keeps captions from touching the edge.
+    max_caption_width = frame_width * 0.9
+    if cap.width > max_caption_width:
+        cap.scale_to_fit_width(max_caption_width)
+
+    cap.to_edge(DOWN, buff=frame_height * 0.04)
+    return cap
 
 
 def clear_stage(scene: Any) -> None:
