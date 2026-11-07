@@ -14,15 +14,25 @@ name: native-deps
 #   full   - build the bundle and upload it as an artifact
 #   commit - build the bundle and also commit it to this branch, for hosts that
 #            can only reach codeload.github.com
+# workflow_dispatch only registers once this file is on the default branch, so
+# the practical trigger is a push that touches this file (works on any branch).
 on:
   workflow_dispatch:
     inputs:
       mode:
-        description: "smoke | full | commit"
+        description: "smoke | full"
         required: true
-        default: "smoke"
+        default: "full"
         type: choice
-        options: [smoke, full, commit]
+        options: [smoke, full]
+  push:
+    paths:
+      - ".github/workflows/native-deps.yml"
+
+env:
+  # "1" makes the run also commit the bundle into the branch, for hosts that can
+  # only reach codeload.github.com. Off by default: artifacts keep the history clean.
+  COMMIT_BUNDLE: "0"
 
 permissions:
   contents: write # only used by mode=commit
@@ -84,7 +94,7 @@ jobs:
           retention-days: 2
 
       - name: Commit the bundle to the branch (codeload-only hosts)
-        if: inputs.mode == 'commit'
+        if: env.COMMIT_BUNDLE == '1'
         run: |
           mkdir -p native
           cp animatica-native.tar.gz native/
