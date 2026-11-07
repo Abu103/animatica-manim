@@ -70,7 +70,7 @@ jobs:
             python -V
             pip wheel --no-cache-dir --wheel-dir /out/wheels "pycairo>=1.14,<2" "manimpango>=0.6.1,<1"
             mkdir -p /out/lib
-            cp -aL /usr/lib/x86_64-linux-gnu/lib{cairo,pixman-1,png16,xrender,Xext,lzo2,pango-1.0,pangoft2-1.0,pangocairo-1.0,harfbuzz,fribidi,thai,datrie,graphite2,xcb-render,xcb-shm}.so* /out/lib/ 2>/dev/null || true
+            cp -aL /usr/lib/x86_64-linux-gnu/lib{cairo,pixman-1,png16,Xrender,Xext,Xau,Xdmcp,lzo2,pango-1.0,pangoft2-1.0,pangocairo-1.0,harfbuzz,fribidi,thai,datrie,graphite2,xcb-render,xcb-shm}.so* /out/lib/ 2>/dev/null || true
             # fail loudly rather than shipping an incomplete bundle
             test -e /out/lib/libcairo.so.2
             test -e /out/lib/libpango-1.0.so.0
