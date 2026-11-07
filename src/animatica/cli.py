@@ -606,36 +606,12 @@ def edit_cmd(
         _promote_edit_artifacts_with_backup(staging_dir, out_dir)
         out_video = out_dir / "video.mp4"
     else:
-        # Default: leave original untouched, promote to a fresh directory.
-        # Use a unique name based on the original dir name + timestamp +
-        # random hex. We check for existence before rename and never delete
-        # an existing destination -- every OSError is handled without
-        # destructive cleanup, and cross-filesystem failures fall back to
-        # copying the staging directory wholesale.
-        import shutil as _shutil
-        import uuid as _uuid
-
-        new_out_dir = None
-        for _ in range(10):
-            stamp = int(time.time() * 1000)
-            candidate = out_dir.parent / f"{out_dir.name}.edited-{stamp}-{_uuid.uuid4().hex[:8]}"
-            if candidate.exists():
-                continue
-            try:
-                # Same filesystem: atomic rename.
-                staging_dir.rename(candidate)
-                new_out_dir = candidate
-                break
-            except OSError:
-                # Cross-filesystem move or other failure: copy the tree and
-                # remove the staging directory we created. The destination was
-                # already verified to not exist, so copytree cannot clobber it.
-                _shutil.copytree(staging_dir, candidate)
-                staging_dir.rmtree(ignore_errors=True)
-                new_out_dir = candidate
-                break
-        if new_out_dir is None:
-            raise RuntimeError("Could not reserve a unique output directory")
+        # Default: leave original untouched. The staging directory created by
+        # mkdtemp is already unique and owned by us; use it directly as the
+        # output rather than renaming it, which would introduce a
+        # check-then-act race against any pre-existing path at the candidate
+        # destination. No existing directory is ever deleted or overwritten.
+        new_out_dir = staging_dir
         out_video = new_out_dir / "video.mp4"
 
     typer.echo(f"Video: {out_video}")

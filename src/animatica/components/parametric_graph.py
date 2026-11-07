@@ -19,6 +19,80 @@ from animatica.storyboard.safety import parse_function, UnsafeInput
 SAMPLES = 400
 
 
+def _sample_and_segment(
+    fx, fy, t0: float, t1: float, samples: int = SAMPLES
+) -> tuple[list[list[tuple[float, float]]], float]:
+    """Sample x(t), y(t) and split into segments at discontinuities.
+
+    Pure helper: no Manim, no scene, no warnings.  Returns
+    ``(segments, data_range)`` where each segment is a list of (x, y) points.
+
+    Splitting occurs when:
+    1. Consecutive valid points jump by more than the scale-aware threshold
+       (typical per-sample step * 10).
+    2. Sample indices are non-consecutive (a sample failed or produced a
+       non-finite value between them).
+
+    This heuristic cannot perfectly detect every discontinuity or every
+    non-finite gap.
+    """
+    all_pts: list[tuple[float, float]] = []
+    valid_indices: list[int] = []
+
+    for i in range(samples):
+        t = t0 + (t1 - t0) * i / (samples - 1)
+        try:
+            x = fx(t)
+            y = fy(t)
+        except Exception:
+            continue
+        if math.isfinite(x) and math.isfinite(y):
+            all_pts.append((x, y))
+            valid_indices.append(i)
+
+    if not all_pts:
+        return [], 0.0
+
+    xs = [pt[0] for pt in all_pts]
+    ys = [pt[1] for pt in all_pts]
+    data_range = max(max(xs) - min(xs), max(ys) - min(ys), 1.0)
+    expected_step = data_range / (samples - 1)
+    jump_threshold = expected_step * 10.0
+
+    segments: list[list[tuple[float, float]]] = []
+    current_segment: list[tuple[float, float]] = []
+    prev_point: tuple[float, float] | None = None
+    prev_idx = valid_indices[0]
+
+    for idx, pt in zip(valid_indices, all_pts):
+        if prev_point is not None:
+            if idx != prev_idx + 1:
+                if current_segment:
+                    segments.append(current_segment)
+                current_segment = [pt]
+                prev_point = pt
+                prev_idx = idx
+                continue
+            dx = abs(pt[0] - prev_point[0])
+            dy = abs(pt[1] - prev_point[1])
+            if dx > jump_threshold or dy > jump_threshold:
+                if current_segment:
+                    segments.append(current_segment)
+                current_segment = [pt]
+            else:
+                current_segment.append(pt)
+        else:
+            current_segment.append(pt)
+
+        prev_point = pt
+        prev_idx = idx
+
+    if current_segment:
+        segments.append(current_segment)
+
+    return [s for s in segments if len(s) >= 2], data_range
+
+
 class ParametricGraph(Component):
     name: ClassVar[str] = "parametric_graph"
 
@@ -67,102 +141,20 @@ class ParametricGraph(Component):
             text_card(scene, self.fallback_text(p), colors, 4.0)
             return
 
-        # Sample x(t), y(t), collecting all valid points first so we can
-        # compute a scale-aware discontinuity threshold.
-        #
-        # A fixed absolute threshold (e.g. dx > 1.0) depends on data units:
-        # for a large-scale curve like x=t, y=1000*t it would split a
-        # continuous line into isolated points. Instead we measure the
-        # typical per-sample step from the full data range and only treat
-        # jumps far above that as discontinuities. This heuristic cannot
-        # perfectly detect every discontinuity, but it avoids both false
-        # splits on steep continuous curves and false merges across real
-        # discontinuities like tan(t) near pi/2.
-        all_pts: list[tuple[float, float]] = []
-        valid_indices: list[int] = []
+        # Sample x(t), y(t) and split at discontinuities via the pure helper.
+        segments, data_range = _sample_and_segment(fx, fy, t0, t1, SAMPLES)
 
-        for i in range(SAMPLES):
-            t = t0 + (t1 - t0) * i / (SAMPLES - 1)
-            try:
-                x = fx(t)
-                y = fy(t)
-            except Exception:
-                continue
-            if math.isfinite(x) and math.isfinite(y):
-                all_pts.append((x, y))
-                valid_indices.append(i)
-
-        if not all_pts:
+        if not segments:
             warn(scene, "parametric_graph: no valid points; showing text card")
             text_card(scene, self.fallback_text(p), colors, 4.0)
             return
 
-        # Scale-aware threshold: typical per-sample step times a factor.
+        # Compute axis bounds from all valid points.
+        all_pts = [pt for seg in segments for pt in seg]
         xs = [pt[0] for pt in all_pts]
         ys = [pt[1] for pt in all_pts]
         x_lo, x_hi = min(xs), max(xs)
         y_lo, y_hi = min(ys), max(ys)
-        data_range = max(x_hi - x_lo, y_hi - y_lo, 1.0)
-        expected_step = data_range / (SAMPLES - 1)
-        # Jumps more than 10x the typical step are treated as discontinuities.
-        jump_threshold = expected_step * 10.0
-
-        # Split into segments at discontinuities / non-finite gaps.
-        # Two conditions:
-        # 1. Jump above the scale-aware threshold (a genuine discontinuity).
-        # 2. Non-consecutive sample indices (a gap where one or more samples
-        #    failed or produced non-finite values). A smooth curve with a
-        #    single skipped sample can still have a small dx/dy, so the
-        #    jump heuristic alone is NOT sufficient.  We therefore track the
-        #    sequence of valid sample indices and split whenever the current
-        #    index is not immediately after the previous valid index.
-        #
-        # This heuristic cannot perfectly detect every discontinuity or every
-        # non-finite gap, but it correctly handles both large-scale continuous
-        # curves (previously split into isolated points by the fixed absolute
-        # threshold) and curves with internal non-finite samples.
-        segments: list[list[tuple[float, float]]] = []
-        current_segment: list[tuple[float, float]] = []
-        prev_point: tuple[float, float] | None = None
-        prev_idx = valid_indices[0]
-
-        for idx, pt in zip(valid_indices, all_pts):
-            if prev_point is not None:
-                # Gap in the sample sequence => non-finite or failed sample(s)
-                # in between.  Split here even if the jump distance is small.
-                if idx != prev_idx + 1:
-                    if current_segment:
-                        segments.append(current_segment)
-                    current_segment = [pt]
-                    prev_point = pt
-                    prev_idx = idx
-                    continue
-
-                dx = abs(pt[0] - prev_point[0])
-                dy = abs(pt[1] - prev_point[1])
-                if dx > jump_threshold or dy > jump_threshold:
-                    if current_segment:
-                        segments.append(current_segment)
-                    current_segment = [pt]
-                else:
-                    current_segment.append(pt)
-            else:
-                current_segment.append(pt)
-
-            prev_point = pt
-            prev_idx = idx
-
-        if current_segment:
-            segments.append(current_segment)
-
-        segments = [s for s in segments if len(s) >= 2]
-
-        if not segments:
-            warn(scene, "parametric_graph: no valid segments; showing text card")
-            text_card(scene, self.fallback_text(p), colors, 4.0)
-            return
-
-        # Compute axis bounds from all valid points (already have x_lo, x_hi, etc.)
         pad = 0.05 * data_range
 
         try:

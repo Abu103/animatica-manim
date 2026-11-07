@@ -280,12 +280,14 @@ def test_edit_no_storyboard_file(tmp_path: Path):
 
 
 # ---------------------------------------------------------------------------
-# Destination collision → original directory never deleted or overwritten
+# Default path: staging directory is used directly as output (no rename,
+# no copy, no check-then-act race). Pre-existing directories are never
+# deleted or overwritten.
 # ---------------------------------------------------------------------------
 
-def test_edit_default_path_destination_exists_not_deleted(tmp_path: Path, monkeypatch):
-    """Default path: if new_out_dir already exists, it must NOT be deleted
-    or overwritten. We verify that pre-existing content survives."""
+def test_edit_default_path_uses_staging_directly(tmp_path: Path, monkeypatch):
+    """Default path: the mkdtemp staging dir becomes the output directly.
+    No rename, no copy, no pre-existing directory is ever deleted."""
     out_dir = tmp_path / "out"
     out_dir.mkdir()
     (out_dir / "storyboard.json").write_text(
@@ -293,11 +295,9 @@ def test_edit_default_path_destination_exists_not_deleted(tmp_path: Path, monkey
     )
     (out_dir / "video.mp4").write_bytes(b"original video")
 
-    # Pre-create a sibling directory that would collide with the new output name.
-    # The new name pattern is "{out_dir.name}.edited-{stamp}-{uuid}" so we can't
-    # predict the exact name. Instead, we monkeypatch Path.exists to return True
-    # for the first candidate, forcing collision handling, then verify the
-    # pre-existing directory is untouched.
+    # Pre-create a sibling directory that would collide if we used a
+    # predictable name. With mkdtemp-as-output, this directory is simply
+    # ignored (we never look at it).
     collision_dir = out_dir.parent / "out.edited-collision"
     collision_dir.mkdir()
     (collision_dir / "keep.txt").write_text("pre-existing content")
@@ -333,8 +333,24 @@ def test_edit_default_path_destination_exists_not_deleted(tmp_path: Path, monkey
     # Original out_dir untouched
     assert (out_dir / "storyboard.json").read_text().count("Original") >= 1
     assert (out_dir / "video.mp4").read_bytes() == b"original video"
-    # Collision directory NOT deleted
+    # Collision directory NOT deleted (we never touched it)
     assert (collision_dir / "keep.txt").read_text() == "pre-existing content"
+    # New output is the staging dir (.animatica-edit-staging-*), alongside out_dir
+    out_dir_parent = out_dir.parent
+    staging_dirs = [d for d in out_dir_parent.iterdir()
+                    if d.is_dir() and d.name.startswith(".animatica-edit-staging-")]
+    assert len(staging_dirs) >= 1, (
+        f"expected at least one .animatica-edit-staging- dir, found {list(out_dir_parent.iterdir())}"
+    )
+    # The Video path points inside the staging dir
+    assert "Video:" in result.output
+    # Verify the video file exists inside the staging dir
+    for sd in staging_dirs:
+        if (sd / "video.mp4").is_file():
+            assert (sd / "video.mp4").read_bytes() == b"new video"
+            break
+    else:
+        raise AssertionError("no staging dir contains video.mp4")
 
 
 # ---------------------------------------------------------------------------
@@ -381,8 +397,8 @@ def test_edit_missing_original_artifacts(tmp_path: Path, monkeypatch):
     assert result.exit_code == 0, f"edit failed: {result.output}"
     # New artifact directory created alongside original
     out_dir_parent = out_dir.parent
-    edited_dirs = [d for d in out_dir_parent.iterdir()
-                   if d.is_dir() and d.name.startswith("out.edited-")]
-    assert len(edited_dirs) >= 1, f"expected at least one .edited- directory, found {list(out_dir_parent.iterdir())}"
+    staging_dirs = [d for d in out_dir_parent.iterdir()
+                    if d.is_dir() and d.name.startswith(".animatica-edit-staging-")]
+    assert len(staging_dirs) >= 1, f"expected at least one .animatica-edit-staging- directory, found {list(out_dir_parent.iterdir())}"
     # Original storyboard untouched
     assert (out_dir / "storyboard.json").read_text().count("Original") >= 1

@@ -1,7 +1,10 @@
 import math
 import pytest
 
-from animatica.components.parametric_graph import ParametricGraph
+from animatica.components.parametric_graph import (
+    ParametricGraph,
+    _sample_and_segment,
+)
 from animatica.components.registry import default_registry
 from animatica.storyboard.safety import parse_function, UnsafeInput
 
@@ -79,99 +82,32 @@ def test_sqrt_t_is_not_mangled():
 
 # ---------------------------------------------------------------------------#
 # Sampling / discontinuity logic tests (exercises the actual production     #
-# segmentation logic: scale-aware jump threshold + non-consecutive sample    #
-# index gap detection, not a duplicated fixed-threshold algorithm.)          #
+# helper _sample_and_segment directly, not a duplicated test-only algorithm.) #
 # ---------------------------------------------------------------------------#
 
-
-def _sample_component(parametric_graph, p, samples=400):
-    """Sample x(t), y(t) and split into segments at discontinuities.
-
-    Replicates the production segmentation logic from ParametricGraph.play:
-    - scale-aware jump threshold (typical per-sample step * 10)
-    - non-consecutive sample index gap (a failed/non-finite sample splits)
-
-    Returns list of segments, each a list of (x, y) points.
-    """
-    from animatica.storyboard.safety import parse_function
-
-    fx = parse_function(p.x_expr, var_name="t")
-    fy = parse_function(p.y_expr, var_name="t")
-
-    t0, t1 = p.t_range
-    all_pts = []
-    valid_indices = []
-    for i in range(samples):
-        t = t0 + (t1 - t0) * i / (samples - 1)
-        try:
-            x = fx(t)
-            y = fy(t)
-        except Exception:
-            continue
-        if math.isfinite(x) and math.isfinite(y):
-            all_pts.append((x, y))
-            valid_indices.append(i)
-
-    if not all_pts:
-        return []
-
-    xs = [pt[0] for pt in all_pts]
-    ys = [pt[1] for pt in all_pts]
-    data_range = max(max(xs) - min(xs), max(ys) - min(ys), 1.0)
-    expected_step = data_range / (samples - 1)
-    jump_threshold = expected_step * 10.0
-
-    segments = []
-    current_segment = []
-    prev_point = None
-    prev_idx = valid_indices[0]
-
-    for idx, pt in zip(valid_indices, all_pts):
-        if prev_point is not None:
-            if idx != prev_idx + 1:
-                if current_segment:
-                    segments.append(current_segment)
-                current_segment = [pt]
-                prev_point = pt
-                prev_idx = idx
-                continue
-            dx = abs(pt[0] - prev_point[0])
-            dy = abs(pt[1] - prev_point[1])
-            if dx > jump_threshold or dy > jump_threshold:
-                if current_segment:
-                    segments.append(current_segment)
-                current_segment = [pt]
-            else:
-                current_segment.append(pt)
-        else:
-            current_segment.append(pt)
-
-        prev_point = pt
-        prev_idx = idx
-
-    if current_segment:
-        segments.append(current_segment)
-    return [s for s in segments if len(s) >= 2]
+def _sample_from_expr(x_expr: str, y_expr: str, t0: float, t1: float, samples: int = 400):
+    """Convenience: parse expressions and call the production helper."""
+    fx = parse_function(x_expr, var_name="t")
+    fy = parse_function(y_expr, var_name="t")
+    segments, _ = _sample_and_segment(fx, fy, t0, t1, samples)
+    return segments
 
 
 def test_tan_produces_multiple_segments():
     """tan(t) has discontinuities at pi/2 and 3pi/2; sampling should split."""
-    p = ParametricGraph.Params(title="Tan", x_expr="t", y_expr="tan(t)", t_range=(0.0, 6.28))
-    segments = _sample_component(ParametricGraph(), p)
+    segments = _sample_from_expr("t", "tan(t)", 0.0, 6.28)
     assert len(segments) >= 2, f"tan(t) should produce multiple segments due to discontinuities, got {len(segments)}"
 
 
 def test_circle_produces_single_segment():
     """cos(t), sin(t) should produce a single continuous segment."""
-    p = ParametricGraph.Params(title="Circle", x_expr="cos(t)", y_expr="sin(t)", t_range=(0.0, 6.28))
-    segments = _sample_component(ParametricGraph(), p)
+    segments = _sample_from_expr("cos(t)", "sin(t)", 0.0, 6.28)
     assert len(segments) == 1, f"circle should produce one segment, got {len(segments)}"
 
 
 def test_constant_curve_produces_single_segment():
     """Constant-valued curve (x=3, y=5) should produce a single segment."""
-    p = ParametricGraph.Params(title="Constant", x_expr="3", y_expr="5", t_range=(0.0, 6.28))
-    segments = _sample_component(ParametricGraph(), p)
+    segments = _sample_from_expr("3", "5", 0.0, 6.28)
     assert len(segments) == 1, f"constant curve should produce one segment, got {len(segments)}"
 
 
@@ -179,10 +115,7 @@ def test_large_scale_continuous_curve_single_segment():
     """A large-scale continuous curve (x=t, y=1000*t) must NOT be split into
     isolated points by a fixed absolute threshold. The scale-aware threshold
     should keep it as one segment."""
-    p = ParametricGraph.Params(
-        title="LargeLine", x_expr="t", y_expr="1000*t", t_range=(0.0, 1000.0)
-    )
-    segments = _sample_component(ParametricGraph(), p)
+    segments = _sample_from_expr("t", "1000*t", 0.0, 1000.0)
     assert len(segments) == 1, (
         f"large-scale continuous curve should be one segment, got {len(segments)}"
     )
@@ -190,10 +123,7 @@ def test_large_scale_continuous_curve_single_segment():
 
 def test_small_scale_continuous_curve_single_segment():
     """A small-scale continuous curve (x=t/1000, y=t/1000) should be one segment."""
-    p = ParametricGraph.Params(
-        title="SmallLine", x_expr="t/1000", y_expr="t/1000", t_range=(0.0, 1000.0)
-    )
-    segments = _sample_component(ParametricGraph(), p)
+    segments = _sample_from_expr("t/1000", "t/1000", 0.0, 1000.0)
     assert len(segments) == 1, (
         f"small-scale continuous curve should be one segment, got {len(segments)}"
     )
@@ -203,22 +133,30 @@ def test_non_finite_gap_splits_segment():
     """A curve with a non-finite sample in the middle should split into two
     segments even though the jump distance across the gap is small.
 
-    x(t) = t, y(t) = 1/t has a non-finite/infinite value at t=0.  If we
-    sample over [-10, 10], the sample at t=0 fails; samples on either side
-    are close together (small dx) but separated by an index gap.  The
-    production code must split at the gap, not bridge across it.
+    We inject controlled samples that include a non-finite point, rather
+    than relying on 1/t over [-10, 10] (which with 400 uniform samples
+    never lands exactly on t=0).  The production helper must split at the
+    index gap, not bridge across it.
     """
-    p = ParametricGraph.Params(
-        title="Reciprocal", x_expr="t", y_expr="1/t", t_range=(-10.0, 10.0)
-    )
-    segments = _sample_component(ParametricGraph(), p)
-    # There is a gap at t=0 (1/0 is undefined → ZeroDivisionError → skipped).
-    # Samples on either side are at most ~0.05 apart in x, so the jump
+    fx = lambda t: t
+    fy = lambda t: float("nan") if t == 0.0 else 1.0 / t
+
+    segments, _ = _sample_and_segment(fx, fy, -10.0, 10.0, samples=11)
+    # 11 samples across [-10, 10] includes t=0 at index 5; 1/0 -> nan -> skipped.
+    # Samples on either side are at most ~2.5 apart in x, so the jump
     # threshold alone would NOT split them. Only the index-gap check does.
     assert len(segments) >= 2, (
-        f"curve with non-finite gap should split into >= 2 segments, "
+        f"curve with injected non-finite gap should split into >= 2 segments, "
         f"got {len(segments)}"
     )
+
+
+def test_no_valid_points_returns_empty():
+    """An expression that never produces finite points yields no segments."""
+    fx = lambda t: float("nan")
+    fy = lambda t: float("nan")
+    segments, _ = _sample_and_segment(fx, fy, 0.0, 6.28)
+    assert segments == []
 
 
 def test_curve_grouped_with_axes():
@@ -254,19 +192,16 @@ def test_curve_grouped_with_axes():
 
 
 # ---------------------------------------------------------------------------#
-# Real render tests                                                          #
+# Real render tests (use the run_component fixture with real ThemeColors)   #
 # ---------------------------------------------------------------------------#
 
-def test_circle_with_label_real_render():
-    """Render a labeled circle parametrically and verify no exception.
+@pytest.mark.render
+def test_circle_with_label_real_render(run_component):
+    """Render a labeled circle parametrically and verify no fallback warning.
 
-    Real Manim render (smoke test) that exercises the full play() path:
-    parse, sample, segment, build axes+curves, arrange title+plot_group+label,
-    and animate FadeIn(label_mob).
+    Exercises the full play() path: parse, sample, segment, build axes+curves,
+    arrange title+plot_group+label, and animate FadeIn(label_mob).
     """
-    import manim
-    from manim import Scene, Camera
-
     p = ParametricGraph.Params(
         title="Circle",
         x_expr="cos(t)",
@@ -275,38 +210,21 @@ def test_circle_with_label_real_render():
         label="unit circle",
     )
 
-    scene = Scene()
-    try:
-        scene.camera = Camera()
-    except Exception:
-        pass
+    scene, warnings = run_component(ParametricGraph(), p)
 
-    class Colors:
-        accent = manim.YELLOW
-        muted = manim.GRAY
-        text = manim.WHITE
-
-    colors = Colors()
-
-    try:
-        ParametricGraph().play(scene, p, colors)
-    except Exception as exc:
-        # Some Manim versions need a rendering context; skip rather than fail
-        # on environment-specific render setup issues.
-        import pytest
-
-        pytest.skip(f"Full Manim render requires rendering context: {exc}")
+    # No component fallback warnings (text_card would emit one on failure).
+    assert warnings == [], f"unexpected warnings: {warnings}"
+    # At least one animation play occurred.
+    assert scene.renderer.num_plays >= 1
 
 
-def test_tan_discontinuity_real_render():
-    """Render tan(t) parametrically and verify it does not crash.
+@pytest.mark.render
+def test_tan_discontinuity_real_render(run_component):
+    """Render tan(t) parametrically and verify no fallback warning.
 
     tan(t) has vertical asymptotes; the real render should not draw a
     misleading connecting line across them.
     """
-    import manim
-    from manim import Scene, Camera
-
     p = ParametricGraph.Params(
         title="Tan",
         x_expr="t",
@@ -314,22 +232,8 @@ def test_tan_discontinuity_real_render():
         t_range=(0.0, 6.28),
     )
 
-    scene = Scene()
-    try:
-        scene.camera = Camera()
-    except Exception:
-        pass
+    scene, warnings = run_component(ParametricGraph(), p)
 
-    class Colors:
-        accent = manim.YELLOW
-        muted = manim.GRAY
-        text = manim.WHITE
-
-    colors = Colors()
-
-    try:
-        ParametricGraph().play(scene, p, colors)
-    except Exception as exc:
-        import pytest
-
-        pytest.skip(f"Full Manim render requires rendering context: {exc}")
+    # No component fallback warnings.
+    assert warnings == [], f"unexpected warnings: {warnings}"
+    assert scene.renderer.num_plays >= 1
