@@ -42,7 +42,7 @@ def _import_textual() -> dict[str, Any]:
     """Import textual modules, raising a clear error if unavailable."""
     try:
         from textual.app import App, ComposeResult
-        from textual.containers import Container, Horizontal, Vertical
+        from textual.containers import Container, Horizontal, Vertical, VerticalScroll
         from textual.screen import Screen
         from textual.widgets import (
             Button,
@@ -72,6 +72,7 @@ def _import_textual() -> dict[str, Any]:
             "Static": Static,
             "TextArea": TextArea,
             "Vertical": Vertical,
+            "VerticalScroll": VerticalScroll,
             "Screen": Screen,
         }
     except ImportError as exc:
@@ -122,6 +123,10 @@ if GALLERY_DIR.is_dir():
         if entry.is_dir() and (entry / "storyboard.json").exists():
             GALLERY_CHOICES.append((entry.name.title(), str(entry)))
 
+# Default output location: a dedicated folder in the user's home directory,
+# never the current working directory (which might be Downloads).
+DEFAULT_OUTPUT_DIR = Path.home() / "animatica-output"
+
 
 # ---------------------------------------------------------------------------
 # Settings
@@ -136,7 +141,7 @@ class TuiSettings:
         self.storyboard_path: Path | None = None
         self.provider: str = DEFAULT_PROVIDER
         self.model: str | None = None
-        self.output_dir: Path = Path.cwd() / "animatica-output"
+        self.output_dir: Path = DEFAULT_OUTPUT_DIR
         self.quality: str = DEFAULT_QUALITY
         self.orientation: str = DEFAULT_ORIENTATION
         self.theme: str = DEFAULT_THEME
@@ -186,6 +191,10 @@ class AnimaticaTuiApp:
         settings = self.settings
 
         class WelcomeScreen(w["Screen"]):
+            BINDINGS = [
+                ("n", "next", "Next"),
+            ]
+
             def compose(self) -> w["ComposeResult"]:
                 yield w["Header"]()
                 yield w["Footer"]()
@@ -209,6 +218,9 @@ class AnimaticaTuiApp:
             def on_button_pressed(self, event: w["Button"].Pressed) -> None:
                 if event.button.id == "next":
                     self._go_next()
+
+            def action_next(self) -> None:
+                self._go_next()
 
             def _go_next(self) -> None:
                 prompt_input = self.query_one("#prompt-input", w["Input"])
@@ -268,10 +280,16 @@ class AnimaticaTuiApp:
                 self.app.push_screen("settings")
 
         class SettingsScreen(w["Screen"]):
+            BINDINGS = [
+                ("b", "back", "Back"),
+                ("n", "next", "Next"),
+            ]
+
             def compose(self) -> w["ComposeResult"]:
                 yield w["Header"]()
                 yield w["Footer"]()
-                with w["Vertical"](id="settings-container"):
+                # Scrollable settings content
+                with w["VerticalScroll"](id="settings-scroll"):
                     yield w["Label"]("Settings", classes="title")
                     yield w["Label"]("Output directory:", classes="field-label")
                     yield w["Input"](value=str(settings.output_dir), id="output-dir")
@@ -295,17 +313,22 @@ class AnimaticaTuiApp:
                     yield w["Checkbox"](
                         "Run frame-lint quality check", id="lint-check", value=DEFAULT_FRAME_LINT
                     )
+                # Fixed button row at bottom (never scrolls)
+                with w["Horizontal"](id="button-row"):
                     yield w["Button"]("← Back", id="back")
                     yield w["Button"]("Next →", id="next", variant="primary")
-                    yield w["Static"]("", id="settings-status")
+                yield w["Static"]("", id="settings-status")
 
             def on_button_pressed(self, event: w["Button"].Pressed) -> None:
                 if event.button.id == "back":
-                    self.app.pop_screen()
+                    self.action_back()
                 elif event.button.id == "next":
-                    self._go_next()
+                    self.action_next()
 
-            def _go_next(self) -> None:
+            def action_back(self) -> None:
+                self.app.pop_screen()
+
+            def action_next(self) -> None:
                 out_input = self.query_one("#output-dir", w["Input"])
                 quality_select = self.query_one("#quality-select", w["Select"])
                 orientation_select = self.query_one("#orientation-select", w["Select"])
@@ -314,7 +337,9 @@ class AnimaticaTuiApp:
                 lint_check = self.query_one("#lint-check", w["Checkbox"])
 
                 app = self.app
-                app.settings.output_dir = Path(out_input.value.strip() or Path.cwd() / "animatica-output")
+                app.settings.output_dir = Path(
+                    out_input.value.strip() or Path.cwd() / "animatica-output"
+                )
                 app.settings.quality = (
                     str(quality_select.value) if quality_select.value else DEFAULT_QUALITY
                 )
@@ -330,25 +355,38 @@ class AnimaticaTuiApp:
                 self.app.push_screen("review")
 
         class ReviewScreen(w["Screen"]):
+            BINDINGS = [
+                ("b", "back", "Back"),
+                ("n", "next", "Next"),
+            ]
+
             def compose(self) -> w["ComposeResult"]:
                 yield w["Header"]()
                 yield w["Footer"]()
-                with w["Vertical"](id="review-container"):
+                with w["VerticalScroll"](id="review-scroll"):
                     yield w["Label"]("Review & Confirm", classes="title")
                     yield w["Static"](id="review-summary")
                     yield w["Static"](id="review-warning", classes="warning")
+                # Fixed button row at bottom (never scrolls)
+                with w["Horizontal"](id="button-row"):
                     yield w["Button"]("← Back", id="back")
                     yield w["Button"]("Start Render", id="start", variant="primary")
-                    yield w["Static"]("", id="review-status")
+                yield w["Static"]("", id="review-status")
 
             def on_mount(self) -> None:
                 self._refresh_summary()
 
             def on_button_pressed(self, event: w["Button"].Pressed) -> None:
                 if event.button.id == "back":
-                    self.app.pop_screen()
+                    self.action_back()
                 elif event.button.id == "start":
-                    self.app.push_screen("progress")
+                    self.action_next()
+
+            def action_back(self) -> None:
+                self.app.pop_screen()
+
+            def action_next(self) -> None:
+                self.app.push_screen("progress")
 
             def _refresh_summary(self) -> None:
                 s = self.app.settings
@@ -368,14 +406,19 @@ class AnimaticaTuiApp:
                 warn = self.query_one("#review-warning", w["Static"])
                 if existing:
                     warn.update(
-                        "Warning: these files already exist in the output directory:\n"
+                        "Warning: the following files already exist in the output directory "
+                        "and will be overwritten:\n"
                         + "\n".join(f"  - {e}" for e in existing)
-                        + "\nThey will be overwritten if you continue."
+                        + "\nChoose a different output directory if you want to keep them."
                     )
                 else:
                     warn.update("")
 
         class ProgressScreen(w["Screen"]):
+            BINDINGS = [
+                ("c", "cancel", "Cancel"),
+            ]
+
             def compose(self) -> w["ComposeResult"]:
                 yield w["Header"]()
                 yield w["Footer"]()
@@ -409,7 +452,10 @@ class AnimaticaTuiApp:
 
             def on_button_pressed(self, event: w["Button"].Pressed) -> None:
                 if event.button.id == "cancel":
-                    self._cancel()
+                    self.action_cancel()
+
+            def action_cancel(self) -> None:
+                self._cancel()
 
             def _run_render(self) -> None:
                 app = self.app
@@ -508,6 +554,10 @@ class AnimaticaTuiApp:
                 status.update("Render stopped. Press any key to return.")
 
         class ResultScreen(w["Screen"]):
+            BINDINGS = [
+                ("q", "quit", "Quit"),
+            ]
+
             def compose(self) -> w["ComposeResult"]:
                 yield w["Header"]()
                 yield w["Footer"]()
@@ -538,7 +588,10 @@ class AnimaticaTuiApp:
                 if event.button.id == "open-video":
                     self._open_video()
                 elif event.button.id == "done":
-                    self.app.exit()
+                    self.action_quit()
+
+            def action_quit(self) -> None:
+                self.app.exit()
 
             def _open_video(self) -> None:
                 r = self.app._result  # type: ignore[attr-defined]
@@ -581,6 +634,13 @@ class AnimaticaTuiApp:
         class AnimaticaApp(w["App"]):
             TITLE = "Animatica TUI"
 
+            BINDINGS = [
+                ("b", "back", "Back"),
+                ("n", "next", "Next"),
+                ("c", "cancel", "Cancel"),
+                ("q", "quit", "Quit"),
+            ]
+
             def __init__(self):
                 super().__init__()
                 self.settings = settings
@@ -599,6 +659,43 @@ class AnimaticaTuiApp:
 
             def on_mount(self) -> None:
                 self.push_screen("welcome")
+
+            def action_back(self) -> None:
+                # Navigate back based on current screen
+                screen_id = self.screen.id if hasattr(self.screen, "id") else None
+                # Textual screens don't have stable ids; check screen class name
+                cls_name = self.screen.__class__.__name__
+                if cls_name == "SettingsScreen":
+                    self.pop_screen()
+                elif cls_name == "ReviewScreen":
+                    self.pop_screen()
+                elif cls_name == "WelcomeScreen":
+                    pass  # nothing to go back to
+                elif cls_name == "ProgressScreen":
+                    pass  # can't go back during render
+                elif cls_name == "ResultScreen":
+                    self.exit()
+
+            def action_next(self) -> None:
+                cls_name = self.screen.__class__.__name__
+                if cls_name == "WelcomeScreen":
+                    self.screen.action_next()
+                elif cls_name == "SettingsScreen":
+                    self.screen.action_next()
+                elif cls_name == "ReviewScreen":
+                    self.screen.action_next()
+
+            def action_cancel(self) -> None:
+                cls_name = self.screen.__class__.__name__
+                if cls_name == "ProgressScreen":
+                    self.screen.action_cancel()
+
+            def action_quit(self) -> None:
+                cls_name = self.screen.__class__.__name__
+                if cls_name == "ResultScreen":
+                    self.exit()
+                else:
+                    self.exit()
 
         return AnimaticaApp()
 

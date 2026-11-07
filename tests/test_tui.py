@@ -82,8 +82,8 @@ def _make_tui_app():
     return wrapper.create_app(), wrapper
 
 
-async def _run_test_with_size(app, size=(100, 50)):
-    """Run app with a larger virtual screen so all widgets are visible."""
+async def _run_test_with_size(app, size=(80, 24)):
+    """Run app at a given terminal size (default 80x24)."""
     return app.run_test(size=size)
 
 
@@ -97,11 +97,24 @@ def _text(widget) -> str:
     return str(getattr(widget, "content", ""))
 
 
+async def _fill_welcome_and_go_to_settings(app, pilot, prompt_text="hello world"):
+    """Navigate from Welcome to Settings using pilot clicks."""
+    await pilot.pause()
+    prompt_input = _q(app, "#prompt-input")
+    await pilot.click(prompt_input)
+    prompt_input.value = prompt_text
+    await pilot.pause()
+    await pilot.click(_q(app, "#next"))
+    await pilot.pause()
+    assert _q(app, "#output-dir") is not None
+    assert _q(app, "#quality-select") is not None
+
+
 @pytest.mark.tui
 async def test_welcome_screen_shows_widgets():
     """Welcome screen displays prompt input, template select, provider select."""
     textual_app, _ = _make_tui_app()
-    async with textual_app.run_test() as pilot:
+    async with textual_app.run_test(size=(80, 24)) as pilot:
         await pilot.pause()
 
         # Welcome screen should be active
@@ -109,13 +122,14 @@ async def test_welcome_screen_shows_widgets():
         assert _q(textual_app, "#template-select") is not None
         assert _q(textual_app, "#provider-select") is not None
         assert _q(textual_app, "#sb-path-input") is not None
+        assert _q(textual_app, "#next") is not None
 
 
 @pytest.mark.tui
 async def test_welcome_empty_prompt_shows_error():
     """Clicking Next with no input shows an error message."""
     textual_app, _ = _make_tui_app()
-    async with textual_app.run_test() as pilot:
+    async with textual_app.run_test(size=(80, 24)) as pilot:
         await pilot.pause()
 
         next_btn = _q(textual_app, "#next")
@@ -130,40 +144,20 @@ async def test_welcome_empty_prompt_shows_error():
 async def test_welcome_prompt_navigates_to_settings():
     """Entering a prompt and clicking Next advances to Settings screen."""
     textual_app, _ = _make_tui_app()
-    async with textual_app.run_test() as pilot:
-        await pilot.pause()
-
-        prompt_input = _q(textual_app, "#prompt-input")
-        await pilot.click(prompt_input)
-        prompt_input.value = "test prompt"
-        await pilot.pause()
-
-        next_btn = _q(textual_app, "#next")
-        await pilot.click(next_btn)
-        await pilot.pause()
-
-        # Should now be on settings screen
-        assert _q(textual_app, "#output-dir") is not None
-        assert _q(textual_app, "#quality-select") is not None
+    async with textual_app.run_test(size=(80, 24)) as pilot:
+        await _fill_welcome_and_go_to_settings(textual_app, pilot)
 
 
 @pytest.mark.tui
-async def test_settings_navigates_to_review():
-    """Settings screen Next advances to Review screen."""
+async def test_settings_navigates_to_review_at_80x24():
+    """Settings screen Next advances to Review screen at 80x24 (no resize)."""
     textual_app, _ = _make_tui_app()
-    async with textual_app.run_test(size=(100, 60)) as pilot:
-        await pilot.pause()
+    async with textual_app.run_test(size=(80, 24)) as pilot:
+        await _fill_welcome_and_go_to_settings(textual_app, pilot)
 
-        # Quickly fill welcome and go to settings
-        prompt_input = _q(textual_app, "#prompt-input")
-        await pilot.click(prompt_input)
-        prompt_input.value = "hello world"
-        await pilot.pause()
-        await pilot.click(_q(textual_app, "#next"))
-        await pilot.pause()
-
-        # On settings screen
+        # On settings screen: Next button should be visible at 80x24
         next_btn = _q(textual_app, "#next")
+        assert next_btn is not None
         await pilot.click(next_btn)
         await pilot.pause()
 
@@ -173,19 +167,29 @@ async def test_settings_navigates_to_review():
 
 
 @pytest.mark.tui
-async def test_review_shows_settings_summary():
-    """Review screen displays the collected settings."""
+async def test_settings_navigates_to_review_at_80x30():
+    """Settings screen Next advances to Review screen at 80x30 (smaller than 100x50)."""
     textual_app, _ = _make_tui_app()
-    async with textual_app.run_test(size=(100, 60)) as pilot:
+    async with textual_app.run_test(size=(80, 30)) as pilot:
+        await _fill_welcome_and_go_to_settings(textual_app, pilot)
+
+        # On settings screen: Next button should be visible at 80x30
+        next_btn = _q(textual_app, "#next")
+        assert next_btn is not None
+        await pilot.click(next_btn)
         await pilot.pause()
 
-        # Navigate to review
-        prompt_input = _q(textual_app, "#prompt-input")
-        await pilot.click(prompt_input)
-        prompt_input.value = "hello world"
-        await pilot.pause()
-        await pilot.click(_q(textual_app, "#next"))
-        await pilot.pause()
+        # Should now be on review screen
+        assert _q(textual_app, "#review-summary") is not None
+        assert _q(textual_app, "#start") is not None
+
+
+@pytest.mark.tui
+async def test_review_shows_settings_summary_at_80x24():
+    """Review screen displays the collected settings at 80x24."""
+    textual_app, _ = _make_tui_app()
+    async with textual_app.run_test(size=(80, 24)) as pilot:
+        await _fill_welcome_and_go_to_settings(textual_app, pilot)
         await pilot.click(_q(textual_app, "#next"))
         await pilot.pause()
 
@@ -203,7 +207,7 @@ async def test_review_warns_on_existing_outputs(tmp_path):
     textual_app.settings.prompt = "test"
     (tmp_path / "video.mp4").write_bytes(b"fake")
 
-    async with textual_app.run_test() as pilot:
+    async with textual_app.run_test(size=(80, 24)) as pilot:
         await pilot.pause()
 
         # Skip straight to review by pushing screens
@@ -216,19 +220,11 @@ async def test_review_warns_on_existing_outputs(tmp_path):
 
 
 @pytest.mark.tui
-async def test_settings_back_returns_to_welcome():
-    """Settings screen Back returns to Welcome screen."""
+async def test_settings_back_returns_to_welcome_at_80x24():
+    """Settings screen Back returns to Welcome screen at 80x24."""
     textual_app, _ = _make_tui_app()
-    async with textual_app.run_test(size=(100, 60)) as pilot:
-        await pilot.pause()
-
-        # Go to settings
-        prompt_input = _q(textual_app, "#prompt-input")
-        await pilot.click(prompt_input)
-        prompt_input.value = "test"
-        await pilot.pause()
-        await pilot.click(_q(textual_app, "#next"))
-        await pilot.pause()
+    async with textual_app.run_test(size=(80, 24)) as pilot:
+        await _fill_welcome_and_go_to_settings(textual_app, pilot)
 
         # Go back
         back_btn = _q(textual_app, "#back")
@@ -236,6 +232,67 @@ async def test_settings_back_returns_to_welcome():
         await pilot.pause()
 
         assert _q(textual_app, "#prompt-input") is not None
+
+
+# ---------------------------------------------------------------------------
+# Keyboard shortcut tests
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.tui
+async def test_keyboard_shortcuts_at_80x24():
+    """Keyboard shortcuts (b, n) work at 80x24 without resizing.
+
+    We call the screen action methods directly (which is what the key
+    bindings trigger) rather than relying on pilot.press(), which sends
+    keys to the focused widget and can be swallowed by Input widgets.
+    """
+    textual_app, _ = _make_tui_app()
+    async with textual_app.run_test(size=(80, 24)) as pilot:
+        await pilot.pause()
+
+        # 'n' on Welcome should go to Settings (need to enter a prompt first)
+        prompt_input = _q(textual_app, "#prompt-input")
+        await pilot.click(prompt_input)
+        prompt_input.value = "test prompt"
+        await pilot.pause()
+        textual_app.screen.action_next()
+        await pilot.pause()
+        assert _q(textual_app, "#output-dir") is not None
+
+        # 'b' on Settings should go back to Welcome
+        textual_app.screen.action_back()
+        await pilot.pause()
+        assert _q(textual_app, "#prompt-input") is not None
+
+        # Go to Settings again
+        textual_app.screen.action_next()
+        await pilot.pause()
+        assert _q(textual_app, "#next") is not None
+
+        # 'n' on Settings should go to Review
+        textual_app.screen.action_next()
+        await pilot.pause()
+        assert _q(textual_app, "#review-summary") is not None
+        assert _q(textual_app, "#start") is not None
+
+        # 'b' on Review should go back to Settings
+        textual_app.screen.action_back()
+        await pilot.pause()
+        assert _q(textual_app, "#next") is not None
+
+
+# ---------------------------------------------------------------------------
+# Output directory default test
+# ---------------------------------------------------------------------------
+
+
+def test_default_output_dir_is_home_based():
+    """Default output dir is a dedicated folder in home, not cwd/Downloads."""
+    s = TuiSettings()
+    assert str(s.output_dir).startswith(str(Path.home()))
+    assert s.output_dir.name == "animatica-output"
+    assert "Downloads" not in str(s.output_dir)
 
 
 # ---------------------------------------------------------------------------
@@ -291,16 +348,15 @@ async def test_progress_cancel_stops_render(tmp_path, monkeypatch):
 
     monkeypatch.setattr(tui_mod, "make_video", blocking_make_video)
 
-    async with textual_app.run_test() as pilot:
+    async with textual_app.run_test(size=(80, 24)) as pilot:
         await pilot.pause()
 
         # Push progress screen directly
         textual_app.push_screen("progress")
         await pilot.pause()
 
-        # Cancel immediately
-        cancel_btn = _q(textual_app, "#cancel")
-        await pilot.click(cancel_btn)
+        # Cancel immediately using key shortcut 'c'
+        await pilot.press("c")
         await pilot.pause()
 
         # Should show cancelling then stopped
