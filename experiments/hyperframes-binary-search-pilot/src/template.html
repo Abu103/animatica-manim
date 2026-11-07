@@ -22,9 +22,10 @@
     .backdrop::after { content:""; position:absolute; left:47px; top:50px; width:1186px; height:618px; border:1px solid #acd7c419; border-radius:30px; pointer-events:none; }
     .masthead { position:absolute; top:32px; left:80px; width:1120px; display:flex; justify-content:space-between; z-index:8; color:#b5cdc6; font-size:12px; font-weight:700; letter-spacing:2.8px; }
     .masthead .right { color:#7e9f9d; letter-spacing:2px; }
+    .masthead span { display:inline-block; }
     .footer-rule { position:absolute; left:80px; right:80px; bottom:27px; height:2px; background:#b0d9ce20; z-index:8; }
     .footer-progress { position:absolute; left:80px; bottom:27px; width:0; height:2px; z-index:9; background:var(--blue); box-shadow:0 0 14px #7dc4e888; }
-    .section-label { font-size:15px; font-weight:700; letter-spacing:3.4px; color:var(--blue); text-transform:uppercase; }
+    .section-label { font-size:19px; font-weight:700; letter-spacing:3.4px; color:var(--blue); text-transform:uppercase; }
     .section-label .index { color:#5ea3d6; margin-right:14px; }
     .math { font-family:Space,DejaVu Sans,sans-serif; font-weight:500; white-space:nowrap; }
     .step-icon { font-family:DejaVu Sans, sans-serif; font-weight:700; display:inline-block; font-size:1.16em; line-height:1; vertical-align:-.06em; margin-right:8px; }
@@ -34,7 +35,7 @@
     #intro { z-index:1; }
     .intro-copy { position:absolute; top:140px; left:80px; width:900px; }
     #intro-label { opacity:0; }
-    #intro-title { font:700 72px/1.06 Space,DejaVu Sans,sans-serif; letter-spacing:-3.3px; margin:22px 0 0; opacity:0; }
+    #intro-title { font:700 72px/1.06 Space,DejaVu Sans,sans-serif; letter-spacing:-3.3px; margin:22px 0 0; opacity:1; }
     #intro-title span { color:var(--blue); }
     #intro-sub { font-size:25px; line-height:1.45; color:#c0d1cf; margin:25px 0 0; opacity:0; }
 
@@ -47,10 +48,10 @@
     #search-note > span { position:absolute; top:0; left:0; white-space:nowrap; opacity:0; }
     .search-tally { position:absolute; right:1px; top:26px; font:700 12px Manrope,sans-serif; letter-spacing:1.7px; color:#9cb9b6; opacity:0; }
 
-    .target-box { position:absolute; left:80px; top:148px; width:320px; height:86px; border-radius:16px; border:1px solid #7dc4e8; background:linear-gradient(130deg,#19333aee,#14272eee); box-shadow:0 12px 36px #0002; opacity:0; }
+    .target-box { position:absolute; left:80px; top:148px; width:320px; height:100px; border-radius:16px; border:1px solid #7dc4e8; background:linear-gradient(130deg,#19333aee,#14272eee); box-shadow:0 12px 36px #0002; opacity:0; }
     .target-label { position:absolute; left:27px; top:14px; font-size:15px; letter-spacing:2.1px; font-weight:700; color:#7dc4e8; text-transform:uppercase; }
-    .target-value { position:absolute; left:27px; top:44px; font:700 34px Space,sans-serif; color:#eef4ef; }
-    .target-note { position:absolute; left:27px; top:88px; font-size:13px; color:#9cb9b6; }
+    .target-value { position:absolute; left:27px; top:40px; font:700 34px Space,sans-serif; color:#eef4ef; }
+    .target-note { position:absolute; left:27px; top:82px; font-size:13px; color:#9cb9b6; }
 
     .array-row { position:absolute; left:80px; top:270px; width:1120px; display:flex; gap:10px; align-items:flex-start; opacity:0; }
     .cell { position:relative; width:128px; height:110px; border-radius:12px; border:1px solid #4b6b68; background:linear-gradient(90deg,#182f32ef,#16282bef); box-shadow:0 8px 20px #0002; overflow:hidden; }
@@ -68,7 +69,7 @@
     .comparison-line { position:absolute; left:80px; top:410px; width:1120px; height:52px; border-radius:10px; border:1px solid #55716b; background:#253638; overflow:hidden; opacity:0; }
     .comparison-line .cmp-label { position:absolute; left:20px; top:14px; font-size:15px; letter-spacing:1.4px; font-weight:700; color:#bdcac5; }
     .comparison-line .cmp-value { position:absolute; right:20px; top:14px; font:700 24px Space,sans-serif; white-space:nowrap; color:#eef4ef; }
-    .comparison-line .cmp-arrow { position:absolute; left:20px; top:46px; font-size:20px; color:#7dc4e8; }
+    .comparison-line .cmp-arrow { position:absolute; left:120px; top:15px; font-size:20px; color:#7dc4e8; }
 
     .step-narration { position:absolute; left:80px; top:490px; width:1120px; font-size:21px; line-height:1.5; color:#c3d9cb; opacity:0; }
     .step-narration .step-num { color:#7dc4e8; font-weight:700; margin-right:8px; }
@@ -94,12 +95,12 @@
 <body>
 <div id="stage" data-composition-id="binary-search-pilot" data-start="0" data-duration="28.5" data-width="1280" data-height="720" data-fps="24">
   <div class="backdrop" aria-hidden="true"></div>
-  <div class="masthead"><span>FIELD NOTES / SEARCH</span><span class="right" id="masthead-right">BINARY SEARCH &nbsp; • &nbsp; PILOT</span></div>
+  <div class="masthead" data-layout-ignore="true"><span>FIELD NOTES / SEARCH</span><span class="right" id="masthead-right">BINARY SEARCH &nbsp; • &nbsp; PILOT</span></div>
   <div class="footer-rule"></div><div class="footer-progress" id="progress"></div>
 
   <section id="intro" class="clip" data-start="0" data-duration="5.0" data-track-index="0" aria-label="Introduce binary search and the target">
     <div class="intro-copy">
-      <div class="section-label" id="intro-label"><span class="index">01 /</span> THE SEARCH</div>
+      <div class="section-label" id="intro-label" data-layout-allow-overlap="true"><span class="index">01 /</span> THE SEARCH</div>
       <h1 id="intro-title">Find <span id="intro-target">13</span><br>in a sorted array.</h1>
       <p id="intro-sub">Binary search repeatedly halves the search range.</p>
     </div>
@@ -115,13 +116,13 @@
         <span id="note-2"></span>
         <span id="note-3"></span>
       </div>
-      <div class="search-tally">ARRAY &nbsp; / &nbsp; TARGET &nbsp; / &nbsp; RANGE</div>
+      <div class="search-tally" data-layout-ignore="true">ARRAY &nbsp; / &nbsp; TARGET &nbsp; / &nbsp; RANGE</div>
     </div>
 
     <div class="target-box" id="target-box">
-      <div class="target-label">TARGET</div>
+      <div class="target-label" data-layout-ignore="true">TARGET</div>
       <div class="target-value" id="target-value">13</div>
-      <div class="target-note">search for this value</div>
+      <div class="target-note" data-layout-ignore="true">search for this value</div>
     </div>
 
     <div class="array-row" id="array-row">
@@ -131,7 +132,7 @@
     <div id="bands-container"></div>
 
     <div class="comparison-line" id="cmp-line">
-      <div class="cmp-label">COMPARE</div>
+      <div class="cmp-label" data-layout-ignore="true">COMPARE</div>
       <div class="cmp-value">? vs 13</div>
       <div class="cmp-arrow">&#8594;</div>
     </div>
@@ -147,10 +148,10 @@
     <h2 id="result-title">Found at index <span>6</span>.</h2>
     <p id="result-sub">13 is at array index 6 (zero-based).</p>
     <div class="found-cell-badge" id="found-badge">
-      <div class="found-badge-title" id="found-badge-title">RESULT &nbsp; &middot; &nbsp; INDEX</div>
+      <div class="found-badge-title" id="found-badge-title" data-layout-ignore="true">RESULT &nbsp; &middot; &nbsp; INDEX</div>
       <div class="found-badge-value" id="found-badge-value"><span class="step-icon">&#10003;</span>index 6</div>
     </div>
-    <div class="result-take-label">THE TAKEAWAY</div>
+    <div class="result-take-label" data-layout-ignore="true">THE TAKEAWAY</div>
     <p class="result-take" id="result-take">Binary search repeatedly halves a sorted search range.<br>Not every search finds the target.</p>
   </section>
 
@@ -184,9 +185,9 @@
       cell.className = 'cell';
       cell.id = 'cell-' + idx;
       cell.innerHTML =
-        '<div class="cell-index">idx ' + idx + '</div>' +
+        '<div class="cell-index" data-layout-ignore="true">idx ' + idx + '</div>' +
         '<div class="cell-value">' + val + '</div>' +
-        '<div class="cell-tag">value</div>';
+        '<div class="cell-tag" data-layout-ignore="true">value</div>';
       arrayRow.appendChild(cell);
     });
 
@@ -208,6 +209,7 @@
         cross.className = 'eliminated-cross';
         cross.id = 'cross-' + i;
         cross.textContent = '\u00D7';
+        cross.setAttribute('data-layout-allow-overlap', 'true');
         bandsContainer.appendChild(cross);
       }
     });
@@ -285,9 +287,9 @@
       if (hideAt) tl.to('#' + id, { opacity:0, y:-7, duration:.22 }, hideAt);
     };
 
-    // Act I — Intro
+    // Act I — Intro (title visible at t=0; only the label and sub fade in)
     from('#intro-label', {opacity:0,y:16}, {opacity:1,y:0,duration:.48}, .16);
-    from('#intro-title', {opacity:0,y:36}, {opacity:1,y:0,duration:.78}, .42);
+    from('#intro-title', {y:24}, {y:0,duration:.60,ease:'power3.out'}, 0);
     from('#intro-sub', {opacity:0,y:22}, {opacity:1,y:0,duration:.55}, 1.13);
 
     // Act II — Search
@@ -363,8 +365,8 @@
     from('#result-title', {opacity:0,y:29}, {opacity:1,y:0,duration:.60}, 23.4);
     from('#result-sub', {opacity:0,y:14}, {opacity:1,y:0,duration:.51}, 23.8);
     from('#found-badge', {opacity:0,x:-129,y:-53,scale:.82,rotation:-5}, {opacity:1,x:0,y:0,scale:1,rotation:0,duration:.67}, 24.2);
-    from('.result-take-label', {opacity:0,y:9}, {opacity:1,y:0,duration:.37}, 24.9);
-    from('#result-take', {opacity:0,y:15}, {opacity:1,y:0,duration:.50}, 25.1);
+    from('.result-take-label', {opacity:0,y:9}, {opacity:1,y:0,duration:.37}, 24.2);
+    from('#result-take', {opacity:0,y:15}, {opacity:1,y:0,duration:.50}, 24.4);
     tl.fromTo('#progress', {width:0}, {width:1120,duration:28.25,ease:'none'}, .10);
   } catch (e) {
     console.error('Binary search pilot render error:', e);
