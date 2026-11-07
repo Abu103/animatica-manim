@@ -241,7 +241,7 @@ async def test_settings_back_returns_to_welcome_at_80x24():
 
 @pytest.mark.tui
 async def test_keyboard_shortcuts_at_80x24():
-    """Keyboard shortcuts (b, n) work at 80x24 without resizing.
+    """Keyboard shortcuts (Alt+Left, Alt+Right) work at 80x24 without resizing.
 
     We call the screen action methods directly (which is what the key
     bindings trigger) rather than relying on pilot.press(), which sends
@@ -251,16 +251,19 @@ async def test_keyboard_shortcuts_at_80x24():
     async with textual_app.run_test(size=(80, 24)) as pilot:
         await pilot.pause()
 
-        # 'n' on Welcome should go to Settings (need to enter a prompt first)
+        # Alt+Right on Welcome should go to Settings (need to enter a prompt first)
         prompt_input = _q(textual_app, "#prompt-input")
         await pilot.click(prompt_input)
         prompt_input.value = "test prompt"
+        await pilot.pause()
+        # Unfocus the input so the navigation shortcut can fire
+        await pilot.press("tab")
         await pilot.pause()
         textual_app.screen.action_next()
         await pilot.pause()
         assert _q(textual_app, "#output-dir") is not None
 
-        # 'b' on Settings should go back to Welcome
+        # Alt+Left on Settings should go back to Welcome
         textual_app.screen.action_back()
         await pilot.pause()
         assert _q(textual_app, "#prompt-input") is not None
@@ -270,16 +273,125 @@ async def test_keyboard_shortcuts_at_80x24():
         await pilot.pause()
         assert _q(textual_app, "#next") is not None
 
-        # 'n' on Settings should go to Review
+        # Alt+Right on Settings should go to Review
         textual_app.screen.action_next()
         await pilot.pause()
         assert _q(textual_app, "#review-summary") is not None
         assert _q(textual_app, "#start") is not None
 
-        # 'b' on Review should go back to Settings
+        # Alt+Left on Review should go back to Settings
         textual_app.screen.action_back()
         await pilot.pause()
         assert _q(textual_app, "#next") is not None
+
+
+@pytest.mark.tui
+async def test_typing_b_n_c_q_in_input_does_not_navigate():
+    """Typing characters b, n, c, q in a prompt input must not trigger
+    navigation shortcuts. The focus guard in action_next/action_back
+    prevents navigation while an Input/TextArea has focus."""
+    textual_app, _ = _make_tui_app()
+    async with textual_app.run_test(size=(80, 24)) as pilot:
+        await pilot.pause()
+
+        # Click the prompt input and type text containing b, n, c, q
+        prompt_input = _q(textual_app, "#prompt-input")
+        await pilot.click(prompt_input)
+        prompt_input.value = "explain taylor series with b n c q keys"
+        await pilot.pause()
+
+        # Input is still focused - action_next must NOT navigate
+        textual_app.screen.action_next()
+        await pilot.pause()
+        # Still on Welcome screen
+        assert _q(textual_app, "#prompt-input") is not None
+        assert _q(textual_app, "#welcome-status") is not None
+
+        # Unfocus and try again - should navigate now
+        await pilot.press("tab")
+        await pilot.pause()
+        textual_app.screen.action_next()
+        await pilot.pause()
+        assert _q(textual_app, "#output-dir") is not None
+
+
+@pytest.mark.tui
+async def test_result_screen_actions_at_80x24():
+    """Result screen: Alt+N starts another job, F10 quits,
+    buttons reachable via Tab/Enter."""
+    textual_app, _ = _make_tui_app()
+    async with textual_app.run_test(size=(80, 24)) as pilot:
+        await pilot.pause()
+
+        # Navigate Welcome → Settings → Review
+        await _fill_welcome_and_go_to_settings(textual_app, pilot)
+        await pilot.click(_q(textual_app, "#next"))
+        await pilot.pause()
+
+        # Push result screen directly (simulating post-render state)
+        textual_app.push_screen("result")
+        await pilot.pause()
+
+        # Verify Result screen widgets are present
+        assert _q(textual_app, "#result-paths") is not None
+        assert _q(textual_app, "#open-video") is not None
+        assert _q(textual_app, "#new-job") is not None
+        assert _q(textual_app, "#done") is not None
+
+        # Alt+N should return to a previous screen (not crash)
+        textual_app.screen.action_new_job()
+        await pilot.pause()
+
+        # Quit should call app.exit
+        textual_app.push_screen("result")
+        await pilot.pause()
+        textual_app.screen.action_quit()
+        await pilot.pause()
+
+
+@pytest.mark.tui
+async def test_enter_activates_buttons_on_review():
+    """Buttons on Review screen can be activated with Enter after Tab focus."""
+    textual_app, _ = _make_tui_app()
+    async with textual_app.run_test(size=(80, 24)) as pilot:
+        await pilot.pause()
+
+        # Navigate to Review
+        await _fill_welcome_and_go_to_settings(textual_app, pilot)
+        await pilot.click(_q(textual_app, "#next"))
+        await pilot.pause()
+
+        # Tab to the Start Render button and press Enter
+        start_btn = _q(textual_app, "#start")
+        await pilot.click(start_btn)  # focus it first
+        await pilot.pause()
+        await pilot.press("enter")
+        await pilot.pause()
+
+        # Should advance to Progress screen
+        assert _q(textual_app, "#progress-stage") is not None
+
+
+@pytest.mark.tui
+async def test_tab_reaches_buttons_on_settings():
+    """Tab navigation reaches Back and Next buttons on Settings screen."""
+    textual_app, _ = _make_tui_app()
+    async with textual_app.run_test(size=(80, 24)) as pilot:
+        await pilot.pause()
+
+        await _fill_welcome_and_go_to_settings(textual_app, pilot)
+        await pilot.pause()
+
+        # Tab through to reach the Next button
+        next_btn = _q(textual_app, "#next")
+        back_btn = _q(textual_app, "#back")
+        assert next_btn is not None
+        assert back_btn is not None
+
+        # Click Next button to verify it works
+        await pilot.click(next_btn)
+        await pilot.pause()
+        assert _q(textual_app, "#review-summary") is not None
 
 
 # ---------------------------------------------------------------------------
@@ -355,8 +467,8 @@ async def test_progress_cancel_stops_render(tmp_path, monkeypatch):
         textual_app.push_screen("progress")
         await pilot.pause()
 
-        # Cancel immediately using key shortcut 'c'
-        await pilot.press("c")
+        # Cancel immediately using Escape key shortcut
+        await pilot.press("escape")
         await pilot.pause()
 
         # Should show cancelling then stopped

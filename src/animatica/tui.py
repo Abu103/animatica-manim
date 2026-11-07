@@ -192,7 +192,7 @@ class AnimaticaTuiApp:
 
         class WelcomeScreen(w["Screen"]):
             BINDINGS = [
-                ("n", "next", "Next"),
+                ("alt+right", "next", "Next"),
             ]
 
             def compose(self) -> w["ComposeResult"]:
@@ -220,6 +220,10 @@ class AnimaticaTuiApp:
                     self._go_next()
 
             def action_next(self) -> None:
+                # Don't navigate if the user is typing in an input field
+                focused = self.app.focused
+                if isinstance(focused, (w["Input"], w["TextArea"])):
+                    return
                 self._go_next()
 
             def _go_next(self) -> None:
@@ -281,8 +285,8 @@ class AnimaticaTuiApp:
 
         class SettingsScreen(w["Screen"]):
             BINDINGS = [
-                ("b", "back", "Back"),
-                ("n", "next", "Next"),
+                ("alt+left", "back", "Back"),
+                ("alt+right", "next", "Next"),
             ]
 
             def compose(self) -> w["ComposeResult"]:
@@ -326,9 +330,17 @@ class AnimaticaTuiApp:
                     self.action_next()
 
             def action_back(self) -> None:
+                # Don't navigate if the user is typing in an input field
+                focused = self.app.focused
+                if isinstance(focused, (w["Input"], w["TextArea"])):
+                    return
                 self.app.pop_screen()
 
             def action_next(self) -> None:
+                # Don't navigate if the user is typing in an input field
+                focused = self.app.focused
+                if isinstance(focused, (w["Input"], w["TextArea"])):
+                    return
                 out_input = self.query_one("#output-dir", w["Input"])
                 quality_select = self.query_one("#quality-select", w["Select"])
                 orientation_select = self.query_one("#orientation-select", w["Select"])
@@ -356,8 +368,8 @@ class AnimaticaTuiApp:
 
         class ReviewScreen(w["Screen"]):
             BINDINGS = [
-                ("b", "back", "Back"),
-                ("n", "next", "Next"),
+                ("alt+left", "back", "Back"),
+                ("alt+right", "next", "Next"),
             ]
 
             def compose(self) -> w["ComposeResult"]:
@@ -383,9 +395,17 @@ class AnimaticaTuiApp:
                     self.action_next()
 
             def action_back(self) -> None:
+                # Don't navigate if the user is typing in an input field
+                focused = self.app.focused
+                if isinstance(focused, (w["Input"], w["TextArea"])):
+                    return
                 self.app.pop_screen()
 
             def action_next(self) -> None:
+                # Don't navigate if the user is typing in an input field
+                focused = self.app.focused
+                if isinstance(focused, (w["Input"], w["TextArea"])):
+                    return
                 self.app.push_screen("progress")
 
             def _refresh_summary(self) -> None:
@@ -416,7 +436,7 @@ class AnimaticaTuiApp:
 
         class ProgressScreen(w["Screen"]):
             BINDINGS = [
-                ("c", "cancel", "Cancel"),
+                ("escape", "cancel", "Cancel"),
             ]
 
             def compose(self) -> w["ComposeResult"]:
@@ -555,7 +575,8 @@ class AnimaticaTuiApp:
 
         class ResultScreen(w["Screen"]):
             BINDINGS = [
-                ("q", "quit", "Quit"),
+                ("alt+n", "new_job", "New Job"),
+                ("f10", "quit", "Quit"),
             ]
 
             def compose(self) -> w["ComposeResult"]:
@@ -565,6 +586,7 @@ class AnimaticaTuiApp:
                     yield w["Label"]("Render Complete", classes="title")
                     yield w["Static"](id="result-paths")
                     yield w["Button"]("Open video", id="open-video")
+                    yield w["Button"]("Start Another Job", id="new-job")
                     yield w["Button"]("Done", id="done", variant="primary")
                     yield w["Static"]("", id="result-status")
 
@@ -587,8 +609,20 @@ class AnimaticaTuiApp:
             def on_button_pressed(self, event: w["Button"].Pressed) -> None:
                 if event.button.id == "open-video":
                     self._open_video()
+                elif event.button.id == "new-job":
+                    self.action_new_job()
                 elif event.button.id == "done":
                     self.action_quit()
+
+            def action_new_job(self) -> None:
+                # Return to Welcome screen to start a new job.
+                # Pop screens until we reach Welcome, but never pop the last
+                # screen (that would raise ScreenStackError).
+                while len(self.app._screen_stack) > 1:
+                    cls_name = self.screen.__class__.__name__
+                    if cls_name == "WelcomeScreen":
+                        break
+                    self.app.pop_screen()
 
             def action_quit(self) -> None:
                 self.app.exit()
@@ -633,13 +667,6 @@ class AnimaticaTuiApp:
 
         class AnimaticaApp(w["App"]):
             TITLE = "Animatica TUI"
-
-            BINDINGS = [
-                ("b", "back", "Back"),
-                ("n", "next", "Next"),
-                ("c", "cancel", "Cancel"),
-                ("q", "quit", "Quit"),
-            ]
 
             def __init__(self):
                 super().__init__()
