@@ -90,13 +90,12 @@ jobs:
       - name: Pack the bundle
         run: |
           set -uo pipefail
-          TLMGR=$(find "$HOME" -name tlmgr -path "*/bin/*" 2>/dev/null | head -1)
-          BINTEX=$(dirname "${TLMGR:-/nonexistent}")
-          TEXROOT=$(dirname "$(dirname "$BINTEX")")
-          if [ ! -d "$TEXROOT" ]; then
-            TEXROOT=$(find "$HOME" -maxdepth 4 -type d -name "TinyTeX*" 2>/dev/null | head -1)
-          fi
-          echo "::notice title=diag::tlmgr=$TLMGR bin=$BINTEX root=$TEXROOT exists=$([ -d "$TEXROOT" ] && echo yes || echo no)"
+          # $HOME/bin/tlmgr is a symlink the installer drops on PATH; resolve it.
+          TLMGR=$(find "$HOME" -name tlmgr -type f -path "*/bin/*" 2>/dev/null | head -1)
+          [ -n "$TLMGR" ] || TLMGR=$(readlink -f "$(find "$HOME" -name tlmgr -path "*/bin/*" 2>/dev/null | head -1)")
+          TEXROOT=$(find "$HOME" -maxdepth 4 -type d -name "TinyTeX*" 2>/dev/null | head -1)
+          [ -n "$TEXROOT" ] || TEXROOT=$(dirname "$(dirname "$(dirname "${TLMGR:-/nonexistent}")")")
+          echo "::notice title=diag::tlmgr=$TLMGR root=$TEXROOT exists=$([ -d "$TEXROOT" ] && echo yes || echo no)"
           if [ ! -d "$TEXROOT" ]; then
             echo "::error title=no tex root::looked for tlmgr under $HOME; candidates: $(find "$HOME" -name tlmgr -maxdepth 6 2>/dev/null | head -3 | tr '\n' ' ')"
             exit 1
