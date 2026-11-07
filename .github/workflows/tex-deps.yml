@@ -90,17 +90,19 @@ jobs:
       - name: Pack the bundle
         run: |
           set -euo pipefail
-          TEXROOT="${{ env.TEXROOT }}"
-          TEXROOT=${TEXROOT:-$(dirname "$(dirname "$(find "$HOME" -name tlmgr -path "*/bin/*" | head -1 | xargs dirname)")")}
-          mkdir -p bundle
+          trap 'echo "::error title=pack failed::line $LINENO of the pack step"' ERR
+          TLMGR=$(find "$HOME" -name tlmgr -path "*/bin/*" | head -1)
+          [ -n "$TLMGR" ] || { echo "::error::tlmgr not found"; exit 1; }
+          TEXROOT=$(dirname "$(dirname "$(dirname "$TLMGR")")")
+          echo "tex root: $TEXROOT"
+          du -sh "$TEXROOT"
+          rm -rf bundle && mkdir -p bundle
           cp -a "$TEXROOT" bundle/tex
-          # record the layout so the installer does not have to guess
-          printf '%s\n' "$(cd bundle/tex && find . -maxdepth 2 -type d -name bin -exec ls {} \;)" > bundle/README.txt
+          UNPACKED=$(du -sm bundle/tex | cut -f1)
           tar -C bundle -cf - tex | xz -9e -T0 > animatica-tex.tar.xz
           ls -lh animatica-tex.tar.xz
-          MB=$(( $(stat -c %s animatica-tex.tar.xz) / 1024 / 1024 ))
-          echo "size=$MB MB"
-          echo "::notice title=tex bundle size::animatica-tex.tar.xz is $MB MB"
+          MB=$(du -m animatica-tex.tar.xz | cut -f1)
+          echo "::notice title=tex bundle size::${MB} MB compressed, ${UNPACKED} MB unpacked"
 
       - name: Commit to the artifacts branch (codeload-only hosts)
         run: |
