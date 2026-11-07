@@ -33,9 +33,13 @@ env:
   # "1" makes the run also commit the bundle into the branch, for hosts that can
   # only reach codeload.github.com. Off by default: artifacts keep the history clean.
   COMMIT_BUNDLE: "0"
+  # "1" publishes the bundle as the `native-deps-v1` release asset, which is what
+  # scripts/bootstrap.sh downloads when a machine has no cairo/pango packages.
+  PUBLISH_RELEASE: "1"
+  RELEASE_TAG: "native-deps-v1"
 
 permissions:
-  contents: write # only used by mode=commit
+  contents: write # mode=commit and the release asset
   actions: read
 
 jobs:
@@ -103,3 +107,18 @@ jobs:
           git add native/animatica-native.tar.gz
           git commit -m "chore(native): cairo+pango wheels and shared libs for offline hosts"
           git push origin "HEAD:${{ github.ref_name }}"
+
+      - name: Publish the bundle as a release asset (one-line installer)
+        if: inputs.mode != 'smoke' && env.PUBLISH_RELEASE == '1'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          # reusable URL: .../releases/download/<tag>/animatica-native.tar.gz
+          gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1 \
+            || gh release create "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" \
+                 --title "Native deps v1 (cairo + pango for Linux)" \
+                 --notes "Prebuilt pycairo/manimpango wheels plus the cairo/pango shared libraries for Linux x86_64 (glibc >= 2.36). Downloaded automatically by scripts/bootstrap.sh when a machine has no cairo/pango packages. Rebuilt by .github/workflows/native-deps.yml."
+          gh release upload "$RELEASE_TAG" animatica-native.tar.gz \
+            --repo "$GITHUB_REPOSITORY" --clobber
+          gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --json assets \
+            --jq '.assets[] | "\(.name) \(.size) bytes"'
