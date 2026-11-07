@@ -237,3 +237,112 @@ def test_tan_discontinuity_real_render(run_component):
     # No component fallback warnings.
     assert warnings == [], f"unexpected warnings: {warnings}"
     assert scene.renderer.num_plays >= 1
+
+
+# ---------------------------------------------------------------------------#
+# CLI / pipeline integration test (real MP4 render)                          #
+# ---------------------------------------------------------------------------#
+
+@pytest.mark.render
+def test_parametric_graph_cli_render_labeled_circle(tmp_path):
+    """End-to-end: render a labeled parametric circle via make_video.
+
+    Verifies the MP4 exists and is decodable, the report has no
+    parametric-graph fallback warning, and the label path executes.
+    """
+    from animatica.pipeline import make_video
+    from animatica.storyboard.models import Storyboard
+
+    # Build a storyboard with a labeled parametric_graph circle.
+    sb = Storyboard.model_validate({
+        "version": "1",
+        "title": "Parametric Circle",
+        "theme": {"palette": "dark-blue", "font": "default"},
+        "scenes": [{
+            "beats": [{
+                "component": "parametric_graph",
+                "params": {
+                    "title": "Unit Circle",
+                    "x_expr": "cos(t)",
+                    "y_expr": "sin(t)",
+                    "t_range": [0.0, 6.28],
+                    "label": "unit circle",
+                },
+                "caption": "A parametric unit circle drawn with x=cos(t), y=sin(t).",
+            }],
+        }],
+    })
+
+    sb_path = tmp_path / "storyboard.json"
+    from animatica.storyboard.models import dump_storyboard
+    dump_storyboard(sb, sb_path)
+
+    result = make_video(
+        storyboard_path=sb_path,
+        out_dir=tmp_path / "out",
+        preview=True,
+    )
+
+    # MP4 exists and is non-empty.
+    assert result.video.is_file(), f"video not produced: {result.video}"
+    assert result.video.stat().st_size > 0, "video is empty"
+
+    # Report has no parametric-graph fallback warning.
+    import json as _json
+    report = _json.loads(result.report.read_text(encoding="utf-8"))
+    warnings = report.get("warnings", [])
+    pg_warnings = [w for w in warnings if "parametric_graph" in str(w).lower()]
+    assert pg_warnings == [], f"parametric_graph fallback warnings: {pg_warnings}"
+
+    # All warnings (if any) should not be about parametric_graph failing.
+    assert "parametric_graph: no valid points" not in str(warnings)
+    assert "parametric_graph: unsafe expression" not in str(warnings)
+    assert "parametric_graph: axes failed" not in str(warnings)
+
+
+@pytest.mark.render
+def test_parametric_graph_cli_render_discontinuity(tmp_path):
+    """Render tan(t) parametrically; verify MP4 produced and no misleading
+    connecting line across asymptotes (tan splits into multiple segments).
+
+    Discovered via: the curve is split into segments at discontinuities so
+    no single curve bridges across an asymptote.
+    """
+    from animatica.pipeline import make_video
+    from animatica.storyboard.models import Storyboard, dump_storyboard
+
+    sb = Storyboard.model_validate({
+        "version": "1",
+        "title": "Parametric Tan",
+        "theme": {"palette": "dark-blue", "font": "default"},
+        "scenes": [{
+            "beats": [{
+                "component": "parametric_graph",
+                "params": {
+                    "title": "Tan Curve",
+                    "x_expr": "t",
+                    "y_expr": "tan(t)",
+                    "t_range": [0.0, 6.28],
+                },
+                "caption": "Tan curve with discontinuities at pi/2 and 3pi/2.",
+            }],
+        }],
+    })
+
+    sb_path = tmp_path / "storyboard.json"
+    dump_storyboard(sb, sb_path)
+
+    result = make_video(
+        storyboard_path=sb_path,
+        out_dir=tmp_path / "out",
+        preview=True,
+    )
+
+    assert result.video.is_file(), f"video not produced: {result.video}"
+    assert result.video.stat().st_size > 0, "video is empty"
+
+    import json as _json
+    report = _json.loads(result.report.read_text(encoding="utf-8"))
+    warnings = report.get("warnings", [])
+    pg_warnings = [w for w in warnings if "parametric_graph" in str(w).lower()]
+    assert pg_warnings == [], f"parametric_graph fallback warnings: {pg_warnings}"

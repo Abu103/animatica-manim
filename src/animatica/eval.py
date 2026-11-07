@@ -19,7 +19,9 @@ from animatica.storyboard.models import Storyboard
 class EvalResult:
     prompt: str
     provider: str
+    model: str  # actual model ID used by the provider
     valid_first_try: bool
+    eventual_success: bool  # True if valid after any number of retries
     retries: int
     warnings: list[str] = field(default_factory=list)
     duration: float = 0.0
@@ -39,8 +41,17 @@ class EvalSummary:
         return sum(1 for r in self.results if r.valid_first_try)
 
     @property
+    def eventual_success_count(self) -> int:
+        return sum(1 for r in self.results if r.eventual_success)
+
+    @property
     def error_count(self) -> int:
         return sum(1 for r in self.results if r.error is not None)
+
+    @property
+    def retry_success_count(self) -> int:
+        """Succeeded only after one or more retries (not first try)."""
+        return sum(1 for r in self.results if r.eventual_success and not r.valid_first_try)
 
     def by_provider(self, provider: str) -> list[EvalResult]:
         return [r for r in self.results if r.provider == provider]
@@ -67,6 +78,7 @@ def _eval_one(
         def __init__(self, inner):
             self._inner = inner
             self.name = getattr(inner, "name", "provider")
+            self.model = getattr(inner, "model", "unknown")
             self.calls = 0
 
         def generate(self, prompt, schema):
@@ -74,6 +86,7 @@ def _eval_one(
             return self._inner.generate(prompt, schema)
 
     prov_name = getattr(provider, "name", "provider")
+    prov_model = getattr(provider, "model", "unknown")
     results: list[EvalResult] = []
     for prompt in prompts:
         prov = _Counting(provider)
@@ -83,7 +96,9 @@ def _eval_one(
             results.append(EvalResult(
                 prompt=prompt,
                 provider=prov_name,
+                model=prov_model,
                 valid_first_try=prov.calls == 1,
+                eventual_success=True,
                 retries=prov.calls - 1,
                 warnings=notes,
                 duration=_duration(sb, registry),
@@ -92,7 +107,9 @@ def _eval_one(
             results.append(EvalResult(
                 prompt=prompt,
                 provider=prov_name,
+                model=prov_model,
                 valid_first_try=False,
+                eventual_success=False,
                 retries=prov.calls - 1,
                 error=str(exc),
             ))
@@ -130,17 +147,23 @@ def run_eval_multi(
 
 def format_table(results: list[EvalResult]) -> str:
     """Format eval results as a plain-text score table."""
-    lines = [f"{'provider':<14} {'prompt':<36} {'valid':<6} {'retries':<7} {'warn':<5} {'secs':<6}"]
+    lines = [f"{'provider':<14} {'model':<20} {'prompt':<30} {'first':<6} {'eventual':<9} {'retries':<7} {'warn':<5} {'secs':<6}"]
     for r in results:
-        err = f" ERROR: {r.error[:30]}" if r.error else ""
+        err = f" ERROR: {r.error[:25]}" if r.error else ""
+        first = "yes" if r.valid_first_try else "NO"
+        eventual = "yes" if r.eventual_success else "NO"
         lines.append(
-            f"{r.provider:<14} {r.prompt[:36]:<36} "
-            f"{'yes' if r.valid_first_try else 'NO':<6} "
-            f"{r.retries:<7} {len(r.warnings):<5} {r.duration:<6.1f}{err}"
+            f"{r.provider:<14} {r.model:<20} {r.prompt[:30]:<30} "
+            f"{first:<6} {eventual:<9} {r.retries:<7} {len(r.warnings):<5} {r.duration:<6.1f}{err}"
         )
     ok = sum(1 for r in results if r.valid_first_try)
+    eventual = sum(1 for r in results if r.eventual_success)
+    retry_ok = sum(1 for r in results if r.eventual_success and not r.valid_first_try)
     errs = sum(1 for r in results if r.error is not None)
-    lines.append(f"\n{ok}/{len(results)} valid on generation, {errs} errored")
+    lines.append(
+        f"\n{ok}/{len(results)} first-try valid, {retry_ok} retry-valid, "
+        f"{eventual}/{len(results)} eventual valid, {errs} errored"
+    )
     return "\n".join(lines)
 
 
@@ -173,8 +196,11 @@ def format_multi_table(summary: EvalSummary) -> str:
     for p in providers:
         prov_results = summary.by_provider(p)
         ok = sum(1 for r in prov_results if r.valid_first_try)
+        eventual = sum(1 for r in prov_results if r.eventual_success)
+        retry_ok = sum(1 for r in prov_results if r.eventual_success and not r.valid_first_try)
         errs = sum(1 for r in prov_results if r.error is not None)
         cell = f"{ok}/{len(prov_results)}" + (f" e{errs}" if errs else "")
+        cell += f" ({retry_ok} retry)" if retry_ok else ""
         summary_row += cell.ljust(18)
     lines.append(summary_row)
 

@@ -578,7 +578,10 @@ def edit_cmd(
 
     # --- Render into a secure staging directory on the same filesystem ---
     # Use mkdtemp so the name is unpredictable and we own the directory.
-    staging_dir = Path(tempfile.mkdtemp(prefix=".animatica-edit-staging-", dir=str(out_dir.parent)))
+    # The directory is visible (not hidden) so the output location is
+    # discoverable from the filesystem listing, while still being unique
+    # and owned by us — no check-then-act race against existing paths.
+    staging_dir = Path(tempfile.mkdtemp(prefix="animatica-edit-", dir=str(out_dir.parent)))
     staging_sb_path = staging_dir / "storyboard.json"
     dump_storyboard(new_sb, staging_sb_path)
 
@@ -624,7 +627,8 @@ def _promote_edit_artifacts_with_backup(staging_dir: Path, out_dir: Path) -> Non
 
     Backs up each existing artifact (storyboard.json, video.mp4, captions.vtt,
     report.json, media/) to a timestamped backup directory before overwriting.
-    If any step fails, all backups are restored and the error is re-raised.
+    If any step fails, backed-up originals are restored and any newly created
+    artifacts are removed. The backup directory is preserved for manual recovery.
     """
     import shutil
     import time
@@ -632,6 +636,11 @@ def _promote_edit_artifacts_with_backup(staging_dir: Path, out_dir: Path) -> Non
     artifacts = ["storyboard.json", "video.mp4", "captions.vtt", "report.json"]
     stamp = int(time.time() * 1000)
     backup_dir = out_dir.parent / f"{out_dir.name}.edit-backup-{stamp}"
+
+    # Track which artifacts existed before promotion so rollback can
+    # distinguish "restore original" from "remove newly created".
+    pre_existing: set[str] = set()
+    media_pre_existed = False
 
     # Create backups of everything that exists in out_dir.
     backed_up: list[tuple[Path, Path]] = []  # (backup_path, original_path)
@@ -641,6 +650,12 @@ def _promote_edit_artifacts_with_backup(staging_dir: Path, out_dir: Path) -> Non
         raise RuntimeError(f"backup directory already exists: {backup_dir}")
 
     try:
+        # Record pre-existence before overwriting anything.
+        for artifact in artifacts:
+            if (out_dir / artifact).is_file():
+                pre_existing.add(artifact)
+        media_pre_existed = (out_dir / "media").is_dir()
+
         for artifact in artifacts:
             src = staging_dir / artifact
             dst = out_dir / artifact
@@ -659,7 +674,7 @@ def _promote_edit_artifacts_with_backup(staging_dir: Path, out_dir: Path) -> Non
                 shutil.rmtree(dst_media)
             shutil.copytree(staging_media, dst_media)
     except Exception:
-        # Rollback: restore everything we backed up.
+        # Rollback: restore backed-up originals first.
         for backup_path, original_path in backed_up:
             try:
                 if backup_path.is_dir():
@@ -677,11 +692,17 @@ def _promote_edit_artifacts_with_backup(staging_dir: Path, out_dir: Path) -> Non
                     f"Warning: rollback failed for {original_path}: {exc}. "
                     f"Backups preserved under {backup_dir} for manual recovery."
                 )
-        # Remove any artifacts we may have copied but couldn't roll back.
+        # Remove any artifacts that were newly created (did not exist before
+        # promotion) so a failed promotion leaves out_dir as it was.
         for artifact in artifacts:
             dst = out_dir / artifact
-            if dst.is_file() and not (staging_dir / artifact).is_file():
-                pass  # leave as-is, rollback attempted above
+            if artifact not in pre_existing and dst.is_file():
+                dst.unlink(missing_ok=True)
+        # Remove newly created media directory if it didn't exist before.
+        if not media_pre_existed:
+            dst_media = out_dir / "media"
+            if dst_media.is_dir():
+                shutil.rmtree(dst_media, ignore_errors=True)
         raise
 
     # Promotion succeeded: leave the backup in place so the user can

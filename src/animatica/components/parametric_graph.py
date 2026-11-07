@@ -194,9 +194,9 @@ class ParametricGraph(Component):
 
         clock = Clock(scene, 4.0)
         clock.play(FadeIn(title), run_time=0.8)
-        clock.play(FadeIn(plot_group), run_time=0.8)
+        clock.play(FadeIn(axes), run_time=0.8)  # axes appear first
         for curve in curves:
-            clock.play(Create(curve), run_time=1.2 / len(curves))
+            clock.play(Create(curve), run_time=1.2 / len(curves))  # curves drawn after axes
         if label:
             clock.play(FadeIn(label_mob), run_time=0.4)
         clock.finish()

@@ -335,12 +335,12 @@ def test_edit_default_path_uses_staging_directly(tmp_path: Path, monkeypatch):
     assert (out_dir / "video.mp4").read_bytes() == b"original video"
     # Collision directory NOT deleted (we never touched it)
     assert (collision_dir / "keep.txt").read_text() == "pre-existing content"
-    # New output is the staging dir (.animatica-edit-staging-*), alongside out_dir
+    # New output is the staging dir (animatica-edit-*), alongside out_dir
     out_dir_parent = out_dir.parent
     staging_dirs = [d for d in out_dir_parent.iterdir()
-                    if d.is_dir() and d.name.startswith(".animatica-edit-staging-")]
+                    if d.is_dir() and d.name.startswith("animatica-edit-")]
     assert len(staging_dirs) >= 1, (
-        f"expected at least one .animatica-edit-staging- dir, found {list(out_dir_parent.iterdir())}"
+        f"expected at least one animatica-edit- dir, found {list(out_dir_parent.iterdir())}"
     )
     # The Video path points inside the staging dir
     assert "Video:" in result.output
@@ -398,7 +398,132 @@ def test_edit_missing_original_artifacts(tmp_path: Path, monkeypatch):
     # New artifact directory created alongside original
     out_dir_parent = out_dir.parent
     staging_dirs = [d for d in out_dir_parent.iterdir()
-                    if d.is_dir() and d.name.startswith(".animatica-edit-staging-")]
-    assert len(staging_dirs) >= 1, f"expected at least one .animatica-edit-staging- directory, found {list(out_dir_parent.iterdir())}"
+                    if d.is_dir() and d.name.startswith("animatica-edit-")]
+    assert len(staging_dirs) >= 1, f"expected at least one animatica-edit- directory, found {list(out_dir_parent.iterdir())}"
     # Original storyboard untouched
     assert (out_dir / "storyboard.json").read_text().count("Original") >= 1
+
+
+# ---------------------------------------------------------------------------
+# --replace rollback: newly created artifacts are removed on failure
+# ---------------------------------------------------------------------------
+
+def test_replace_rollback_removes_newly_created_artifact(tmp_path: Path, monkeypatch):
+    """--replace rollback removes artifacts that didn't exist before promotion.
+
+    out_dir has storyboard.json but NO video.mp4. Promotion copies storyboard.json
+    (backed up first) and creates video.mp4 (newly created). If the video.mp4 copy
+    fails, rollback restores storyboard.json from backup and removes video.mp4.
+    """
+    out_dir = tmp_path / "out"
+    out_dir.mkdir()
+    (out_dir / "storyboard.json").write_text(
+        '{"version":"1","title":"Original","scenes":[{"beats":[{"component":"title_card","params":{"title":"Original"}}]}]}'
+    )
+    # No video.mp4 originally — it will be newly created by promotion.
+
+    new_sb = _make_valid_storyboard()
+    new_sb.title = "Edited Title"
+    monkeypatch.setattr("animatica.ai.repair.generate_storyboard", lambda *a, **k: new_sb)
+    monkeypatch.setattr("animatica.ai.router.get_provider", lambda *a, **k: "fake-provider")
+
+    orig_make_video = make_video
+    def fake_make_video(storyboard_path=None, out_dir=None, preview=False, **kwargs):
+        staging = Path(out_dir)
+        (staging / "storyboard.json").write_text('{"version":"1","title":"Edited Title"}')
+        (staging / "video.mp4").write_bytes(b"new video")
+        return MakeResult(
+            video=staging / "video.mp4",
+            storyboard=staging / "storyboard.json",
+            captions=staging / "captions.vtt",
+            report=staging / "report.json",
+            warnings=[],
+        )
+    monkeypatch.setattr("animatica.pipeline.make_video", fake_make_video)
+
+    # Fail on copying video.mp4 (destination path contains "video.mp4").
+    import shutil
+    original_copy2 = shutil.copy2
+    def failing_copy2(src, dst, *args, **kwargs):
+        if "video.mp4" in str(dst):
+            raise OSError("simulated copy failure on video.mp4")
+        return original_copy2(src, dst, *args, **kwargs)
+    monkeypatch.setattr("shutil.copy2", failing_copy2)
+
+    try:
+        runner = CliRunner()
+        result = runner.invoke(app, ["edit", str(out_dir), "change title", "--provider", "nim", "--replace"])
+    finally:
+        monkeypatch.setattr("animatica.pipeline.make_video", orig_make_video)
+        monkeypatch.setattr("shutil.copy2", original_copy2)
+
+    assert result.exit_code != 0, f"edit should fail when promotion fails: {result.output}"
+    # storyboard.json was backed up and restored to original
+    assert "Original" in (out_dir / "storyboard.json").read_text()
+    # video.mp4 was newly created and should be removed on rollback
+    assert not (out_dir / "video.mp4").exists(), "newly created video.mp4 should be removed on rollback"
+    # Backup dir preserved for manual recovery
+    import glob as _glob
+    backup_dirs = _glob.glob(str(out_dir.parent / "*.edit-backup-*"))
+    assert len(backup_dirs) >= 1, f"expected backup dir, found {list(out_dir_parent.iterdir()) if (out_dir_parent := out_dir.parent) else []}"
+
+
+def test_replace_rollback_removes_new_media_directory(tmp_path: Path, monkeypatch):
+    """--replace rollback removes a newly created media directory if promotion fails.
+
+    out_dir has no media/ directory. Promotion creates media/ with new files.
+    If media copy fails, rollback removes the newly created media/ directory.
+    """
+    out_dir = tmp_path / "out"
+    out_dir.mkdir()
+    (out_dir / "storyboard.json").write_text(
+        '{"version":"1","title":"Original","scenes":[{"beats":[{"component":"title_card","params":{"title":"Original"}}]}]}'
+    )
+    # No media/ originally — it will be newly created by promotion.
+
+    new_sb = _make_valid_storyboard()
+    new_sb.title = "Edited Title"
+    monkeypatch.setattr("animatica.ai.repair.generate_storyboard", lambda *a, **k: new_sb)
+    monkeypatch.setattr("animatica.ai.router.get_provider", lambda *a, **k: "fake-provider")
+
+    orig_make_video = make_video
+    def fake_make_video(storyboard_path=None, out_dir=None, preview=False, **kwargs):
+        staging = Path(out_dir)
+        (staging / "storyboard.json").write_text('{"version":"1","title":"Edited Title"}')
+        (staging / "video.mp4").write_bytes(b"new video")
+        (staging / "media").mkdir(exist_ok=True)
+        (staging / "media" / "new.png").write_bytes(b"new media")
+        return MakeResult(
+            video=staging / "video.mp4",
+            storyboard=staging / "storyboard.json",
+            captions=staging / "captions.vtt",
+            report=staging / "report.json",
+            warnings=[],
+        )
+    monkeypatch.setattr("animatica.pipeline.make_video", fake_make_video)
+
+    # Fail on copying media directory.
+    import shutil
+    original_copytree = shutil.copytree
+    def failing_copytree(src, dst, *args, **kwargs):
+        if "media" in str(dst):
+            raise OSError("simulated copytree failure on media")
+        return original_copytree(src, dst, *args, **kwargs)
+    monkeypatch.setattr("shutil.copytree", failing_copytree)
+
+    try:
+        runner = CliRunner()
+        result = runner.invoke(app, ["edit", str(out_dir), "change title", "--provider", "nim", "--replace"])
+    finally:
+        monkeypatch.setattr("animatica.pipeline.make_video", orig_make_video)
+        monkeypatch.setattr("shutil.copytree", original_copytree)
+
+    assert result.exit_code != 0, f"edit should fail when promotion fails: {result.output}"
+    # storyboard.json was backed up and restored to original
+    assert "Original" in (out_dir / "storyboard.json").read_text()
+    # Newly created media/ should be removed on rollback
+    assert not (out_dir / "media").exists(), "newly created media/ should be removed on rollback"
+    # Backup dir preserved for manual recovery
+    import glob as _glob
+    backup_dirs = _glob.glob(str(out_dir.parent / "*.edit-backup-*"))
+    assert len(backup_dirs) >= 1, f"expected backup dir"
