@@ -14,7 +14,8 @@ _HINTS = {
     "title_card": "opening/closing title with optional subtitle",
     "equation": "LaTeX equation(s); mode 'reveal' shows them, 'transform' morphs one into the next",
     "steps_list": "numbered list of short steps or bullet points",
-    "graph": "plot of y = fn(x); fn is a plain expression like sin(x) or x**2 (no LaTeX, no 'y =')",
+    "graph": "plot of y = fn(x); fn is a plain expression like sin(x) or x**2 (no LaTeX, no 'y ='). "
+             "Use approx_fn to plot an approximation alongside the original so the viewer can compare them visually.",
     "bar_chart": "bar chart; labels and values must have the same length",
     "shape_morph": "one shape transforming into another",
     "diagram": "boxes (nodes) joined by arrows (edges)",
@@ -74,8 +75,13 @@ def build_prompt(request: str, registry: ComponentRegistry, errors: list[str] | 
         "- Do not split a continuous demonstration (such as one bounce_sequence) across multiple scenes; "
         "keep one sequence in a single scene.",
         "- Scene order: optional title_card, then definition/equation, then the demo, then at most one short summary. "
-        "Never end with a chart that repeats the demo.",
-        "- For equations use plain LaTeX that compiles on its own (no \\usepackage, no $ signs, no text-mode commands).",
+        "Never end with a chart that repeats the demo. "
+        "A closing steps_list or table after demo content is a summary, not a regression. "
+        "- For equations use plain LaTeX that compiles on its own (no \\usepackage, no $ signs, no text-mode commands). "
+        "- Captions teach the topic in one sentence of plain language; they never describe production mechanics "
+        "(avoid 'A title card introducing X', 'This scene shows', 'The graph displays'). "
+        "- If the explanation compares two things (original vs approximation, option A vs B), show both visually: "
+        "use graph with approx_fn for functions, or bar_chart/compare for options. Do not only describe the comparison in words.",
         "",
         "Components:",
         _catalog(registry),

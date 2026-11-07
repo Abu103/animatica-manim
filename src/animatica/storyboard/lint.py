@@ -132,6 +132,10 @@ def _scene_component_order(scenes: list[Scene], notes: list[str]) -> None:
         comp = scene.beats[0].component if scene.beats else ""
         if si - 1 == last and comp == "title_card":
             stage = 3  # a closing title is the summary
+        elif si - 1 == last and comp in ("steps_list", "table") and prev is not None and prev >= 2:
+            # A closing steps_list or table that follows demo content is a
+            # summary, not a backward step in the narrative.
+            stage = 3
         else:
             stage = _STAGE.get(comp)
         if stage is None:

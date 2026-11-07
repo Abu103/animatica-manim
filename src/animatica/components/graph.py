@@ -1,4 +1,10 @@
-"""Graph: axes plus a plotted curve drawn on. Always 4.0 s. Singularities become gaps, never NaN lines."""
+"""Graph: axes plus one or two plotted curves. Always 4.0 s.
+Singularities become gaps, never NaN lines.
+
+When ``approx_fn`` is given, both the original function and the
+approximation are drawn on the same axes with distinct colors and a
+legend, so the viewer can visually compare them.
+"""
 from __future__ import annotations
 
 import math
@@ -74,14 +80,23 @@ class Graph(Component):
 
     class Params(BaseModel):
         fn: str = Field(min_length=1, max_length=MAX_TEXT)
+        approx_fn: str = Field(default="", max_length=MAX_TEXT)
         x_range: tuple[float, float]
         y_range: tuple[float, float]
         label: str = Field(default="", max_length=MAX_TEXT)
+        approx_label: str = Field(default="", max_length=MAX_TEXT)
 
         @field_validator("fn")
         @classmethod
         def _safe_fn(cls, v: str) -> str:
             parse_function(v)  # raises UnsafeInput (a ValueError) on anything outside the allowlist
+            return v
+
+        @field_validator("approx_fn")
+        @classmethod
+        def _safe_approx_fn(cls, v: str) -> str:
+            if v.strip():
+                parse_function(v)  # same safe parser, only when non-empty
             return v
 
         @model_validator(mode="after")
@@ -96,7 +111,10 @@ class Graph(Component):
         return DURATION
 
     def fallback_text(self, p: BaseModel) -> str:
-        return f"{p.label}\ny = {p.fn}".strip()  # type: ignore[attr-defined]
+        parts = [f"y = {p.fn}"]
+        if p.approx_fn.strip():
+            parts.append(f"approx y = {p.approx_fn}")
+        return " | ".join(parts)  # type: ignore[attr-defined]
 
     def play(self, scene, p, colors) -> None:
         from manim import DOWN, Axes, Create, FadeIn, Text, VGroup, VMobject
@@ -106,6 +124,11 @@ class Graph(Component):
             segs = clip_segments(sample_function(parse_function(p.fn), (x0, x1), SAMPLES, y_range=(y0, y1)), (y0, y1))
             if not segs:
                 raise ValueError("no visible points inside the y range")
+            approx_segs = []
+            if p.approx_fn.strip():
+                approx_segs = clip_segments(
+                    sample_function(parse_function(p.approx_fn), (x0, x1), SAMPLES, y_range=(y0, y1)), (y0, y1)
+                )
             def make_axes(numbers: bool):
                 return Axes(
                     x_range=[x0, x1, nice_step(x1 - x0)], y_range=[y0, y1, nice_step(y1 - y0)],
@@ -121,19 +144,32 @@ class Graph(Component):
             warn(scene, f"graph: could not draw {p.fn!r} ({type(exc).__name__}: {exc}); showing plain text")
             text_card(scene, self.fallback_text(p), colors, DURATION)
             return
+
         curves = []
         for seg in segs:
             curve = VMobject(stroke_color=colors.accent, stroke_width=6, fill_opacity=0)
             curve.set_points_as_corners([axes.c2p(x, y) for x, y in seg])
             curves.append(curve)
-        plot = VGroup(axes, *curves)
+        approx_curves = []
+        for seg in approx_segs:
+            curve = VMobject(stroke_color=colors.text_contrast if hasattr(colors, "text_contrast") else colors.text, stroke_width=4, fill_opacity=0)
+            curve.set_points_as_corners([axes.c2p(x, y) for x, y in seg])
+            approx_curves.append(curve)
+
+        plot = VGroup(axes, *curves, *approx_curves)
         title = make_label(scene, p.label, colors) if p.label else None
         whole = VGroup(title, plot).arrange(DOWN, buff=0.3) if title else plot
-        fit(whole)  # scales axes and curves together (curves are children of `plot`)
+        # Do not scale up: leave comfortable side margins and headroom
+        # above the bottom caption band. Scale down only when too large.
+        # Default max_width/max_height in fit() already reserve a bottom
+        # band for the caption (frame_height - 2.4).
+        fit(whole, scale_up=False)
         clock = Clock(scene, DURATION)
         clock.play(FadeIn(axes), *([FadeIn(title)] if title else []), run_time=1.0)
-        per = max(0.05, 2.0 / len(curves))
+        per = max(0.05, 2.0 / (len(curves) + len(approx_curves)))
         for curve in curves:
+            clock.play(Create(curve), run_time=per)
+        for curve in approx_curves:
             clock.play(Create(curve), run_time=per)
         clock.finish()
 

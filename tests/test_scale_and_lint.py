@@ -163,3 +163,66 @@ def test_lint_unknown_component_does_not_mask_regression():
     _, notes = lint_storyboard(sb)
     assert any("moves backward" in n for n in notes)
 
+
+# ---------------------------------------------------------------------------
+# Closing summary recognition
+# ---------------------------------------------------------------------------
+
+def test_lint_closing_steps_list_is_summary_not_regression():
+    # A steps_list at the end, after demo content (graph stage 2), is a
+    # closing summary: title -> definition -> demo -> summary. No warning.
+    sb = _sb([
+        {"component": "title_card", "params": {"title": "Taylor"}, "caption": "a"},
+        {"component": "equation", "params": {"mode": "reveal", "latex": ["e^x"]}, "caption": "d"},
+        {"component": "graph", "params": {"fn": "exp(x)", "x_range": [-2, 2], "y_range": [0, 4]}, "caption": "m"},
+        {"component": "steps_list", "params": {"items": ["more terms help", "convergence has limits"]}, "caption": "s"},
+    ])
+    _, notes = lint_storyboard(sb)
+    assert not any("moves backward" in n for n in notes), f"unexpected notes: {notes}"
+
+
+def test_lint_closing_table_is_summary_not_regression():
+    # A table at the end, after demo content, is a closing summary.
+    sb = _sb([
+        {"component": "title_card", "params": {"title": "Data"}, "caption": "a"},
+        {"component": "graph", "params": {"fn": "sin(x)", "x_range": [-3, 3], "y_range": [-2, 2]}, "caption": "m"},
+        {"component": "table", "params": {"columns": ["x", "y"], "rows": [["0", "0"]]}, "caption": "s"},
+    ])
+    _, notes = lint_storyboard(sb)
+    assert not any("moves backward" in n for n in notes), f"unexpected notes: {notes}"
+
+
+def test_lint_steps_list_in_middle_after_demo_still_regresses():
+    # A steps_list in the MIDDLE (between demo and equation) is still a
+    # real regression: demo(stage 2) -> steps_list(stage 1) moves backward.
+    sb = _sb([
+        {"component": "title_card", "params": {"title": "Taylor"}, "caption": "a"},
+        {"component": "graph", "params": {"fn": "exp(x)", "x_range": [-2, 2], "y_range": [0, 4]}, "caption": "m"},
+        {"component": "steps_list", "params": {"items": ["takeaways"]}, "caption": "s"},
+        {"component": "equation", "params": {"mode": "reveal", "latex": ["e^x"]}, "caption": "d"},
+    ])
+    _, notes = lint_storyboard(sb)
+    assert any("moves backward" in n for n in notes), f"expected regression warning, got: {notes}"
+
+
+def test_lint_steps_list_at_end_without_demo_is_clean():
+    # title_card(stage 0) -> steps_list(stage 1) at the end: forward, no warning.
+    # steps_list is not a summary here because no demo preceded it.
+    sb = _sb([
+        {"component": "title_card", "params": {"title": "How To"}, "caption": "a"},
+        {"component": "steps_list", "params": {"items": ["step 1", "step 2"]}, "caption": "s"},
+    ])
+    _, notes = lint_storyboard(sb)
+    assert not any("moves backward" in n for n in notes), f"unexpected notes: {notes}"
+
+
+def test_lint_closing_steps_list_after_only_definition_is_clean():
+    # equation(stage 1) -> steps_list(stage 1) at the end: same stage, no warning.
+    sb = _sb([
+        {"component": "title_card", "params": {"title": "Math"}, "caption": "a"},
+        {"component": "equation", "params": {"mode": "reveal", "latex": ["a^2"]}, "caption": "d"},
+        {"component": "steps_list", "params": {"items": ["takeaway"]}, "caption": "s"},
+    ])
+    _, notes = lint_storyboard(sb)
+    assert not any("moves backward" in n for n in notes), f"unexpected notes: {notes}"
+
