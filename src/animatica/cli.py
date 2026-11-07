@@ -516,19 +516,15 @@ def edit_cmd(
         raise typer.Exit(code=1)
 
     # Snapshot originals for preservation/rollback verification.
+    # NOTE: We read only the storyboard JSON into memory. Large binary
+    # artifacts (video, captions, report) are NOT loaded here to avoid
+    # risking a memory-exhaustion fault during an already failure-prone
+    # critical section. The rollback path relies on backing up the files
+    # themselves, not on holding copies in RAM.
     original_storyboard_bytes = sb_path.read_bytes()
     original_video_path = out_dir / "video.mp4"
     original_report_path = out_dir / "report.json"
     original_captions_path = out_dir / "captions.vtt"
-    original_video_bytes = (
-        original_video_path.read_bytes() if original_video_path.is_file() else None
-    )
-    original_report_bytes = (
-        original_report_path.read_bytes() if original_report_path.is_file() else None
-    )
-    original_captions_bytes = (
-        original_captions_path.read_bytes() if original_captions_path.is_file() else None
-    )
     original_media_path = out_dir / "media"
     original_media_exists = original_media_path.is_dir()
 
@@ -605,23 +601,41 @@ def edit_cmd(
     # --- Decide output destination ---
     if replace:
         # Recoverable promotion: back up existing outputs, promote new ones,
-        # roll back on any failure.
+        # roll back on any failure. Backups are preserved after success so
+        # the user can recover if the promotion was unexpected.
         _promote_edit_artifacts_with_backup(staging_dir, out_dir)
         out_video = out_dir / "video.mp4"
     else:
         # Default: leave original untouched, promote to a fresh directory.
-        # Use a unique name based on the original dir name + timestamp.
-        stamp = int(time.time() * 1000)
-        new_out_dir = out_dir.parent / f"{out_dir.name}.edited-{stamp}"
-        # Move the whole staging dir to its final home (same filesystem = atomic rename).
-        try:
-            staging_dir.rename(new_out_dir)
-        except OSError:
-            # Cross-filesystem fallback: copy then remove staging.
-            if new_out_dir.exists():
-                shutil.rmtree(new_out_dir, ignore_errors=True)
-            shutil.copytree(staging_dir, new_out_dir)
-            shutil.rmtree(staging_dir, ignore_errors=True)
+        # Use a unique name based on the original dir name + timestamp +
+        # random hex. We check for existence before rename and never delete
+        # an existing destination -- every OSError is handled without
+        # destructive cleanup, and cross-filesystem failures fall back to
+        # copying the staging directory wholesale.
+        import shutil as _shutil
+        import uuid as _uuid
+
+        new_out_dir = None
+        for _ in range(10):
+            stamp = int(time.time() * 1000)
+            candidate = out_dir.parent / f"{out_dir.name}.edited-{stamp}-{_uuid.uuid4().hex[:8]}"
+            if candidate.exists():
+                continue
+            try:
+                # Same filesystem: atomic rename.
+                staging_dir.rename(candidate)
+                new_out_dir = candidate
+                break
+            except OSError:
+                # Cross-filesystem move or other failure: copy the tree and
+                # remove the staging directory we created. The destination was
+                # already verified to not exist, so copytree cannot clobber it.
+                _shutil.copytree(staging_dir, candidate)
+                staging_dir.rmtree(ignore_errors=True)
+                new_out_dir = candidate
+                break
+        if new_out_dir is None:
+            raise RuntimeError("Could not reserve a unique output directory")
         out_video = new_out_dir / "video.mp4"
 
     typer.echo(f"Video: {out_video}")
@@ -678,8 +692,15 @@ def _promote_edit_artifacts_with_backup(staging_dir: Path, out_dir: Path) -> Non
                     shutil.copytree(backup_path, original_path)
                 elif backup_path.is_file():
                     shutil.copy2(backup_path, original_path)
-            except Exception:
-                pass  # best-effort rollback
+            except Exception as exc:
+                # Surface rollback failures clearly so the operator is not
+                # left wondering why the original is missing or corrupted.
+                # The backup directory is NOT deleted here, because we cannot
+                # yet confirm the original is intact.
+                typer.echo(
+                    f"Warning: rollback failed for {original_path}: {exc}. "
+                    f"Backups preserved under {backup_dir} for manual recovery."
+                )
         # Remove any artifacts we may have copied but couldn't roll back.
         for artifact in artifacts:
             dst = out_dir / artifact
@@ -687,8 +708,10 @@ def _promote_edit_artifacts_with_backup(staging_dir: Path, out_dir: Path) -> Non
                 pass  # leave as-is, rollback attempted above
         raise
 
-    # Promotion succeeded: remove backup dir.
-    shutil.rmtree(backup_dir, ignore_errors=True)
+    # Promotion succeeded: leave the backup in place so the user can
+    # verify the result before deciding to discard it or roll back.
+    # (The '--replace' mode is opt-in precisely because in-place
+    # replacement carries risk; the backup preserves recoverability.)
 
 
 def _catalog(registry: ComponentRegistry) -> str:

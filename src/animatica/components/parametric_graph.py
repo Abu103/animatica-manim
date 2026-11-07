@@ -108,12 +108,36 @@ class ParametricGraph(Component):
         jump_threshold = expected_step * 10.0
 
         # Split into segments at discontinuities / non-finite gaps.
+        # Two conditions:
+        # 1. Jump above the scale-aware threshold (a genuine discontinuity).
+        # 2. Non-consecutive sample indices (a gap where one or more samples
+        #    failed or produced non-finite values). A smooth curve with a
+        #    single skipped sample can still have a small dx/dy, so the
+        #    jump heuristic alone is NOT sufficient.  We therefore track the
+        #    sequence of valid sample indices and split whenever the current
+        #    index is not immediately after the previous valid index.
+        #
+        # This heuristic cannot perfectly detect every discontinuity or every
+        # non-finite gap, but it correctly handles both large-scale continuous
+        # curves (previously split into isolated points by the fixed absolute
+        # threshold) and curves with internal non-finite samples.
         segments: list[list[tuple[float, float]]] = []
         current_segment: list[tuple[float, float]] = []
         prev_point: tuple[float, float] | None = None
+        prev_idx = valid_indices[0]
 
-        for pt in all_pts:
+        for idx, pt in zip(valid_indices, all_pts):
             if prev_point is not None:
+                # Gap in the sample sequence => non-finite or failed sample(s)
+                # in between.  Split here even if the jump distance is small.
+                if idx != prev_idx + 1:
+                    if current_segment:
+                        segments.append(current_segment)
+                    current_segment = [pt]
+                    prev_point = pt
+                    prev_idx = idx
+                    continue
+
                 dx = abs(pt[0] - prev_point[0])
                 dy = abs(pt[1] - prev_point[1])
                 if dx > jump_threshold or dy > jump_threshold:
@@ -124,7 +148,10 @@ class ParametricGraph(Component):
                     current_segment.append(pt)
             else:
                 current_segment.append(pt)
+
             prev_point = pt
+            prev_idx = idx
+
         if current_segment:
             segments.append(current_segment)
 
