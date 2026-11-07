@@ -96,7 +96,10 @@
     .clause-result { position:absolute; z-index:2; left:923px; top:45px; width:197px; height:82px; border:1px solid #55716b; background:#253638; border-radius:15px; overflow:hidden; }
     .clause-result .result-kicker { position:absolute; top:8px; left:17px; font-size:14px; letter-spacing:1.6px; color:#dbf4e8; font-weight:700; }
     .clause-result .waiting, .clause-result .resolved { position:absolute; left:16px; top:35px; font:700 22px Space,DejaVu Sans,sans-serif; white-space:nowrap; }
-    .clause-result .waiting { color:#bdcac5; } .clause-result .resolved { opacity:0; color:var(--mint); }
+    .clause-result .waiting { color:#bdcac5; }
+    .clause-result .resolved { opacity:0; }
+    .clause-result .resolved.true { color:var(--mint); }
+    .clause-result .resolved.false { color:var(--coral); }
     .clause-result .resolved .truth-icon { font-size:25px; margin-right:7px; }
     .packet { position:absolute; z-index:6; top:216px; width:44px; height:44px; border-radius:50%; display:grid; place-items:center; box-shadow:0 0 0 5px #8cecb12a,0 0 26px #a6ffd799; font:700 23px DejaVu Sans,sans-serif; opacity:0; will-change:transform,opacity; }
     .packet.t { background:#c0fbd8; color:#12372d; border:2px solid #f2ffe8; }
@@ -110,14 +113,18 @@
     .and-input.i1 { left:206px; } .and-input.i2 { left:516px; }
     .and-input .small-label { position:absolute; top:5px; left:13px; font-size:13px; letter-spacing:1.5px; color:#dbf4e8; font-weight:700; }
     .and-input .initial, .and-input .reveal { position:absolute; left:13px; top:27px; font:700 20px Space,sans-serif; white-space:nowrap; }
-    .and-input .initial { color:#becfc9; } .and-input .reveal { opacity:0; color:var(--mint); }
+    .and-input .initial { color:#becfc9; } .and-input .reveal { opacity:0; }
+    .and-input .reveal.true { color:var(--mint); }
+    .and-input .reveal.false { color:var(--coral); }
     .and-input .reveal .truth-icon { font-size:17px; margin-right:4px; }
     .and-word { position:absolute; top:39px; left:399px; color:#c6dace; font:700 17px Manrope,sans-serif; letter-spacing:1px; }
     .and-arrow { position:absolute; top:34px; left:733px; color:#a4c6b8; font:500 26px Space,sans-serif; }
     .and-output { position:absolute; top:16px; left:818px; width:304px; height:76px; border:1px solid #728e80; border-radius:15px; background:#263e3a; overflow:hidden; }
     .and-output .small-label { position:absolute; top:7px; left:17px; font-size:14px; font-weight:700; letter-spacing:1.8px; color:#b2c9b9; }
     .and-output .initial, .and-output .reveal { position:absolute; top:29px; left:16px; font:700 25px Space,sans-serif; }
-    .and-output .initial { color:#cfddd3; } .and-output .reveal { opacity:0; color:var(--mint); }
+    .and-output .initial { color:#cfddd3; } .and-output .reveal { opacity:0; }
+    .and-output .reveal.true { color:var(--mint); }
+    .and-output .reveal.false { color:var(--coral); }
     .and-output .reveal .truth-icon { font-size:28px; }
     .lab-foot { position:absolute; left:80px; bottom:42px; color:#87a8a1; font-size:12px; letter-spacing:1.2px; opacity:0; }
 
@@ -130,12 +137,18 @@
     .summary-card { position:absolute; top:333px; width:489px; height:127px; border-radius:19px; border:1px solid #8ac3a9; background:#1d423b; box-shadow:0 12px 42px #07191066; opacity:0; padding:15px 22px; }
     .summary-card.s1 { left:80px; } .summary-card.s2 { right:80px; }
     .summary-card .summary-kicker { font-size:16px; letter-spacing:2px; font-weight:700; color:#a6cfb6; }
-    .summary-card .summary-truth { font:700 34px Space,sans-serif; color:var(--mint); margin-top:1px; }
+    .summary-card .summary-truth { font:700 34px Space,sans-serif; margin-top:1px; }
+    .summary-card .summary-truth.true { color:var(--mint); }
+    .summary-card .summary-truth.false { color:var(--coral); }
     .summary-card .summary-truth .truth-icon { font-size:30px; margin-right:9px; }
     .summary-card .summary-formula { font:500 20px Space,sans-serif; color:#c6dfd3; margin-top:1px; white-space:nowrap; }
     .summary-and { position:absolute; left:592px; top:370px; width:96px; height:54px; border-radius:27px; border:1px solid #a5f5cc; background:#153d33; display:grid; place-items:center; font:700 17px Manrope,sans-serif; color:var(--mint); opacity:0; box-shadow:0 0 32px #a5f5cc36; }
-    .final-result { position:absolute; left:80px; top:486px; width:1120px; height:74px; border:1px solid #a9f4bd; background:linear-gradient(90deg,#1b513c,#183d35); border-radius:17px; display:flex; align-items:center; gap:20px; padding:0 22px; opacity:0; }
-    .final-result .final-check { width:38px; height:38px; border-radius:50%; background:#b5f5ce; display:grid; place-items:center; font:700 25px DejaVu Sans,sans-serif; color:#12402e; }
+    .final-result { position:absolute; left:80px; top:486px; width:1120px; height:74px; border:1px solid #a9f4bd; border-radius:17px; display:flex; align-items:center; gap:20px; padding:0 22px; opacity:0; }
+    .final-result.outcome-true { border-color:#b9f5ce; background:linear-gradient(90deg,#1b513c,#183d35); }
+    .final-result.outcome-false { border-color:#ffad95; background:linear-gradient(90deg,#3d2623,#3a2f2d); }
+    .final-result .final-check { width:38px; height:38px; border-radius:50%; display:grid; place-items:center; font:700 25px DejaVu Sans,sans-serif; color:#12402e; }
+    .final-result .final-check.true { background:#b5f5ce; }
+    .final-result .final-check.false { background:#ffad95; color:#3d2623; }
     .final-result strong { font:700 28px Space,sans-serif; letter-spacing:-.4px; }
     #outro-take-label { position:absolute; top:595px; left:80px; font-size:12px; letter-spacing:2.3px; color:#a5f5cc; font-weight:700; opacity:0; }
     #outro-take { position:absolute; top:617px; left:80px; margin:0; font-size:24px; line-height:1.38; color:#edf5ee; opacity:0; }
@@ -177,7 +190,7 @@
       <div id="lab-note">
         <span id="note-0">Two OR clauses. Both must pass the AND.</span>
         <span id="note-1">Set x1, x2 and x3 to the assigned values.</span>
-        <span id="note-2">NOT reverses the value: TRUE becomes FALSE.</span>
+        <span id="note-2">NOT reverses the value.</span>
         <span id="note-3">OR passes when at least one literal is TRUE.</span>
         <span id="note-4">AND passes only when both clauses are TRUE.</span>
       </div>
@@ -342,7 +355,9 @@
     waiting.textContent = '';
     resolvedDiv.innerHTML = '<span class="truth-icon">' + truthIcon(resolvedValue) + '</span>' + truthWord(resolvedValue);
     resolvedDiv.className = 'resolved ' + truthCls(resolvedValue);
-    andInput.querySelector('.reveal').innerHTML = '<span class="truth-icon">' + truthIcon(revealValue) + '</span>' + truthWord(revealValue);
+    const andReveal = andInput.querySelector('.reveal');
+    andReveal.innerHTML = '<span class="truth-icon">' + truthIcon(revealValue) + '</span>' + truthWord(revealValue);
+    andReveal.className = 'reveal ' + truthCls(revealValue);
   };
 
   // Clause results now show computed values
@@ -351,10 +366,33 @@
 
   // AND output from computed formula value
   const andFinal = document.getElementById('and-final');
-  andFinal.querySelector('.reveal').innerHTML = '<span class="truth-icon">' + truthIcon(formulaValue) + '</span>' + truthWord(formulaValue);
+  const andFinalReveal = andFinal.querySelector('.reveal');
+  andFinalReveal.innerHTML = '<span class="truth-icon">' + truthIcon(formulaValue) + '</span>' + truthWord(formulaValue);
+  andFinalReveal.className = 'reveal ' + truthCls(formulaValue);
+  const finalResultEl = document.getElementById('final-result');
+  finalResultEl.className = 'final-result outcome-' + truthCls(formulaValue);
   document.getElementById('final-text').textContent = 'The whole formula is ' + truthWord(formulaValue) + '.';
+  const finalCheck = document.querySelector('#final-result .final-check');
+  finalCheck.textContent = truthIcon(formulaValue);
+  finalCheck.className = 'final-check ' + truthCls(formulaValue);
+
+  // Outro text from data
+  const outroTitle = formulaValue ? 'A satisfying assignment.' : 'This assignment does not satisfy.';
+  document.getElementById('outro-title').textContent = outroTitle;
+  const c1Word = truthWord(clauseValues[0]);
+  const c2Word = truthWord(clauseValues[1]);
+  const fWord = truthWord(formulaValue);
+  document.getElementById('outro-sub').textContent = formulaValue
+    ? 'Both OR clauses pass. Their AND is TRUE.'
+    : 'Clause 1 is ' + c1Word + ', Clause 2 is ' + c2Word + '. Their AND is ' + fWord + '.';
 
   // Summary cards from data
+  const s1Truth = document.querySelector('#summary-1 .summary-truth');
+  s1Truth.innerHTML = '<span class="truth-icon ' + truthCls(clauseValues[0]) + '">' + truthIcon(clauseValues[0]) + '</span>' + truthWord(clauseValues[0]);
+  s1Truth.className = 'summary-truth ' + truthCls(clauseValues[0]);
+  const s2Truth = document.querySelector('#summary-2 .summary-truth');
+  s2Truth.innerHTML = '<span class="truth-icon ' + truthCls(clauseValues[1]) + '">' + truthIcon(clauseValues[1]) + '</span>' + truthWord(clauseValues[1]);
+  s2Truth.className = 'summary-truth ' + truthCls(clauseValues[1]);
   document.getElementById('summary-f1').innerHTML = data.clauses[0].literals.map(l => litLabel(l.var, l.negated)).join(' &nbsp;OR&nbsp; ');
   document.getElementById('summary-f2').innerHTML = data.clauses[1].literals.map(l => litLabel(l.var, l.negated)).join(' &nbsp;OR&nbsp; ');
 
@@ -436,7 +474,9 @@
       tl.to(packet, {opacity:0,scale:.64,duration:.30}, arrived+.13);
     }
     const reveal = arrived + (negated ? .36 : .12);
-    tl.to(tile, {backgroundColor: negated ? '#3a2f2d' : '#22473b', borderColor: negated ? '#ffad95' : '#a5f5cc', duration:.30}, reveal);
+    const tileValue = data.assignment[tile.dataset.var];
+    const tileLitValue = negated ? !tileValue : tileValue;
+    tl.to(tile, {backgroundColor: tileLitValue ? '#22473b' : '#3a2f2d', borderColor: tileLitValue ? '#a5f5cc' : '#ffad95', duration:.30}, reveal);
     tl.to(tile.querySelector('.lit-pending'), {opacity:0,duration:.13}, reveal);
     from(tile.querySelector('.lit-result'), {opacity:0,y:8}, {opacity:1,y:0,duration:.28}, reveal+.06);
   };

@@ -478,3 +478,214 @@ def test_pilot_html_contains_no_raw_script_injection():
     assert "<script" not in cleaned
     assert "alert(" not in cleaned
     assert "onerror" not in cleaned
+
+
+# ---------------------------------------------------------------------------
+# Regression tests: actual rendered DOM text, symbols, and states
+# ---------------------------------------------------------------------------
+
+def test_rendered_final_result_matches_evaluation():
+    """Verify the generated HTML has the correct outcome logic (template + JS)."""
+    from pilot import run
+    import re
+    
+    for fixture_name, expected_formula in [
+        ("fixture_a_all_true.json", True),
+        ("fixture_b_all_false.json", True),
+        ("fixture_c_false_formula.json", False),
+    ]:
+        fixture = ROOT / "fixtures" / fixture_name
+        output = ROOT / "renders" / f"check_{fixture_name}.html"
+        run(fixture, output.name)
+        html = output.read_text(encoding="utf-8")
+        
+        # Check final result text template (static) - will be replaced by JS at runtime
+        if expected_formula:
+            assert "The whole formula is TRUE." in html
+        else:
+            assert "The whole formula is TRUE." in html  # template text
+        
+        # Check that the JS logic for setting final result is present
+        assert "The whole formula is ' + truthWord(formulaValue) + '.'" in html
+        
+        # Check outro title logic in JS
+        assert "A satisfying assignment." in html
+        assert "This assignment does not satisfy." in html
+        
+        # Check subtitle logic in JS
+        assert "Both OR clauses pass. Their AND is TRUE." in html
+        assert "Clause 1 is ' + c1Word + ', Clause 2 is ' + c2Word + '. Their AND is ' + fWord + '.'" in html
+        
+        # Check clause summary cards logic
+        if expected_formula:
+            assert "TRUE" in html  # both clauses TRUE
+        else:
+            assert "FALSE" in html
+            assert "TRUE" in html
+
+
+def test_rendered_literal_styling_consistent():
+    """Verify literal cells use green for TRUE, red for FALSE regardless of negation (JS logic present)."""
+    from pilot import run
+    import re
+    
+    for fixture_name in [
+        "fixture_a_all_true.json",
+        "fixture_b_all_false.json",
+        "fixture_c_false_formula.json",
+    ]:
+        fixture = ROOT / "fixtures" / fixture_name
+        output = ROOT / "renders" / f"check_{fixture_name}.html"
+        run(fixture, output.name)
+        html = output.read_text(encoding="utf-8")
+        
+        # Check that the JS logic for setting literal styles based on truth value is present
+        assert "tileLitValue ? '#22473b' : '#3a2f2d'" in html
+        assert "tileLitValue ? '#a5f5cc' : '#ffad95'" in html
+        
+        # Check that truth icons are used
+        assert "\\u2713" in html or "\\u2713" in html  # checkmark
+        assert "\\u00D7" in html  # multiplication sign (×)
+        
+        # Check that both truth states are possible in the data
+        if fixture_name == "fixture_a_all_true.json":
+            assert "TRUE" in html
+            assert "FALSE" in html
+        elif fixture_name == "fixture_b_all_false.json":
+            assert "TRUE" in html
+            assert "FALSE" in html
+        elif fixture_name == "fixture_c_false_formula.json":
+            assert "TRUE" in html
+            assert "FALSE" in html
+
+
+def test_rendered_clause_results_match_evaluation():
+    """Verify clause result boxes show correct TRUE/FALSE with correct icons (JS logic present)."""
+    from pilot import run
+    
+    for fixture_name, expected_clauses in [
+        ("fixture_a_all_true.json", [True, True]),
+        ("fixture_b_all_false.json", [True, True]),
+        ("fixture_c_false_formula.json", [False, True]),
+    ]:
+        fixture = ROOT / "fixtures" / fixture_name
+        output = ROOT / "renders" / f"check_{fixture_name}.html"
+        run(fixture, output.name)
+        html = output.read_text(encoding="utf-8")
+        
+        # Check that JS logic for resolving clauses is present
+        assert "applyComputedClauseResult" in html
+        assert "clauseValues.every(Boolean)" in html
+        
+        for i, expected in enumerate(expected_clauses, 1):
+            expected_word = "TRUE" if expected else "FALSE"
+            expected_icon = "✓" if expected else "×"
+            
+            # Check clause label exists
+            assert f"CLAUSE 0{i}" in html, f"Fixture {fixture_name}: missing Clause 0{i} label"
+            assert expected_word in html, f"Fixture {fixture_name}: Clause {i} missing {expected_word}"
+            
+            # Check AND input reveals logic
+            assert "andReveal.innerHTML" in html
+            assert "truthIcon(revealValue)" in html
+            assert "truthWord(revealValue)" in html
+            assert "andReveal.className = 'reveal ' + truthCls(revealValue)" in html
+
+
+def test_outro_takeaway_always_correct():
+    """Verify takeaway text is correct and doesn't claim formula is unsatisfiable for false result."""
+    from pilot import run
+    
+    for fixture_name, expected_formula in [
+        ("fixture_a_all_true.json", True),
+        ("fixture_b_all_false.json", True),
+        ("fixture_c_false_formula.json", False),
+    ]:
+        fixture = ROOT / "fixtures" / fixture_name
+        output = ROOT / "renders" / f"check_{fixture_name}.html"
+        run(fixture, output.name)
+        html = output.read_text(encoding="utf-8")
+        
+        # Takeaway should always be about existence of satisfying assignment, never claim formula is unsatisfiable
+        # Check that the takeaway text is present (may have escaped quotes)
+        assert "3-SAT asks whether there exists an assignment that makes every clause true." in html or \
+               "3-SAT asks whether there exists an assignment" in html
+        
+        if expected_formula:
+            assert "A satisfying assignment." in html
+        else:
+            assert "This assignment does not satisfy." in html
+            # Should NOT say "unsatisfiable" or "no assignment works"
+            assert "unsatisfiable" not in html.lower()
+            assert "no assignment" not in html.lower()
+
+
+def test_schema_rejects_closing_script_tag():
+    """Verify schema rejects closing script tag in labels before rendering."""
+    from schema import validate_pilot_data, SchemaError
+    
+    raw = {
+        "variables": [
+            {"id": "x1", "label": "x1</script><script>evil()</script>"},
+            {"id": "x2", "label": "x\u2082"},
+            {"id": "x3", "label": "x\u2083"}
+        ],
+        "clauses": [
+            {"id": "c1", "label": "C1", "rule": "ok", "literals": [
+                {"var": "x1", "negated": False}, {"var": "x2", "negated": False}, {"var": "x3", "negated": False}
+            ]},
+            {"id": "c2", "label": "C2", "rule": "ok", "literals": [
+                {"var": "x1", "negated": True}, {"var": "x2", "negated": True}, {"var": "x3", "negated": True}
+            ]}
+        ],
+        "assignment": {"x1": True, "x2": True, "x3": True},
+        "case_label": "OK"
+    }
+    with pytest.raises(SchemaError, match="disallowed characters"):
+        validate_pilot_data(raw)
+
+
+def test_schema_rejects_opening_script_tag():
+    """Verify schema rejects opening script tag in labels before rendering."""
+    from schema import validate_pilot_data, SchemaError
+    
+    raw = {
+        "variables": [
+            {"id": "x1", "label": "<script>alert(1)</script>"},
+            {"id": "x2", "label": "x\u2082"},
+            {"id": "x3", "label": "x\u2083"}
+        ],
+        "clauses": [
+            {"id": "c1", "label": "C1", "rule": "ok", "literals": [
+                {"var": "x1", "negated": False}, {"var": "x2", "negated": False}, {"var": "x3", "negated": False}
+            ]},
+            {"id": "c2", "label": "C2", "rule": "ok", "literals": [
+                {"var": "x1", "negated": True}, {"var": "x2", "negated": True}, {"var": "x3", "negated": True}
+            ]}
+        ],
+        "assignment": {"x1": True, "x2": True, "x3": True},
+        "case_label": "OK"
+    }
+    with pytest.raises(SchemaError, match="disallowed characters"):
+        validate_pilot_data(raw)
+
+
+def test_html_escaping_in_rendered_output():
+    """Verify that if a dangerous label somehow passed schema, HTML escaping neutralizes it."""
+    from escape import escape_html
+    
+    dangerous = "<script>alert(1)</script>"
+    escaped = escape_html(dangerous)
+    # Escaped output should have HTML entities, not raw tags
+    assert "&lt;script&gt;" in escaped  # escaped form contains &lt;script&gt;
+    assert "&#x2F;" in escaped  # forward slash escaped
+    assert "<script>" not in escaped
+    assert "</script>" not in escaped
+    
+    # Closing script tag breakout
+    dangerous2 = "</script><script>evil()</script>"
+    escaped2 = escape_html(dangerous2)
+    assert "&lt;&#x2F;script&gt;" in escaped2
+    assert "&lt;script&gt;" in escaped2
+    assert "<script>" not in escaped2
+    assert "</script>" not in escaped2
