@@ -1,4 +1,5 @@
 import pytest
+from pathlib import Path
 from pydantic import ValidationError
 
 from animatica.components.equation import Equation
@@ -95,7 +96,10 @@ def test_equation_no_side_safe_area_warnings(tmp_path):
 
     sb_path = tmp_path / "pythagoras_storyboard.json"
     import shutil
-    shutil.copy("acceptance/gallery/pythagoras/storyboard.json", sb_path)
+
+    gallery = Path(__file__).resolve().parent.parent / "acceptance/gallery/pythagoras/storyboard.json"
+    assert gallery.is_file(), f"missing gallery storyboard: {gallery}"
+    shutil.copy(gallery, sb_path)
 
     result = make_video(
         storyboard_path=sb_path,

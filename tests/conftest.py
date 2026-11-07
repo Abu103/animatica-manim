@@ -5,6 +5,25 @@ import pytest
 
 
 def _render_env_ok() -> bool:
+    # The CLI puts a TinyTeX install on PATH for itself; a bare pytest process has
+    # to do the same, otherwise Windows CI skips tests it could actually run.
+    try:
+        import os
+
+        from animatica.doctor import ensure_tex_on_path, tinytex_bin_dirs
+
+        ensure_tex_on_path()
+        if shutil.which("latex") and not shutil.which("dvisvgm"):
+            # tlmgr sometimes drops dvisvgm outside bin/<arch>; find it and use it.
+            for bindir in tinytex_bin_dirs():
+                for hit in bindir.parents[1].rglob("dvisvgm*"):
+                    if hit.is_file():
+                        os.environ["PATH"] = str(hit.parent) + os.pathsep + os.environ["PATH"]
+                        break
+                if shutil.which("dvisvgm"):
+                    break
+    except Exception:  # pragma: no cover - doctor is optional here
+        pass
     return (importlib.util.find_spec("manim") is not None
             and shutil.which("latex") is not None and shutil.which("dvisvgm") is not None
             and (shutil.which("ffmpeg") is not None or importlib.util.find_spec("imageio_ffmpeg") is not None))

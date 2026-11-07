@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import shutil
 import subprocess
+import sys
 from pathlib import Path
 
 import pytest
@@ -10,22 +11,46 @@ import pytest
 ROOT = Path(__file__).resolve().parent.parent
 SCRIPT = ROOT / "scripts" / "bootstrap.sh"
 
-pytestmark = pytest.mark.skipif(shutil.which("bash") is None, reason="needs bash")
+def _usable_bash() -> str | None:
+    """A bash that can run the script. On Windows, System32\\bash.exe is the WSL
+    launcher, which fails with "no installed distributions", so Git's bash is used."""
+    candidates = [shutil.which("bash")]
+    if sys.platform == "win32":
+        candidates += [
+            r"C:\Program Files\Git\bin\bash.exe",
+            r"C:\Program Files\Git\usr\bin\bash.exe",
+            r"C:\Program Files (x86)\Git\bin\bash.exe",
+        ]
+    for candidate in candidates:
+        if not candidate:
+            continue
+        try:
+            probe = subprocess.run([candidate, "--version"], capture_output=True, text=True, timeout=30)
+        except Exception:
+            continue
+        if probe.returncode == 0 and "bash" in probe.stdout.lower():
+            return candidate
+    return None
+
+
+BASH = _usable_bash()
+
+pytestmark = pytest.mark.skipif(BASH is None, reason="needs a usable bash")
 
 
 def test_script_parses():
-    result = subprocess.run(["bash", "-n", str(SCRIPT)], capture_output=True, text=True)
+    result = subprocess.run([BASH, "-n", str(SCRIPT)], capture_output=True, text=True)
     assert result.returncode == 0, result.stderr
 
 
 def test_help_lists_the_flags():
-    result = subprocess.run(["bash", str(SCRIPT), "--help"], capture_output=True, text=True)
+    result = subprocess.run([BASH, str(SCRIPT), "--help"], capture_output=True, text=True)
     assert result.returncode == 0
     assert "ANIMATICA_NATIVE_URL" in result.stdout
 
 
 def test_unknown_flag_is_rejected():
-    result = subprocess.run(["bash", str(SCRIPT), "--nope"], capture_output=True, text=True)
+    result = subprocess.run([BASH, str(SCRIPT), "--nope"], capture_output=True, text=True)
     assert result.returncode == 2
     assert "unknown flag" in result.stderr
 
