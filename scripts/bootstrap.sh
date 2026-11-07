@@ -174,6 +174,9 @@ else
 fi
 say "  -> $PY"
 
+# uv venvs ship without pip; add it so `pip install <extra>` works for the user too.
+"$PY" -m ensurepip --upgrade >/dev/null 2>&1 || true
+
 pip_install() {
   if have uv; then uv pip install --python "$PY" "$@"; else "$PY" -m pip install -q "$@"; fi
 }

@@ -54,7 +54,9 @@ jobs:
       - name: Windows installer, end to end (PowerShell)
         run: pwsh -NoProfile -File scripts/bootstrap.ps1
       - name: Test extras into the venv the installer built
-        run: .\.venv\Scripts\python.exe -m pip install -q -e ".[dev,tui]"
+        run: |
+          .\.venv\Scripts\python.exe -m ensurepip --upgrade 2>$null
+          .\.venv\Scripts\python.exe -m pip install --disable-pip-version-check -q -e ".[dev,tui]"
       - name: Doctor (must pass)
         run: .\.venv\Scripts\python.exe -m animatica doctor
       - name: Full test suite (zero skips allowed)

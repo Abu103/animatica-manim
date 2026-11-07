@@ -14,6 +14,7 @@ import os
 import re
 import subprocess
 import sys
+from pathlib import Path
 
 #: Anything below this means tests silently stopped being collected.
 MIN_PASSED = int(os.environ.get("ANIMATICA_MIN_PASSED", "600"))
@@ -57,13 +58,38 @@ def problems(counts: dict[str, int], returncode: int, text: str) -> list[str]:
     return found
 
 
+#: Failure detail is surfaced through check annotations: job logs are not
+#: readable from anywhere except a browser, annotations are.
+_ANNOTATION_HEAD = re.compile(r"^(FAILED|ERROR|SKIPPED|E   )")
+
+
+def _excerpt(text: str, limit: int = 12) -> list[str]:
+    """The lines most worth seeing when the suite is not clean."""
+    interesting = [ln.rstrip() for ln in text.splitlines() if _ANNOTATION_HEAD.match(ln.strip())]
+    if not interesting:
+        interesting = [ln.rstrip() for ln in text.splitlines() if "warning" in ln.lower()][:limit]
+    return interesting[:limit]
+
+
+def annotate(text: str, issues: list[str]) -> None:
+    """Emit GitHub workflow commands so CI failures are readable via the API."""
+    if os.environ.get("GITHUB_ACTIONS") != "true":
+        return
+    print("::error title=test suite not clean::" + "; ".join(issues)[:900])
+    for line in _excerpt(text):
+        print(f"::error::{line[:900]}")
+
+
 def main(argv: list[str]) -> int:
-    cmd = [sys.executable, "-m", "pytest", "-q", "--strict-markers", *argv]
+    cmd = [sys.executable, "-m", "pytest", "-q", "-rs", "--strict-markers", *argv]
     print(f"$ {' '.join(cmd)}", flush=True)
     proc = subprocess.run(cmd, capture_output=True, text=True)
     print(proc.stdout, end="")
     if proc.stderr.strip():
         print(proc.stderr, file=sys.stderr, end="")
+
+    log = Path("ci-tests.log")
+    log.write_text(proc.stdout + "\n" + proc.stderr, encoding="utf-8")
 
     counts = parse_summary(proc.stdout)
     issues = problems(counts, proc.returncode, proc.stdout)
@@ -73,8 +99,11 @@ def main(argv: list[str]) -> int:
     )
     if issues:
         print("FAIL: " + "; ".join(issues))
+        annotate(proc.stdout + proc.stderr, issues)
         return 1
     print("CLEAN: every test ran, nothing failed, no warnings.")
+    if os.environ.get("GITHUB_ACTIONS") == "true":
+        print(f"::notice title=test suite clean::{counts['passed']} passed, no skips, no warnings")
     return 0
 
 

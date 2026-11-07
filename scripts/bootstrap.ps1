@@ -103,6 +103,11 @@ if (-not (Test-Path $py)) {
 }
 Write-Host "  -> $py"
 
+# uv venvs ship without pip; add it so `pip install <extra>` works for the user too.
+$ErrorActionPreference = "Continue"
+& $py -m ensurepip --upgrade *> $null
+$ErrorActionPreference = "Stop"
+
 Write-Host "  installing animatica + manim (this is the slow part)"
 if (Get-Command uv -ErrorAction SilentlyContinue) {
     Invoke-Checked "uv pip install" { uv pip install --python $py -e . }
@@ -161,6 +166,13 @@ if ($latexMissing) {
     Write-Host "Note: LaTeX is missing, so MathTex/equation scenes will warn."
     Write-Host "      Text, shapes, charts and everything else render fine."
     Write-Host "      Add it later with: animatica doctor --fix"
+}
+
+# In CI (or any scripted use) make the fresh tools visible to later steps.
+if ($env:GITHUB_PATH) {
+    Add-Content $env:GITHUB_PATH (Join-Path $root ".venv\Scripts")
+    $uvDir = Split-Path (Get-Command uv -ErrorAction SilentlyContinue).Source -ErrorAction SilentlyContinue
+    if ($uvDir) { Add-Content $env:GITHUB_PATH $uvDir }
 }
 
 Write-Host ""
