@@ -96,8 +96,10 @@ jobs:
       - name: Pack the bundle
         run: |
           set -uo pipefail
-          TEXROOT="${{ env.TEXROOT }}"
-          [ -d "$TEXROOT/bin" ] || TEXROOT=$(dirname "$(dirname "$(dirname "$(readlink -f "$(command -v latex)")")")")
+          trap 'echo "::error title=pack failed::line $LINENO"' ERR
+          # GITHUB_ENV values are visible as $TEXROOT here, not as ${{ env.TEXROOT }}
+          [ -d "${TEXROOT:-}/bin" ] || TEXROOT=$(dirname "$(dirname "$(dirname "$(readlink -f "$(command -v latex)")")")")
+          echo "::notice title=pack::texroot=$TEXROOT"
           echo "::notice title=diag::tlmgr=$TLMGR root=$TEXROOT exists=$([ -d "$TEXROOT" ] && echo yes || echo no)"
           if [ ! -d "$TEXROOT" ]; then
             echo "::error title=no tex root::looked for tlmgr under $HOME; candidates: $(find "$HOME" -name tlmgr -maxdepth 6 2>/dev/null | head -3 | tr '\n' ' ')"
@@ -108,8 +110,11 @@ jobs:
           cp -a "$TEXROOT" bundle/tex || { echo "::error title=copy failed::$TEXROOT"; exit 1; }
           UNPACKED=$(du -sm bundle/tex | cut -f1)
           tar -C bundle -cf - tex | xz -9e -T0 > animatica-tex.tar.xz || { echo "::error title=xz failed::"; exit 1; }
-          tar tf animatica-tex.tar.xz | grep -q "/bin/" || { echo "::error title=bundle has no binaries::"; exit 1; }
-          tar tf animatica-tex.tar.xz | grep -q "dvisvgm" || { echo "::error title=bundle has no dvisvgm::"; exit 1; }
+          # listing to a file: `grep -q` on a pipe kills tar with SIGPIPE and looks like a missing file
+          tar tf animatica-tex.tar.xz > /tmp/texlist.txt
+          grep -q "/bin/" /tmp/texlist.txt || { echo "::error title=bundle has no binaries::"; exit 1; }
+          grep -q "dvisvgm" /tmp/texlist.txt || { echo "::error title=bundle has no dvisvgm::"; exit 1; }
+          echo "::notice title=bundle contents::$(grep -c . /tmp/texlist.txt) entries, $(grep -c "/bin/" /tmp/texlist.txt) in bin/"
           ls -lh animatica-tex.tar.xz
           echo "::notice title=tex bundle size::$(du -m animatica-tex.tar.xz | cut -f1) MB compressed, ${UNPACKED} MB unpacked"
 
