@@ -89,20 +89,25 @@ jobs:
 
       - name: Pack the bundle
         run: |
-          set -euo pipefail
-          trap 'echo "::error title=pack failed::line $LINENO of the pack step"' ERR
-          TLMGR=$(find "$HOME" -name tlmgr -path "*/bin/*" | head -1)
-          [ -n "$TLMGR" ] || { echo "::error::tlmgr not found"; exit 1; }
-          TEXROOT=$(dirname "$(dirname "$(dirname "$TLMGR")")")
-          echo "tex root: $TEXROOT"
-          du -sh "$TEXROOT"
+          set -uo pipefail
+          TLMGR=$(find "$HOME" -name tlmgr -path "*/bin/*" 2>/dev/null | head -1)
+          BINTEX=$(dirname "${TLMGR:-/nonexistent}")
+          TEXROOT=$(dirname "$(dirname "$BINTEX")")
+          if [ ! -d "$TEXROOT" ]; then
+            TEXROOT=$(find "$HOME" -maxdepth 4 -type d -name "TinyTeX*" 2>/dev/null | head -1)
+          fi
+          echo "::notice title=diag::tlmgr=$TLMGR bin=$BINTEX root=$TEXROOT exists=$([ -d "$TEXROOT" ] && echo yes || echo no)"
+          if [ ! -d "$TEXROOT" ]; then
+            echo "::error title=no tex root::looked for tlmgr under $HOME; candidates: $(find "$HOME" -name tlmgr -maxdepth 6 2>/dev/null | head -3 | tr '\n' ' ')"
+            exit 1
+          fi
+          echo "unpacked: $(du -sh "$TEXROOT" 2>/dev/null | cut -f1)"
           rm -rf bundle && mkdir -p bundle
-          cp -a "$TEXROOT" bundle/tex
+          cp -a "$TEXROOT" bundle/tex || { echo "::error title=copy failed::$TEXROOT"; exit 1; }
           UNPACKED=$(du -sm bundle/tex | cut -f1)
-          tar -C bundle -cf - tex | xz -9e -T0 > animatica-tex.tar.xz
+          tar -C bundle -cf - tex | xz -9e -T0 > animatica-tex.tar.xz || { echo "::error title=xz failed::"; exit 1; }
           ls -lh animatica-tex.tar.xz
-          MB=$(du -m animatica-tex.tar.xz | cut -f1)
-          echo "::notice title=tex bundle size::${MB} MB compressed, ${UNPACKED} MB unpacked"
+          echo "::notice title=tex bundle size::$(du -m animatica-tex.tar.xz | cut -f1) MB compressed, ${UNPACKED} MB unpacked"
 
       - name: Commit to the artifacts branch (codeload-only hosts)
         run: |
