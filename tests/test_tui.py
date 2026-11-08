@@ -51,7 +51,7 @@ async def _click(app, pilot, selector: str) -> bool:
     """
     widget = _q(app, selector)
     if selector not in {"#next", "#back"}:
-        widget.scroll_visible(top=True, animate=False)
+        widget.scroll_visible(animate=False)
         await pilot.pause()
 
     region = widget.region
