@@ -1,5 +1,24 @@
 # Animatica session log (live, edit as you go)
-Updated: 2026-11-04. Newest status on top. Any Claude session can resume from here.
+Updated: 2026-11-08. Newest status on top. Any Claude session can resume from here.
+
+## Status (2026-11-08, Hermes session, task cards T10 + T11)
+
+### T10 Install the agent pack [trivial] - DONE
+- First-try pass: yes. Strikes: 0. Escalated: no.
+- Branch: `hermes/t10-agent-pack` @ 2607d11 (base `arena/b5effee8-animatica-manim`).
+- Changed: AGENTS.md, docs/HERMES_PLAYBOOK.md, docs/TASKS_FOR_HERMES_V02.md, docs/handoffs/.gitkeep (new), .gitignore.
+- `.hermes/` added to .gitignore; verified `docs/handoffs/` is NOT ignored (`git check-ignore -v docs/handoffs/x.md` -> exit 1).
+- Verified: `git status` clean; the nine animatica-process skills load from ~/.hermes/skills/animatica-process/ (task-intake, git-branch-discipline, milestone-handoff, tdd-loop, verify-before-claiming used this session).
+- NOT verified: `~/.hermes/config.yaml` has no `skills.external_dirs` yet, so the repo's own `skills/animatica/SKILL.md` is not visible to Hermes. Needs owner approval (config edit).
+
+### T11 Version truth [Gate A, approved] - DONE
+- First-try pass: yes. Strikes: 0. Escalated: no.
+- Branch: `hermes/t11-version-truth` @ 31a250f (base `hermes/t10-agent-pack`).
+- GitHub truth (read with `gh`): releases are `native-deps-v1`, `v0.1.1`, `v0.1.0`. v0.1.1 was published 2026-11-04T15:50:29Z with one asset, `tinytex-manim.zip` (118,007,458 bytes, sha256 83fde080e52cdd7209738fb0876e3ddd3d5f755c5fdea4e2bca4222d120ecbf8). The v0.1.1 tag's own pyproject.toml still said `version = "0.1.0"`, so the published `animatica --version` reported 0.1.0.
+- Changed: pyproject.toml and src/animatica/__init__.py -> 0.2.0.dev0; CHANGELOG.md split into `## v0.1.1 (2026-11-04)` (26 bullets) and `## Unreleased` (14 bullets) on the real `git diff v0.1.1 HEAD -- CHANGELOG.md`; new tests/test_version.py (4 tests).
+- RED proof: `AssertionError: 0.1.0 is not newer than the published v0.1.1`.
+- Verified: `python -m pytest -q tests -k version` -> 10 passed, 735 deselected. `python scripts/ci_tests.py` -> 745 passed, 0 failed, 0 skipped, 0 errors, 0 warnings. `animatica --version` -> `animatica 0.2.0.dev0`.
+- NOT verified: no tag or release was created (owner does that); the changelog split was checked by script, not by a human reading it end to end.
 
 ## Context
 - Repo: https://github.com/Abu103/animatica-manim (released v0.1.1 with tinytex-manim.zip asset, sha256 83fde080..., download verified + LaTeX compile verified from sandbox 2026-11-04)
