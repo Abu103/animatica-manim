@@ -135,8 +135,10 @@ jobs:
           # bundle path run here.
           $ErrorActionPreference = "Stop"
           $zip = Join-Path $env:GITHUB_WORKSPACE $env:ASSET_NAME
-          $env:ANIMATICA_TEX_URL = "file:///$($zip -replace '\\','/')"
-          $env:ANIMATICA_TEX_SHA256 = $env:BUNDLE_SHA256
+          # Each `run:` block is a separate process, so the override must go
+          # through GITHUB_ENV to reach the next step.
+          "ANIMATICA_TEX_URL=file:///$($zip -replace '\\','/')" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          "ANIMATICA_TEX_SHA256=$env:BUNDLE_SHA256" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
           Write-Host "ANIMATICA_TEX_URL=$env:ANIMATICA_TEX_URL"
           Write-Host "ANIMATICA_TEX_SHA256=$env:ANIMATICA_TEX_SHA256"
 
@@ -144,6 +146,9 @@ jobs:
         shell: pwsh
         run: |
           $ErrorActionPreference = "Stop"
+          Write-Host "override url: $env:ANIMATICA_TEX_URL"
+          Write-Host "override sha: $env:ANIMATICA_TEX_SHA256"
+          if (-not $env:ANIMATICA_TEX_SHA256) { throw "the sha256 override did not reach this step" }
           $py = (Get-Command python -ErrorAction SilentlyContinue).Source
           if (-not $py) { throw "python not found" }
           & $py -m pip install --disable-pip-version-check -q -e ".[dev]"
@@ -152,7 +157,7 @@ jobs:
           New-Item -ItemType Directory -Path $work -Force | Out-Null
           Set-Location $work
           & $py -c @"
-          import os, sys
+          import sys
           from pathlib import Path
           from animatica.tex_bundle import install_windows_bundle
           ok, message = install_windows_bundle(Path.cwd())
