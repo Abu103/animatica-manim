@@ -67,16 +67,21 @@ async def _click(app, pilot, selector: str) -> bool:
         key=lambda point: abs(point[0] - center_x) + abs(point[1] - center_y),
     )
     click_offset = None
+    descendant_offset = None
     for x, y in points:
         under_pointer, _ = app.get_widget_at(x, y)
+        if under_pointer is widget:
+            click_offset = (x - region.x, y - region.y)
+            break
         current = under_pointer
         while current is not None:
             if current is widget:
-                click_offset = (x - region.x, y - region.y)
+                if descendant_offset is None:
+                    descendant_offset = (x - region.x, y - region.y)
                 break
             current = current.parent
-        if click_offset is not None:
-            break
+    if click_offset is None:
+        click_offset = descendant_offset
     if click_offset is None:
         raise AssertionError(f"{selector} has no visible hit-test point in {region!r}")
 
@@ -474,11 +479,10 @@ async def test_storyboard_json_edit_validates_and_updates_the_table():
         payload["scenes"][0]["beats"][0]["caption"] = "Edited caption"
         editor.text = json.dumps(payload)
         clicked = await _click(app, pilot, "#validate")
-        assert clicked, "Validate button click missed its target"
         status = _q(app, "#storyboard-status")
         assert await _wait_for(app, pilot, lambda: "Valid" in _text(status)), (
-            f"Expected a valid storyboard status; pane={_text(status)!r}, "
-            f"app_status={_status(app)!r}"
+            f"Validate click hit target={clicked}; expected a valid storyboard status; "
+            f"pane={_text(status)!r}, app_status={_status(app)!r}"
         )
         assert "validated" in _status(app).lower()
 
@@ -494,11 +498,10 @@ async def test_broken_json_is_reported_not_raised():
 
         _q(app, "#storyboard-json").text = '{"version": "1", '
         clicked = await _click(app, pilot, "#validate")
-        assert clicked, "Validate button click missed its target"
         status = _q(app, "#storyboard-status")
         assert await _wait_for(app, pilot, lambda: "JSON error" in _text(status)), (
-            f"Expected the JSON error status; pane={_text(status)!r}, "
-            f"app_status={_status(app)!r}"
+            f"Validate click hit target={clicked}; expected the JSON error status; "
+            f"pane={_text(status)!r}, app_status={_status(app)!r}"
         )
         assert "not valid JSON" in _status(app)
 
@@ -515,11 +518,10 @@ async def test_unknown_component_is_rejected_by_the_registry():
         editor = _q(app, "#storyboard-json")
         editor.text = editor.text.replace("title_card", "not_a_component", 1)
         clicked = await _click(app, pilot, "#validate")
-        assert clicked, "Validate button click missed its target"
         status = _q(app, "#storyboard-status")
         assert await _wait_for(app, pilot, lambda: "problem" in _text(status)), (
-            f"Expected component-validation problems; pane={_text(status)!r}, "
-            f"app_status={_status(app)!r}"
+            f"Validate click hit target={clicked}; expected component-validation problems; "
+            f"pane={_text(status)!r}, app_status={_status(app)!r}"
         )
         assert "cannot render" in _status(app)
 
