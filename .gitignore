@@ -6,6 +6,10 @@ media/
 .animatica_cache/
 *.mp4
 
+# Hermes local state (plans, scratch). Handoff packets under docs/handoffs/
+# ARE committed on purpose, so they are explicitly not ignored.
+.hermes/
+
 
 # local TinyTeX runtime from bootstrap
 .tex/
