@@ -1,8 +1,28 @@
 # Animatica session log (live, edit as you go)
 Updated: 2026-11-08. Newest status on top. Any Claude session can resume from here.
 
-## Status (2026-11-08, Hermes session, task cards T10 + T11 + T12)
+## Context
+- Repo: https://github.com/Abu103/animatica-manim (released v0.1.1 with tinytex-manim.zip asset, sha256 83fde080..., download verified + LaTeX compile verified from sandbox 2026-11-04)
+- User runs on Windows, provider nim, model nvidia/nemotron-3.5-super-vl-120b-a12b
+- Goal: stable demo to show others; then features that weak/free models (nemotron 120b, "3 super 550b") can drive reliably
 
+## Status (2026-11-08, Hermes docs-lookup-skill session)
+- Branch: hermes/docs-lookup-skill, off origin/main (c963c2b). No push.
+- Created skills/external-docs-lookup/SKILL.md (external-docs-lookup skill, ~200 words, pack format).
+- Created AGENTS.md with rule: before using/fixing a third-party API call you're unsure of, follow external-docs-lookup. (AGENTS.md did not exist on origin/main; created with this rule.)
+- Created docs/HERMES_PLAYBOOK.md failure-mode table with row: guessed library behavior -> external-docs-lookup. (HERMES_PLAYBOOK.md did not exist on origin/main; created with this table.)
+- Condition 4 research: Hermes config.yaml mcp_servers section (line 2553; schema command+args+timeout+connect_timeout for stdio, url+enabled for HTTP; doc reference website/docs/user-guide/features/mcp.md at line 1619). Active entries: mermaid (npx -y mcp-mermaid), deepwiki (http). Context7 (npx -y @upstash/context7-mcp) fits the stdio mermaid pattern -> supported. No config was edited (per instruction).
+- Config change for approval (write to ~/.hermes/config.yaml mcp_servers):
+    context7:
+      command: npx
+      args:
+        - -y
+        - "@upstash/context7-mcp"
+      timeout: 120
+      connect_timeout: 60
+  Source: ~/.hermes/config.yaml mcp_servers section (line 1619 references website/docs/user-guide/features/mcp.md; active entries line 2553). Config backed up to /tmp/config.yaml.before-docs-lookup-skill.20261108-145145 before any change (none made).
+
+## Status (2026-11-08, Hermes session, task cards T10 + T11 + T12)
 ### T12 Windows TinyTeX bundle [Gate A, approved with conditions] - DONE, Windows VERIFIED by CI
 - First-try pass: no (1 strike, fixed). Strikes: 1. Escalated: no.
 - Branch: `hermes/t12-windows-tinytex` @ 1c176e9 (base `hermes/t11-version-truth`).
@@ -37,11 +57,6 @@ Updated: 2026-11-08. Newest status on top. Any Claude session can resume from he
 ### Hermes config change (owner approved, same session)
 - `~/.hermes/config.yaml`: set `skills.external_dirs = [~/animatica-manim/skills]` via `hermes config set skills.external_dirs` (the patch tool refuses Hermes config files by design). Backup made first, but the tool's rewrite deleted it, so the pre-change diff could NOT be shown; the change was verified instead by `hermes config get skills.external_dirs` and by parsing the YAML.
 - Confirmed: `hermes skills list` now shows `animatica` with source `external`, status `enabled` - the repo's own `skills/animatica/SKILL.md` is visible to Hermes.
-
-## Context
-- Repo: https://github.com/Abu103/animatica-manim (released v0.1.1 with tinytex-manim.zip asset, sha256 83fde080..., download verified + LaTeX compile verified from sandbox 2026-11-04)
-- User runs on Windows, provider nim, model nvidia/nemotron-3.5-super-vl-120b-a12b
-- Goal: stable demo to show others; then features that weak/free models (nemotron 120b, "3 super 550b") can drive reliably
 
 ## Status (2026-11-04, agent session)
 - [x] P1.2 eval harness: `animatica eval --provider X` scores reference prompts (valid-first-try, retries, lint warnings, duration); src/animatica/eval.py + tests/test_eval.py 3/3
@@ -107,4 +122,3 @@ out2 video (real nemotron run, user's machine):
 4. Windows clean-clone install untested. CI smoke test not written.
 5. Then P1: two-stage generation, eval harness, frame lint, LLM-friendly validation errors (docs/ROADMAP.md).
 6. A real free-provider default (OpenRouter/Ollama) is only documented, not auto-configured.
-

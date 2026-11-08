@@ -86,6 +86,7 @@ Escalate when: two strikes, a card grows past its size limit, the acceptance com
 | "Works on Windows" from a Linux run | Cross-platform skill: Windows unverified until CI green |
 | Huge diffs | Size limit; stop and say so |
 | Drifting in a long session | One session per card |
+| Guessed library behavior | Follow the external-docs-lookup skill before using or fixing a third-party API call. |
 
 ## 8. Prompts to paste
 

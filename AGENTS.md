@@ -25,6 +25,7 @@ NEVER execute or generate Manim code at `animatica make` time. Component code is
 8. Do not invent APIs, flags, file paths, or URLs. Read the source or run `--help`. Links must be fetched and confirmed live before you include them.
 9. Cross-platform: this project must pass on Linux and Windows CI. In TUI tests press widgets (`widget.press()`), do not rely on mouse geometry. Use `pathlib`, never hardcode `/` or `\`.
 10. Size limit: a card should change <= 5 files and ~150 lines. If it grows, stop and say so; do not push through.
+11. Before using or fixing a third-party API call you are unsure of, follow the external-docs-lookup skill.
 
 ## Definition of done (all must be true)
 - Card's acceptance command passes (output pasted).
