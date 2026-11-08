@@ -1,4 +1,5 @@
 import pytest
+from pathlib import Path
 from pydantic import ValidationError
 
 from animatica.components.equation import Equation
@@ -73,4 +74,65 @@ def test_wrap_keeps_explicit_line_breaks():
     from animatica.components._draw import wrap
     assert wrap("F_0 = 0\nF_1 = 1", 40) == "F_0 = 0\nF_1 = 1"
     assert wrap("a " * 30, 20).count("\n") >= 2
+
+
+# ---------------------------------------------------------------------------
+# Equation safe-area regression test
+# ---------------------------------------------------------------------------
+
+@pytest.mark.render
+def test_equation_no_side_safe_area_warnings(tmp_path):
+    """Equation content stays within the 5% side safe-area margins.
+
+    Renders the pythagoras gallery storyboard (equation scene) and checks
+    rendered frames at key timestamps to verify no non-background pixels
+    appear in the left/right 5% margin band.
+    Regression test for fit() upscaling equations to fill the frame width.
+    """
+    from animatica.pipeline import make_video
+    import av
+    import numpy as np
+    from PIL import Image
+
+    sb_path = tmp_path / "pythagoras_storyboard.json"
+    import shutil
+
+    gallery = Path(__file__).resolve().parent.parent / "acceptance/gallery/pythagoras/storyboard.json"
+    assert gallery.is_file(), f"missing gallery storyboard: {gallery}"
+    shutil.copy(gallery, sb_path)
+
+    result = make_video(
+        storyboard_path=sb_path,
+        out_dir=tmp_path / "out",
+        preview=True,
+    )
+    assert result.video.is_file(), f"video not produced: {result.video}"
+
+    container = av.open(str(result.video))
+    try:
+        video_stream = next(s for s in container.streams if s.type == "video")
+        width = video_stream.width
+        margin_x = int(width * 0.05)  # 5% side margin
+
+        margin_violations = 0
+        for frame in container.decode(video_stream):
+            ts = float(frame.time) if frame.time is not None else 0
+            # Only check equation scene (scene 1: t >= 3.0s)
+            if ts < 3.0:
+                continue
+            rgb = frame.to_ndarray(format="rgb24")
+            gray = np.array(Image.fromarray(rgb).convert("L"))
+            # Background is dark-blue ~ #0B0B12 (11)
+            non_bg = np.abs(gray.astype(int) - 11) > 25
+            # Check left and right 5% margin bands
+            left_band = non_bg[:, :margin_x]
+            right_band = non_bg[:, -margin_x:]
+            margin_violations += int(left_band.sum() + right_band.sum())
+    finally:
+        container.close()
+
+    assert margin_violations == 0, (
+        f"equation scene has {margin_violations} non-background pixels "
+        f"inside the left/right 5% side safe-area margin"
+    )
 

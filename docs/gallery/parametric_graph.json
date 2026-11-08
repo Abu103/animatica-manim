@@ -1,0 +1,1 @@
+{"version":"1","title":"Parametric Circle","scenes":[{"beats":[{"component":"parametric_graph","params":{"title":"Parametric Circle","x_expr":"cos(t)","y_expr":"sin(t)","t_range":[0,6.28],"label":"x=cos(t), y=sin(t)"},"caption":"A circle traced parametrically as t goes from 0 to 2pi."}]}]}

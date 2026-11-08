@@ -27,3 +27,19 @@ def test_checkresult_fields():
     c = CheckResult(name="manim", ok=True, detail="0.22.1", fix="")
     assert (c.name, c.ok, c.detail, c.fix) == ("manim", True, "0.22.1", "")
 
+
+
+def test_doctor_json_is_machine_readable():
+    import json
+
+    from typer.testing import CliRunner
+
+    from animatica.cli import app
+
+    result = CliRunner().invoke(app, ["doctor", "--json"])
+    payload = json.loads(result.stdout)  # must parse even when checks fail
+    assert isinstance(payload, list) and payload
+    for check in payload:
+        assert set(check) == {"name", "ok", "detail", "fix"}
+    latex = next(c for c in payload if c["name"] == "latex")
+    assert isinstance(latex["ok"], bool)

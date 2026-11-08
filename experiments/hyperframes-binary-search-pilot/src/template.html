@@ -1,0 +1,380 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=1280, height=720" />
+  <title>Binary Search Visual Explainer — HyperFrames pilot</title>
+  <!-- All art, typography and animation load from this project; no remote resources. -->
+  <script src="./vendor/gsap.min.js"></script>
+  <style>
+    @font-face { font-family: Manrope; src: url('./assets/manrope-regular.woff2') format('woff2'); font-weight:400; font-display:block; }
+    @font-face { font-family: Manrope; src: url('./assets/manrope-semibold.woff2') format('woff2'); font-weight:600; font-display:block; }
+    @font-face { font-family: Manrope; src: url('./assets/manrope-bold.woff2') format('woff2'); font-weight:700; font-display:block; }
+    @font-face { font-family: Space; src: url('./assets/space-grotesk-medium.woff2') format('woff2'); font-weight:500; font-display:block; }
+    @font-face { font-family: Space; src: url('./assets/space-grotesk-bold.woff2') format('woff2'); font-weight:700; font-display:block; }
+    :root { --paper:#eef4ef; --muted:#a5b8b9; --mint:#a5f5cc; --mint-deep:#163a35; --coral:#ffad95; --coral-deep:#3a2f2d; --edge:#314b50; --blue:#7dc4e8; --blue-deep:#16344a; --amber:#f0c97f; --amber-deep:#3a2d1c; }
+    * { box-sizing:border-box; }
+    html, body { margin:0; width:100%; height:100%; background:#0a151b; }
+    body { font-family:Manrope, DejaVu Sans, sans-serif; color:var(--paper); -webkit-font-smoothing:antialiased; }
+    #stage { width:1280px; height:720px; position:relative; overflow:hidden; isolation:isolate; background:#0b151b; }
+    .backdrop { position:absolute; inset:0; z-index:0; background:radial-gradient(ellipse 780px 680px at 94% 5%, #183e3b 0%, transparent 64%),radial-gradient(ellipse 850px 500px at 3% 97%, #17383e 0%, transparent 68%),linear-gradient(130deg,#0b1520 0%,#0a141b 53%,#0d1c23 100%); }
+    .backdrop::before { content:""; position:absolute; inset:0; opacity:.24; background-image:linear-gradient(#5d828133 1px,transparent 1px),linear-gradient(90deg,#5d828133 1px,transparent 1px); background-size:48px 48px; mask-image:linear-gradient(180deg,transparent 6%,#000 48%,transparent 97%); }
+    .backdrop::after { content:""; position:absolute; left:47px; top:50px; width:1186px; height:618px; border:1px solid #acd7c419; border-radius:30px; pointer-events:none; }
+    .masthead { position:absolute; top:32px; left:80px; width:1120px; display:flex; justify-content:space-between; z-index:8; color:#b5cdc6; font-size:12px; font-weight:700; letter-spacing:2.8px; }
+    .masthead .right { color:#7e9f9d; letter-spacing:2px; }
+    .masthead span { display:inline-block; }
+    .footer-rule { position:absolute; left:80px; right:80px; bottom:27px; height:2px; background:#b0d9ce20; z-index:8; }
+    .footer-progress { position:absolute; left:80px; bottom:27px; width:0; height:2px; z-index:9; background:var(--blue); box-shadow:0 0 14px #7dc4e888; }
+    .section-label { font-size:19px; font-weight:700; letter-spacing:3.4px; color:var(--blue); text-transform:uppercase; }
+    .section-label .index { color:#5ea3d6; margin-right:14px; }
+    .math { font-family:Space,DejaVu Sans,sans-serif; font-weight:500; white-space:nowrap; }
+    .step-icon { font-family:DejaVu Sans, sans-serif; font-weight:700; display:inline-block; font-size:1.16em; line-height:1; vertical-align:-.06em; margin-right:8px; }
+    .found { color:var(--mint); } .eliminated { color:var(--coral); } .active { color:var(--blue); }
+
+    /* ACT I — intro */
+    #intro { z-index:1; }
+    .intro-copy { position:absolute; top:140px; left:80px; width:900px; }
+    #intro-label { opacity:0; }
+    #intro-title { font:700 72px/1.06 Space,DejaVu Sans,sans-serif; letter-spacing:-3.3px; margin:22px 0 0; opacity:1; }
+    #intro-title span { color:var(--blue); }
+    #intro-sub { font-size:25px; line-height:1.45; color:#c0d1cf; margin:25px 0 0; opacity:0; }
+
+    /* ACT II — search */
+    #search { z-index:2; }
+    .search-head { position:absolute; left:80px; top:70px; width:1120px; }
+    #search-label { opacity:0; }
+    #search-title { font:700 37px Space,DejaVu Sans,sans-serif; letter-spacing:-1.1px; margin:8px 0 0; opacity:0; }
+    #search-note { position:absolute; left:550px; top:46px; font-size:17px; color:#bdceca; white-space:nowrap; opacity:0; }
+    #search-note > span { position:absolute; top:0; left:0; white-space:nowrap; opacity:0; }
+    .search-tally { position:absolute; right:1px; top:26px; font:700 12px Manrope,sans-serif; letter-spacing:1.7px; color:#9cb9b6; opacity:0; }
+
+    .target-box { position:absolute; left:80px; top:148px; width:320px; height:100px; border-radius:16px; border:1px solid #7dc4e8; background:linear-gradient(130deg,#19333aee,#14272eee); box-shadow:0 12px 36px #0002; opacity:0; }
+    .target-label { position:absolute; left:27px; top:14px; font-size:15px; letter-spacing:2.1px; font-weight:700; color:#7dc4e8; text-transform:uppercase; }
+    .target-value { position:absolute; left:27px; top:40px; font:700 34px Space,sans-serif; color:#eef4ef; }
+    .target-note { position:absolute; left:27px; top:82px; font-size:13px; color:#9cb9b6; }
+
+    .array-row { position:absolute; left:80px; top:270px; width:1120px; display:flex; gap:10px; align-items:flex-start; opacity:0; }
+    .cell { position:relative; width:128px; height:110px; border-radius:12px; border:1px solid #4b6b68; background:linear-gradient(90deg,#182f32ef,#16282bef); box-shadow:0 8px 20px #0002; overflow:hidden; }
+    .cell .cell-index { position:absolute; left:6px; top:6px; font-size:11px; letter-spacing:1px; color:#659c95; font-weight:700; }
+    .cell .cell-value { position:absolute; left:0; right:0; top:42px; font:700 30px Space,sans-serif; text-align:center; color:#eef4ef; }
+    .cell .cell-tag { position:absolute; left:6px; bottom:10px; font-size:10px; letter-spacing:.8px; font-weight:700; color:#9cb9b6; }
+
+    .range-band { position:absolute; top:270px; height:110px; border-radius:12px; pointer-events:none; z-index:0; opacity:0; }
+    .range-band.active { background:linear-gradient(90deg,#16344a33,#16344a00); border:1px solid #7dc4e8; box-shadow:0 0 0 2px #7dc4e855, inset 0 0 20px #7dc4e81a; }
+    .range-band.midpoint { background:linear-gradient(90deg,#16344a55,#16344a00); border:2px solid #f0c97f; box-shadow:0 0 0 3px #f0c97f55; }
+    .range-band.eliminated { background:#3a2d1c33; border:1px dashed #f0c97f66; }
+
+    .eliminated-cross { position:absolute; top:270px; height:110px; border-radius:12px; display:flex; align-items:center; justify-content:center; font:700 28px DejaVu Sans,sans-serif; color:#ffad95; opacity:0; z-index:4; pointer-events:none; }
+
+    .comparison-line { position:absolute; left:80px; top:410px; width:1120px; height:52px; border-radius:10px; border:1px solid #55716b; background:#253638; overflow:hidden; opacity:0; }
+    .comparison-line .cmp-label { position:absolute; left:20px; top:14px; font-size:15px; letter-spacing:1.4px; font-weight:700; color:#bdcac5; }
+    .comparison-line .cmp-value { position:absolute; right:20px; top:14px; font:700 24px Space,sans-serif; white-space:nowrap; color:#eef4ef; }
+    .comparison-line .cmp-arrow { position:absolute; left:120px; top:15px; font-size:20px; color:#7dc4e8; }
+
+    .step-narration { position:absolute; left:80px; top:490px; width:1120px; font-size:21px; line-height:1.5; color:#c3d9cb; opacity:0; }
+    .step-narration .step-num { color:#7dc4e8; font-weight:700; margin-right:8px; }
+
+    /* ACT III — result */
+    #result { z-index:5; }
+    .result-wash { position:absolute; inset:0; opacity:0; background:radial-gradient(ellipse 770px 460px at 55% 55%,#17463c 0%,#112b2d 58%,#0b171b 100%); }
+    #result-label { position:absolute; left:80px; top:111px; opacity:0; }
+    #result-title { position:absolute; left:80px; top:151px; margin:0; font:700 60px Space,sans-serif; letter-spacing:-2.5px; opacity:0; }
+    #result-sub { position:absolute; left:82px; top:239px; margin:0; font-size:23px; color:#c3d9cb; opacity:0; }
+    .found-cell-badge { position:absolute; left:80px; top:330px; width:489px; height:127px; border-radius:19px; border:1px solid #a5f5cc; background:#1d423b; box-shadow:0 12px 42px #07191066; opacity:0; padding:15px 22px; }
+    .found-badge-title { font-size:16px; letter-spacing:2px; font-weight:700; color:#a6cfb6; }
+    .found-badge-value { font:700 34px Space,sans-serif; margin-top:1px; color:#eef4ef; }
+    .found-badge-value .step-icon { color:var(--mint); }
+    .found-cell-badge.not-found { border-color:#ffad95; background:#3a2f2d; }
+    .found-cell-badge.not-found .found-badge-title { color:#e8b8a0; }
+    .found-cell-badge.not-found .found-badge-value .step-icon { color:var(--coral); }
+    .result-take-label { position:absolute; top:494px; left:80px; font-size:12px; letter-spacing:2.3px; color:#7dc4e8; font-weight:700; opacity:0; }
+    .result-take { position:absolute; top:516px; left:80px; margin:0; font-size:24px; line-height:1.38; color:#edf5ee; opacity:0; }
+
+  </style>
+</head>
+<body>
+<div id="stage" data-composition-id="binary-search-pilot" data-start="0" data-duration="28.5" data-width="1280" data-height="720" data-fps="24">
+  <div class="backdrop" aria-hidden="true"></div>
+  <div class="masthead" data-layout-ignore="true"><span>FIELD NOTES / SEARCH</span><span class="right" id="masthead-right">BINARY SEARCH &nbsp; • &nbsp; PILOT</span></div>
+  <div class="footer-rule"></div><div class="footer-progress" id="progress"></div>
+
+  <section id="intro" class="clip" data-start="0" data-duration="5.0" data-track-index="0" aria-label="Introduce binary search and the target">
+    <div class="intro-copy">
+      <div class="section-label" id="intro-label" data-layout-allow-overlap="true"><span class="index">01 /</span> THE SEARCH</div>
+      <h1 id="intro-title">Find <span id="intro-target">13</span><br>in a sorted array.</h1>
+      <p id="intro-sub">Binary search repeatedly halves the search range.</p>
+    </div>
+  </section>
+
+  <section id="search" class="clip" data-start="4.2" data-duration="19.5" data-track-index="1" aria-label="Step through binary search from data">
+    <div class="search-head">
+      <div class="section-label" id="search-label"><span class="index">02 /</span> HALVE THE RANGE</div>
+      <h2 id="search-title">Target 13 in seven cells.</h2>
+      <div id="search-note">
+        <span id="note-0"></span>
+        <span id="note-1"></span>
+        <span id="note-2"></span>
+        <span id="note-3"></span>
+      </div>
+      <div class="search-tally" data-layout-ignore="true">ARRAY &nbsp; / &nbsp; TARGET &nbsp; / &nbsp; RANGE</div>
+    </div>
+
+    <div class="target-box" id="target-box">
+      <div class="target-label" data-layout-ignore="true">TARGET</div>
+      <div class="target-value" id="target-value">13</div>
+      <div class="target-note" data-layout-ignore="true">search for this value</div>
+    </div>
+
+    <div class="array-row" id="array-row">
+      <!-- array cells injected by script -->
+    </div>
+
+    <div id="bands-container"></div>
+
+    <div class="comparison-line" id="cmp-line">
+      <div class="cmp-label" data-layout-ignore="true">COMPARE</div>
+      <div class="cmp-value">? vs 13</div>
+      <div class="cmp-arrow">&#8594;</div>
+    </div>
+
+    <div class="step-narration" id="step-narration">
+      <span id="step-text"></span>
+    </div>
+  </section>
+
+  <section id="result" class="clip" data-start="23.0" data-duration="5.5" data-track-index="2" aria-label="Result and takeaway">
+    <div class="result-wash" id="result-wash"></div>
+    <div class="section-label" id="result-label"><span class="index">03 /</span> <span id="result-label-text">FOUND</span></div>
+    <h2 id="result-title">Found at index <span>6</span>.</h2>
+    <p id="result-sub">13 is at array index 6 (zero-based).</p>
+    <div class="found-cell-badge" id="found-badge">
+      <div class="found-badge-title" id="found-badge-title" data-layout-ignore="true">RESULT &nbsp; &middot; &nbsp; INDEX</div>
+      <div class="found-badge-value" id="found-badge-value"><span class="step-icon">&#10003;</span>index 6</div>
+    </div>
+    <div class="result-take-label" data-layout-ignore="true">THE TAKEAWAY</div>
+    <p class="result-take" id="result-take">Binary search repeatedly halves a sorted search range.<br>Not every search finds the target.</p>
+  </section>
+
+  <audio id="original-soundtrack" src="./assets/logic-chimes.wav" data-start="0" data-duration="28.5" data-volume="0.56" aria-label="Original synthesized sound accents, no narration"></audio>
+
+  <!-- Safe data injection: only validated JSON, never raw HTML or JS -->
+  <script type="application/json" id="search-data"></script>
+  <script>
+(() => {
+  'use strict';
+  let tl;
+  try {
+    const dataEl = document.getElementById('search-data');
+    const data = JSON.parse(dataEl.textContent || '{}');
+    const truthIcon = (v) => v ? '\u2713' : '\u00D7';
+    const cmpSymbol = (c) => c === 'found' ? '=' : (c === 'too_low' ? '>' : '<');
+    const elimRange = (arr) => arr.length === 1
+      ? '[' + arr[0] + ']'
+      : '[' + arr[0] + '\u2013' + arr[arr.length - 1] + ']';
+
+    // ---- Set intro / search / target text from data ----
+    document.getElementById('intro-target').textContent = data.target;
+    document.getElementById('search-title').textContent = 'Target ' + data.target + ' in ' + data.array.length + ' cells.';
+    document.getElementById('target-value').textContent = data.target;
+    document.querySelector('#cmp-line .cmp-value').textContent = '? vs ' + data.target;
+
+    // ---- Build array cells from data ----
+    const arrayRow = document.getElementById('array-row');
+    data.array.forEach((val, idx) => {
+      const cell = document.createElement('div');
+      cell.className = 'cell';
+      cell.id = 'cell-' + idx;
+      cell.innerHTML =
+        '<div class="cell-index" data-layout-ignore="true">idx ' + idx + '</div>' +
+        '<div class="cell-value">' + val + '</div>' +
+        '<div class="cell-tag" data-layout-ignore="true">value</div>';
+      arrayRow.appendChild(cell);
+    });
+
+    // ---- Build range bands, midpoint bands and crosses from steps ----
+    const bandsContainer = document.getElementById('bands-container');
+    data.steps.forEach((step, i) => {
+      const rangeBand = document.createElement('div');
+      rangeBand.className = 'range-band active';
+      rangeBand.id = 'range-' + i;
+      bandsContainer.appendChild(rangeBand);
+
+      const midBand = document.createElement('div');
+      midBand.className = 'range-band midpoint';
+      midBand.id = 'mid-' + i;
+      bandsContainer.appendChild(midBand);
+
+      if (step.eliminated.length > 0) {
+        const cross = document.createElement('div');
+        cross.className = 'eliminated-cross';
+        cross.id = 'cross-' + i;
+        cross.textContent = '\u00D7';
+        cross.setAttribute('data-layout-allow-overlap', 'true');
+        bandsContainer.appendChild(cross);
+      }
+    });
+
+    // ---- Position bands over cells ----
+    const placeBand = (bandId, leftIdx, rightIdx) => {
+      const band = document.getElementById(bandId);
+      const startCell = document.getElementById('cell-' + leftIdx);
+      const endCell = document.getElementById('cell-' + rightIdx);
+      if (!startCell || !endCell) return;
+      const startX = startCell.offsetLeft;
+      const endX = endCell.offsetLeft + endCell.offsetWidth;
+      band.style.left = startX + 'px';
+      band.style.width = (endX - startX) + 'px';
+    };
+    data.steps.forEach((step, i) => {
+      placeBand('range-' + i, step.low, step.high);
+      placeBand('mid-' + i, step.mid, step.mid);
+      if (step.eliminated.length > 0) {
+        placeBand('cross-' + i, step.eliminated[0], step.eliminated[step.eliminated.length - 1]);
+      }
+    });
+
+    // ---- Build search notes from steps ----
+    const noteTexts = data.steps.map((step) => {
+      if (step.comparison === 'found') {
+        return 'Range [' + step.low + '\u2013' + step.high + '], value ' + step.mid_value + ' matches. Found at index ' + step.mid + '.';
+      }
+      const op = step.comparison === 'too_low' ? '>' : '<';
+      return 'Range [' + step.low + '\u2013' + step.high + '], midpoint index ' + step.mid + ' holds ' + step.mid_value + '. ' + data.target + ' ' + op + ' ' + step.mid_value + ', discard ' + elimRange(step.eliminated) + '.';
+    });
+    noteTexts.forEach((txt, i) => {
+      const el = document.getElementById('note-' + i);
+      if (el) el.textContent = txt;
+    });
+
+    // ---- Build step narration from steps ----
+    const stepTexts = data.steps.map((step, i) => {
+      const prefix = 'Step ' + (i + 1) + '. ';
+      if (step.comparison === 'found') {
+        return prefix + 'Search [' + step.low + '\u2013' + step.high + '], value ' + step.mid_value + ' matches. Found at index ' + step.mid + '.';
+      }
+      const op = step.comparison === 'too_low' ? '>' : '<';
+      return prefix + 'Search [' + step.low + '\u2013' + step.high + '], midpoint index ' + step.mid + ' holds ' + step.mid_value + '. ' + data.target + ' ' + op + ' ' + step.mid_value + ', discard ' + elimRange(step.eliminated) + '.';
+    });
+
+    // ---- Result screen from data ----
+    const resultLabelText = document.getElementById('result-label-text');
+    const resultTitle = document.getElementById('result-title');
+    const resultSub = document.getElementById('result-sub');
+    const foundBadge = document.getElementById('found-badge');
+    const foundBadgeTitle = document.getElementById('found-badge-title');
+    const foundBadgeValue = document.getElementById('found-badge-value');
+    if (data.found) {
+      resultLabelText.textContent = 'FOUND';
+      resultTitle.innerHTML = 'Found at index <span>' + data.found_index + '</span>.';
+      resultSub.textContent = data.target + ' is at array index ' + data.found_index + ' (zero-based).';
+      foundBadge.classList.remove('not-found');
+      foundBadgeTitle.textContent = 'RESULT \u00B7 INDEX';
+      foundBadgeValue.innerHTML = '<span class="step-icon">' + truthIcon(true) + '</span>index ' + data.found_index;
+    } else {
+      resultLabelText.textContent = 'NOT FOUND';
+      resultTitle.textContent = 'Not found.';
+      resultSub.textContent = data.target + ' is not in the array. The search range is empty.';
+      foundBadge.classList.add('not-found');
+      foundBadgeTitle.textContent = 'RESULT \u00B7 NOT FOUND';
+      foundBadgeValue.innerHTML = '<span class="step-icon">' + truthIcon(false) + '</span>not in array';
+    }
+
+    // ---- Timeline (finite, paused, for HyperFrames seeking) ----
+    tl = gsap.timeline({ paused: true });
+    const from = (selector, vars, end, at) => tl.fromTo(selector, vars, { ...end, ease: 'power3.out' }, at);
+    const note = (id, showAt, hideAt) => {
+      from('#' + id, { opacity:0, y:9 }, { opacity:1, y:0, duration:.28 }, showAt);
+      if (hideAt) tl.to('#' + id, { opacity:0, y:-7, duration:.22 }, hideAt);
+    };
+
+    // Act I — Intro (title visible at t=0; only the label and sub fade in)
+    from('#intro-label', {opacity:0,y:16}, {opacity:1,y:0,duration:.48}, .16);
+    from('#intro-title', {y:24}, {y:0,duration:.60,ease:'power3.out'}, 0);
+    from('#intro-sub', {opacity:0,y:22}, {opacity:1,y:0,duration:.55}, 1.13);
+
+    // Act II — Search
+    from('#search-label', {opacity:0,y:24}, {opacity:1,y:0,duration:.52}, 4.4);
+    from('#search-title', {opacity:0,y:25}, {opacity:1,y:0,duration:.54}, 4.6);
+    from('.search-tally', {opacity:0,x:22}, {opacity:1,x:0,duration:.48}, 4.8);
+    from('#target-box', {opacity:0,x:-34}, {opacity:1,x:0,duration:.62}, 5.0);
+    note('note-0', 5.6, 9.0);
+    note('note-1', 9.3, 13.0);
+    note('note-2', 13.3, 17.0);
+    note('note-3', 17.3, 20.5);
+
+    from('#array-row', {opacity:0,y:-24}, {opacity:1,y:0,duration:.70}, 5.4);
+
+    // Steps — generated from data
+    const stepStart = 6.0;
+    const stepDuration = 4.5;
+    data.steps.forEach((step, i) => {
+      const t = stepStart + i * stepDuration;
+      const isFound = step.comparison === 'found';
+
+      // Hide previous step's bands
+      if (i > 0) {
+        const prev = data.steps[i - 1];
+        const prevSels = ['#range-' + (i - 1), '#mid-' + (i - 1)];
+        if (prev.eliminated.length > 0) prevSels.push('#cross-' + (i - 1));
+        tl.to(prevSels.join(','), {opacity:0,duration:.30}, t - 0.6);
+      }
+
+      // Show range band
+      from('#range-' + i, {opacity:0,scaleY:0}, {opacity:1,scaleY:1,duration:.40}, t);
+      // Show midpoint band
+      from('#mid-' + i, {opacity:0,scale:.4,rotation:-45}, {opacity:1,scale:1,rotation:0,duration:.45}, t + 0.4);
+
+      // Highlight eliminated cells
+      if (step.eliminated.length > 0) {
+        const elimSel = step.eliminated.map(idx => '#cell-' + idx).join(',');
+        tl.to(elimSel, {borderColor:'#f0c97f',backgroundColor:'#3a2d1c55',duration:.40}, t + 1.0);
+        tl.to('#cross-' + i, {opacity:1,duration:.40}, t + 1.6);
+        const elimValSel = step.eliminated.map(idx => '#cell-' + idx + ' .cell-value').join(',');
+        tl.to(elimValSel, {color:'#9cb9b6',duration:.40}, t + 1.6);
+      }
+
+      // Comparison bar
+      tl.to('#cmp-line', {opacity:1,duration:.35}, t + 2.2);
+      tl.to('#cmp-line .cmp-value', {opacity:1,duration:.10}, t + 2.4);
+      tl.call(() => { document.querySelector('#cmp-line .cmp-value').textContent = step.mid_value + ' vs ' + data.target; }, [], t + 2.4);
+      tl.to('#cmp-line .cmp-arrow', {opacity:1,duration:.10}, t + 2.6);
+      tl.call(() => { document.querySelector('#cmp-line .cmp-arrow').textContent = cmpSymbol(step.comparison); }, [], t + 2.6);
+
+      // Step narration
+      tl.to('#step-narration', {opacity:1,duration:.35}, t + 3.0);
+      tl.to('#step-text', {opacity:1,duration:.30}, t + 3.2);
+      tl.call(() => { document.getElementById('step-text').textContent = stepTexts[i]; }, [], t + 3.2);
+
+      // Found state
+      if (isFound) {
+        tl.to('#cell-' + step.mid, {borderColor:'#a5f5cc',backgroundColor:'#163a35',scale:1.08,duration:.50,ease:'back.out(2)'}, t + 4.0);
+        tl.to('#cell-' + step.mid + ' .cell-value', {color:'#a5f5cc',duration:.40}, t + 4.2);
+      }
+    });
+
+    // Act III — Result
+    const lastIdx = data.steps.length - 1;
+    const lastStep = data.steps[lastIdx];
+    const lastT = stepStart + lastIdx * stepDuration;
+    const lastSels = ['#search-label','#search-title','.search-tally','#target-box','#array-row','#range-' + lastIdx,'#mid-' + lastIdx];
+    if (lastStep.eliminated.length > 0) lastSels.push('#cross-' + lastIdx);
+    lastSels.push('#cmp-line','#step-narration');
+    tl.to(lastSels.join(','), {opacity:0,duration:.24}, lastT + 4.8);
+    from('#result-wash', {opacity:0}, {opacity:1,duration:.65}, 23.0);
+    from('#result-label', {opacity:0,y:18}, {opacity:1,y:0,duration:.43}, 23.2);
+    from('#result-title', {opacity:0,y:29}, {opacity:1,y:0,duration:.60}, 23.4);
+    from('#result-sub', {opacity:0,y:14}, {opacity:1,y:0,duration:.51}, 23.8);
+    from('#found-badge', {opacity:0,x:-129,y:-53,scale:.82,rotation:-5}, {opacity:1,x:0,y:0,scale:1,rotation:0,duration:.67}, 24.2);
+    from('.result-take-label', {opacity:0,y:9}, {opacity:1,y:0,duration:.37}, 24.2);
+    from('#result-take', {opacity:0,y:15}, {opacity:1,y:0,duration:.50}, 24.4);
+    tl.fromTo('#progress', {width:0}, {width:1120,duration:28.25,ease:'none'}, .10);
+  } catch (e) {
+    console.error('Binary search pilot render error:', e);
+  }
+  window.__timelines = window.__timelines || {};
+  window.__timelines['binary-search-pilot'] = tl;
+})();
+  </script>
+</div>
+</body>
+</html>

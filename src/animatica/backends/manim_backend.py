@@ -4,8 +4,11 @@ from __future__ import annotations
 import glob
 import json
 import os
+import shutil
 import subprocess
 import sys
+import threading
+from typing import ClassVar
 from pathlib import Path
 
 from animatica.backends.base import RenderBackend, RenderOptions, RenderResult
@@ -28,6 +31,20 @@ def _find_mp4(media_dir: Path, prefix: str) -> Path:
 
 class ManimBackend:
     name = "manim"
+    supported_capabilities: ClassVar[list[str]] = ["latex", "ffmpeg", "manim"]
+
+    def capabilities(self) -> list[str]:
+        """Return capabilities actually available at runtime.
+
+        ``latex`` and ``dvisvgm`` depend on system binaries; probe them
+        dynamically so the capability report reflects reality, not aspiration.
+        """
+        caps = list(self.supported_capabilities)
+        if not shutil.which("latex"):
+            caps = [c for c in caps if c != "latex"]
+        if not shutil.which("dvisvgm"):
+            caps = [c for c in caps if c != "dvisvgm"]
+        return caps
 
     @property
     def version(self) -> str:
@@ -62,7 +79,18 @@ class ManimBackend:
                 scene_dur += comp.duration(params)
             durations.append(scene_dur)
 
+        n_scenes = len(sb.scenes)
+        progress = opts.progress
+        finished_scenes = 0
+        progress_lock = threading.Lock()
+
+        def _note(label: str, done: int) -> None:
+            if progress is not None:
+                progress(label, done, n_scenes)
+
         def _render_scene(i: int) -> Path:
+            nonlocal finished_scenes
+            _note(f"scene {i + 1}/{n_scenes}: rendering", finished_scenes)
             with timer.stage(f"render_scene_{i}"):
                 env = dict(os.environ)
                 env.setdefault("PYTHONUTF8", "1")  # Windows defaults to cp1252; titles/captions may be Unicode
@@ -89,13 +117,20 @@ class ManimBackend:
                     "--verbosity",
                     "ERROR",
                 ]
+                if opts.vertical:
+                    cmd += ["-r", "1080,1920"]
                 try:
                     subprocess.run(cmd, env=env, check=True, capture_output=True, text=True,
                                    encoding="utf-8", errors="replace", timeout=900)
                 except subprocess.CalledProcessError as exc:
                     tail = "\n".join(((exc.stderr or "") + "\n" + (exc.stdout or "")).strip().splitlines()[-25:])
                     raise RuntimeError(f"manim failed on scene {i} (exit {exc.returncode}):\n{tail}") from exc
-                return _find_mp4(media_dir, f"scene_{i}")
+                clip = _find_mp4(media_dir, f"scene_{i}")
+            with progress_lock:
+                finished_scenes += 1
+                done = finished_scenes
+            _note(f"scene {i + 1}/{n_scenes}: done", done)
+            return clip
 
         scene_mp4s = render_scenes_parallel(_render_scene, len(sb.scenes), jobs=opts.jobs or 1)
 
@@ -106,6 +141,7 @@ class ManimBackend:
                 warnings.extend(json.loads(wpath.read_text(encoding="utf-8")))
                 wpath.unlink()
 
+        _note(f"merging {n_scenes} scene(s)", n_scenes)
         with timer.stage("concat"):
             video = out_dir / "video.mp4"
             if len(scene_mp4s) == 1:

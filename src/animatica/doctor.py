@@ -6,6 +6,7 @@ import re
 import shutil
 import subprocess
 import sys
+import time
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -174,6 +175,28 @@ def run_checks(run=subprocess.run, which=shutil.which, deep_latex: bool = True) 
 # Official upstream Windows installer (verified to exist in rstudio/tinytex; the old
 # yihui.org/tinytex/install-windows.ps1 URL returns 404).
 TINYTEX_WIN_INSTALLER_URL = "https://raw.githubusercontent.com/rstudio/tinytex/main/tools/install-bin-windows.ps1"
+TINYTEX_WIN_INSTALL_ATTEMPTS = 3
+TINYTEX_WIN_INSTALL_TIMEOUT_SECONDS = 600
+TINYTEX_WIN_RETRY_BASE_SECONDS = 5
+
+
+def project_roots() -> list[Path]:
+    """Where a project-local TeX bundle may be: the checkout, then the CWD."""
+    here = Path(__file__).resolve()
+    candidates = []
+    try:
+        candidates.append(here.parents[2])
+    except IndexError:  # pragma: no cover - installed layout without a checkout
+        pass
+    try:
+        candidates.append(Path.cwd())
+    except OSError:  # pragma: no cover
+        pass
+    seen: list[Path] = []
+    for path in candidates:
+        if path not in seen:
+            seen.append(path)
+    return seen
 
 
 def tinytex_bin_dirs(platform: str = sys.platform, env=None) -> list[Path]:
@@ -191,7 +214,17 @@ def tinytex_bin_dirs(platform: str = sys.platform, env=None) -> list[Path]:
         dirs.append(Path("C:/tools/tinytex/bin/windows"))
     else:
         home = Path(env.get("HOME") or Path.home())
-        for root in (home / ".TinyTeX" / "bin", home / "Library" / "TinyTeX" / "bin"):
+        # An explicit override, then a TeX unpacked next to the project (that is
+        # where the one-line installer puts the prebuilt bundle), then the user's
+        # own TinyTeX.
+        roots: list[Path] = []
+        explicit = env.get("ANIMATICA_TEX_DIR")
+        if explicit:
+            roots.append(Path(explicit) / "bin")
+        for base in project_roots():
+            roots.append(base / ".tex" / "bin")
+        roots.extend([home / ".TinyTeX" / "bin", home / "Library" / "TinyTeX" / "bin"])
+        for root in roots:
             if root.is_dir():
                 dirs.extend(sorted(p for p in root.iterdir() if p.is_dir()))
     return dirs
@@ -334,7 +367,13 @@ def _ensure_tex_files(tlmgr: str, run, which, exe: str, actions: list[str]) -> N
 
 
 
-def fix_dependencies(run=subprocess.run, which=shutil.which, platform: str = sys.platform, bundled_ffmpeg=_bundled_ffmpeg) -> list[str]:
+def fix_dependencies(
+    run=subprocess.run,
+    which=shutil.which,
+    platform: str = sys.platform,
+    bundled_ffmpeg=_bundled_ffmpeg,
+    sleep=time.sleep,
+) -> list[str]:
     """Actually install missing deps (doctor --fix). Returns human-readable actions taken.
 
     Never aborts on one failure: every step is attempted and reported.
@@ -342,9 +381,18 @@ def fix_dependencies(run=subprocess.run, which=shutil.which, platform: str = sys
     actions: list[str] = []
     last_tail: list[str] = [""]  # last lines of the most recent command's output, for failure reports
 
-    def _try(label: str, cmd: list[str], show_output: bool = False, fail_on: tuple[str, ...] = ()) -> bool:
+    def _try(
+        label: str,
+        cmd: list[str],
+        show_output: bool = False,
+        fail_on: tuple[str, ...] = (),
+        timeout: float | None = None,
+    ) -> bool:
+        kwargs = {"capture_output": True, "text": True}
+        if timeout is not None:
+            kwargs["timeout"] = timeout
         try:
-            result = run(cmd, capture_output=True, text=True)
+            result = run(cmd, **kwargs)
             ok = getattr(result, "returncode", 0) == 0
             out = f"{getattr(result, 'stdout', '') or ''}\n{getattr(result, 'stderr', '') or ''}"
             last_tail[0] = "\n".join("    | " + ln for ln in str(out).strip().splitlines()[-15:])
@@ -352,8 +400,16 @@ def fix_dependencies(run=subprocess.run, which=shutil.which, platform: str = sys
                 ok = False  # e.g. tlmgr prints "Terminating" but exits 0
                 result = type("R", (), {"returncode": "0, but its output reports an error"})()
         except Exception as exc:
-            ok = False
-            actions.append(f"failed: {label} ({exc})")
+            captured = [getattr(exc, "stdout", None) or getattr(exc, "output", None), getattr(exc, "stderr", None)]
+            lines: list[str] = []
+            for value in captured:
+                if isinstance(value, bytes):
+                    value = value.decode(errors="replace")
+                if value:
+                    lines.extend(str(value).strip().splitlines())
+            last_tail[0] = "\n".join("    | " + ln for ln in lines[-15:])
+            details = f"\n{last_tail[0]}" if last_tail[0] else ""
+            actions.append(f"failed: {label} ({exc}){details}")
             return False
         if ok:
             actions.append(f"done: {label}" + (f"\n{last_tail[0]}" if show_output and last_tail[0].strip() else ""))
@@ -381,17 +437,40 @@ def fix_dependencies(run=subprocess.run, which=shutil.which, platform: str = sys
     latex_missing = not (have_latex and which("dvisvgm"))
     if not have_latex:
         if platform == "win32":
-            _try(
-                "install TinyTeX (official rstudio/tinytex Windows installer)",
-                ["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-Command",
-                 f"$ProgressPreference='SilentlyContinue'; irm {TINYTEX_WIN_INSTALLER_URL} | iex"],
-            )
-            added = ensure_tex_on_path(platform)
-            if added:
-                actions.append(f"TinyTeX found at {added}; added to PATH for Animatica (new terminals get it via 'tlmgr path add')")
-            else:
-                actions.append("TinyTeX installer ran but latex.exe was not found.\n" + describe_tex_search(platform)
-                               + (f"\ninstaller output (last lines):\n{last_tail[0]}" if last_tail[0].strip() else ""))
+            # The published tinytex-manim.zip is built from install-unx.sh on Ubuntu;
+            # it is not a Windows fallback. Retry the official Windows installer instead.
+            installer = [
+                "powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-Command",
+                f"$ProgressPreference='SilentlyContinue'; irm {TINYTEX_WIN_INSTALLER_URL} | iex",
+            ]
+            tinytex_ready = False
+            for attempt in range(1, TINYTEX_WIN_INSTALL_ATTEMPTS + 1):
+                _try(
+                    f"install TinyTeX via the official Windows installer (attempt {attempt}/{TINYTEX_WIN_INSTALL_ATTEMPTS})",
+                    installer,
+                    timeout=TINYTEX_WIN_INSTALL_TIMEOUT_SECONDS,
+                )
+                added = ensure_tex_on_path(platform)
+                if which("latex"):
+                    if added:
+                        actions.append(f"TinyTeX found at {added}; added to PATH for Animatica (new terminals get it via 'tlmgr path add')")
+                    else:
+                        actions.append(f"TinyTeX latex.exe is available after attempt {attempt}/{TINYTEX_WIN_INSTALL_ATTEMPTS}")
+                    tinytex_ready = True
+                    break
+                if attempt < TINYTEX_WIN_INSTALL_ATTEMPTS:
+                    delay = TINYTEX_WIN_RETRY_BASE_SECONDS * (2 ** (attempt - 1))
+                    actions.append(
+                        f"latex.exe was not found after TinyTeX attempt {attempt}/{TINYTEX_WIN_INSTALL_ATTEMPTS}; "
+                        f"retrying in {delay}s"
+                    )
+                    sleep(delay)
+            if not tinytex_ready:
+                actions.append(
+                    f"TinyTeX install failed after {TINYTEX_WIN_INSTALL_ATTEMPTS} attempts; latex.exe was not found.\n"
+                    + describe_tex_search(platform)
+                    + (f"\ninstaller output (last lines):\n{last_tail[0]}" if last_tail[0].strip() else "")
+                )
         elif platform == "darwin":
             _try("install TinyTeX", ["bash", "-c", "curl -fsSL https://yihui.org/tinytex/install-unx.sh | sh"])
             ensure_tex_on_path(platform)

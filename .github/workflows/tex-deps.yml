@@ -1,0 +1,149 @@
+name: tex-deps
+
+# A small, self-contained LaTeX for hosts that cannot install TeX Live:
+# latex + dvisvgm + exactly the packages Manim uses, stripped of docs, sources
+# and the engines nobody needs. Published as a release asset (the one-line
+# installers fetch it) and committed to the `artifacts` branch so a host that
+# can only reach codeload.github.com can still get it.
+on:
+  push:
+    paths:
+      - ".github/workflows/tex-deps.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+env:
+  ARTIFACT_BRANCH: artifacts
+  RELEASE_TAG: native-deps-v1
+
+jobs:
+  tex:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install TinyTeX
+        run: curl -fsSL https://yihui.org/tinytex/install-unx.sh | sh
+
+      - name: Install exactly what Manim's LaTeX path needs
+        run: |
+          TLMGR=$(find "$HOME" -name tlmgr -path "*/bin/*" | head -1)
+          echo "tlmgr: $TLMGR"
+          "$TLMGR" install standalone preview xkeyval babel-english amsmath amsfonts dvisvgm lm geometry xcolor
+          echo "--- probe ---"
+          TEXBIN=$(dirname "$TLMGR")
+          echo "$TEXBIN" >> "$GITHUB_PATH"
+
+      - name: Strip docs, sources and unused engines
+        run: |
+          set -euo pipefail
+          # ~/bin/latex is a symlink into ~/.TinyTeX/bin/<arch>/latex; resolving it is
+          # the only reliable way to find the root (tlmgr.pl lives inside texmf-dist).
+          LATEX_BIN=$(command -v latex || echo "$HOME/bin/latex")
+          REAL=$(readlink -f "$LATEX_BIN")
+          echo "latex: $LATEX_BIN -> $REAL"
+          TEXBIN=$(dirname "$REAL")
+          TEXROOT=$(dirname "$(dirname "$TEXBIN")")
+          [ -d "$TEXROOT/bin" ] || { echo "::error title=no bin::$TEXROOT has no bin/ directory"; exit 1; }
+          echo "TEXROOT=$TEXROOT" >> "$GITHUB_ENV"
+          echo "TinyTeX root: $TEXROOT"
+          du -sh "$TEXROOT" || true
+
+          # documentation and package sources dominate a TinyTeX tree
+          find "$TEXROOT/texmf-dist" -type d \( -name doc -o -name source -o -name sources \) -prune -exec rm -rf {} + 2>/dev/null || true
+          # engines and helpers this project never calls
+          for exe in luatex luahbtex texlua luajitcontext context mtxrun mf mf-nowin \
+                     xetex xdvipdfmx gs gsx ps2pdf epstopdf repstopdf t1testpage \
+                     luatexdir xetexdir pdftexdir; do
+            find "$TEXBIN" -maxdepth 1 -name "$exe" -exec rm -f {} + 2>/dev/null || true
+          done
+          rm -rf "$TEXROOT"/bin/*/{luatex,xetex} 2>/dev/null || true
+          # man pages, info files, tlpkg indexes
+          rm -rf "$TEXROOT"/texmf-dist/doc "$TEXROOT"/texmf-dist/source 2>/dev/null || true
+          rm -rf "$TEXROOT"/tlpkg/tlpobj 2>/dev/null || true
+
+          du -sh "$TEXROOT" || true
+          echo "TEXROOT=$TEXROOT" >> "$GITHUB_ENV"
+
+      - name: Check the bundle still compiles an equation
+        run: |
+          set -euo pipefail
+          TEXBIN=$(find "$HOME" -name tlmgr -path "*/bin/*" | head -1 | xargs dirname)
+          export PATH="$TEXBIN:$PATH"
+          # tlmgr sometimes drops dvisvgm outside bin/<arch>; find it wherever it is
+          DVISVGM=$(find "$HOME" -name dvisvgm -type f | head -1)
+          echo "dvisvgm: ${DVISVGM:-MISSING}"
+          [ -n "$DVISVGM" ] && export PATH="$(dirname "$DVISVGM"):$PATH"
+          echo "latex: $(command -v latex)"
+          mkdir -p /tmp/probe && cd /tmp/probe
+          cat > t.tex <<'TEX'
+          \documentclass[preview]{standalone}
+          \usepackage[english]{babel}
+          \usepackage{amsmath}
+          \usepackage{amssymb}
+          \begin{document}
+          $a^2 + b^2 = c^2$
+          \end{document}
+          TEX
+          latex -interaction=nonstopmode t.tex > /dev/null
+          dvisvgm --version
+          dvisvgm --no-fonts t.dvi -o t.svg
+          test -s t.svg && echo "probe compiled: $(wc -c < t.svg) bytes of SVG"
+
+      - name: Pack the bundle
+        run: |
+          set -uo pipefail
+          [ -d "${TEXROOT:-}/bin" ] || TEXROOT=$(dirname "$(dirname "$(dirname "$(readlink -f "$(command -v latex)")")")")
+          echo "::notice title=pack::texroot=$TEXROOT unpacked=$(du -sh "$TEXROOT" | cut -f1)"
+          # Archive the tree's contents (no copy step, no top-level directory games).
+          tar -C "$TEXROOT" -cf /tmp/tex.tar . || { echo "::error title=tar failed::"; exit 1; }
+          echo "::notice title=tar ok::$(du -m /tmp/tex.tar | cut -f1) MB uncompressed"
+          xz -9e -T0 -c /tmp/tex.tar > animatica-tex.tar.xz || { echo "::error title=xz failed::"; exit 1; }
+          MB=$(du -m animatica-tex.tar.xz | cut -f1)
+          echo "::notice title=bundle size::${MB} MB compressed"
+          tar tf animatica-tex.tar.xz > /tmp/texlist.txt
+          echo "::notice title=bundle contents::$(grep -c . /tmp/texlist.txt) entries"
+          grep -q "^\./bin/" /tmp/texlist.txt || { echo "::error title=bundle has no bin::"; exit 1; }
+          grep -q "dvisvgm" /tmp/texlist.txt || { echo "::error title=bundle has no dvisvgm::"; exit 1; }
+          ls -lh animatica-tex.tar.xz
+
+      - name: Commit to the artifacts branch (codeload-only hosts)
+        run: |
+          set -euo pipefail
+          git config user.name "animatica-native-bot"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          # Merge into the existing branch so the cairo/pango bundle published by
+          # native-deps.yml survives; create it only if it does not exist yet.
+          if git fetch origin "$ARTIFACT_BRANCH" 2>/dev/null; then
+            git checkout -B "$ARTIFACT_BRANCH" "origin/$ARTIFACT_BRANCH"
+          else
+            git checkout --orphan "$ARTIFACT_BRANCH"
+            git rm -r --cached . > /dev/null
+          fi
+          mkdir -p native
+          cp animatica-tex.tar.xz native/
+          printf 'Prebuilt Linux bundles. Generated by GitHub Actions, never edited by hand:\n\n- native/animatica-native.tar.gz - pycairo/manimpango wheels + cairo/pango shared libraries\n- native/animatica-tex.tar.xz - latex + dvisvgm + the packages Manim uses\n' > native/README.md
+          git add -f native/animatica-tex.tar.xz native/README.md
+          git commit -m "chore(tex): LaTeX bundle $(date -u +%Y-%m-%d)" || echo "no change"
+          # both bundle workflows may publish at once: rebase and retry
+          for attempt in 1 2 3; do
+            if git push origin "$ARTIFACT_BRANCH"; then exit 0; fi
+            echo "push rejected; rebasing (attempt $attempt)"
+            git pull --rebase origin "$ARTIFACT_BRANCH" || git pull --no-rebase origin "$ARTIFACT_BRANCH" || true
+          done
+          exit 1
+
+      - name: Publish as a release asset
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1 \
+            || gh release create "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" \
+                 --title "Native deps v1 (cairo + pango for Linux)" \
+                 --notes "Prebuilt libraries for hosts without package managers. Downloaded automatically by scripts/bootstrap.sh."
+          gh release upload "$RELEASE_TAG" animatica-tex.tar.xz --repo "$GITHUB_REPOSITORY" --clobber
+          gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --json assets \
+            --jq '.assets[] | "\(.name) \(.size) bytes"'

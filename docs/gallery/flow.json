@@ -1,0 +1,1 @@
+{"version":"1","title":"Process Flow","scenes":[{"beats":[{"component":"flow","params":{"title":"Water Cycle","nodes":["Evaporation","Condensation","Precipitation","Collection"],"edges":[[0,1],[1,2],[2,3]]},"caption":"The water cycle flows from evaporation to collection."}]}]}

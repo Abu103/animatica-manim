@@ -437,3 +437,22 @@ def test_linux_never_calls_tlmgr_for_a_present_tex():
     calls, run, which = _fake_tex_env(missing=("english.ldf",))
     fix_dependencies(run=run, which=which, platform="linux", bundled_ffmpeg=lambda: None)
     assert not any(c[0].endswith("tlmgr") for c in calls), "on Linux apt owns TeX, not tlmgr"
+
+
+def test_project_local_tex_bundle_is_found(tmp_path, monkeypatch):
+    """The installer unpacks to <project>/.tex; animatica must use it without PATH help."""
+    bindir = tmp_path / ".tex" / "bin" / "x86_64-linux"
+    bindir.mkdir(parents=True)
+    (bindir / "latex").write_text("")
+    monkeypatch.chdir(tmp_path)
+    env = {"HOME": str(tmp_path / "nowhere")}
+    names = [str(d) for d in tinytex_bin_dirs("linux", env)]
+    assert str(bindir) in names
+
+
+def test_an_explicit_tex_dir_is_preferred(tmp_path, monkeypatch):
+    explicit = tmp_path / "mytex" / "bin" / "x86_64-linux"
+    explicit.mkdir(parents=True)
+    monkeypatch.chdir(tmp_path)
+    env = {"HOME": str(tmp_path / "nowhere"), "ANIMATICA_TEX_DIR": str(tmp_path / "mytex")}
+    assert str(tinytex_bin_dirs("linux", env)[0]) == str(explicit)

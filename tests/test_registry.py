@@ -131,3 +131,48 @@ def test_components_doc_has_no_todo_rows():
 
 def test_registry_fingerprint_stable_and_changes(registry):
     assert registry.fingerprint() == registry.fingerprint()
+
+
+# --- enhanced validation error messages (P1 item 2) -----------------------------
+
+def test_unknown_component_error_includes_example():
+    r = ComponentRegistry()
+    r.register(Fake)
+    errs = r.validate(sb({"component": "nope", "params": {}}))
+    joined = " ".join(errs)
+    assert "nope" in joined and "fake" in joined
+    assert "Example:" in joined
+
+
+def test_bad_params_include_bad_value():
+    r = ComponentRegistry()
+    r.register(Fake)
+    errs = r.validate(sb({"component": "fake", "params": {"count": "many"}}))
+    joined = " ".join(errs)
+    assert "count" in joined
+    # the bad value should be quoted in the message
+    assert "'many'" in joined or '"many"' in joined
+
+
+def test_real_registry_error_includes_allowed_and_example():
+    r = default_registry()
+    # bounce_sequence.values has max_length=MAX_TERMS=20; pass 21 values
+    sb_ = sb({"component": "bounce_sequence",
+              "params": {"title": "T", "values": list(range(21))}})
+    errs = r.validate(sb_)
+    joined = " ".join(errs)
+    assert "values" in joined
+    assert "allowed:" in joined
+    assert "Example:" in joined
+
+
+def test_real_registry_type_error_includes_bad_value():
+    r = default_registry()
+    # graph.fn must be a string; pass an int
+    sb_ = sb({"component": "graph",
+              "params": {"fn": 123, "x_range": [-3, 3], "y_range": [-2, 2]}})
+    errs = r.validate(sb_)
+    joined = " ".join(errs)
+    assert "fn" in joined
+    assert "123" in joined
+    assert "Example:" in joined

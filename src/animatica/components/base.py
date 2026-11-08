@@ -16,6 +16,7 @@ class Component(ABC):
     name: ClassVar[str]
     api_version: ClassVar[int] = API_VERSION
     Params: ClassVar[type[BaseModel]]
+    required_capabilities: ClassVar[list[str]] = []
 
     @abstractmethod
     def duration(self, p: BaseModel) -> float:

@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import getpass
 
-from animatica.config import Config, save_config, save_key
+from animatica.config import load_config, save_config, save_key
 from animatica.doctor import run_checks
 
 
@@ -30,7 +30,9 @@ def setup() -> None:
         if cloud_allowed:
             key = getpass.getpass(f"Paste your {provider} API key (input hidden): ").strip()
 
-    cfg = Config(provider=provider, cloud_allowed=cloud_allowed)
+    cfg = load_config()  # keep the defaults the TUI remembered
+    cfg.provider = provider
+    cfg.cloud_allowed = cloud_allowed
     save_config(cfg)
     if key:
         save_key(provider, key)

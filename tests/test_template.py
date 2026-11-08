@@ -55,3 +55,30 @@ def test_keywords_match_whole_words_only():
     assert m.match("decode base64 messages") is None                   # 'code' inside 'decode'
     assert m.match("compare cats vs dogs") is not None
 
+
+
+def test_by_name_returns_the_named_template():
+    from animatica.ai.template import TemplateMatcher
+
+    m = TemplateMatcher()
+    name, _example = m.list_templates()[0]
+    storyboard = m.by_name(name)
+
+    assert storyboard is not None
+    assert storyboard.scenes
+    assert default_registry().validate(storyboard) == []
+
+
+def test_by_name_is_not_keyword_matching():
+    """Names are not prompts: "title_card" has no whole-word boundary."""
+    from animatica.ai.template import TemplateMatcher
+
+    m = TemplateMatcher()
+    assert m.match("title_card") is None
+    assert m.by_name("title_card") is not None
+
+
+def test_by_name_unknown_returns_none():
+    from animatica.ai.template import TemplateMatcher
+
+    assert TemplateMatcher().by_name("nope-not-a-template") is None

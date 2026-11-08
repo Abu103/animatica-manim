@@ -7,18 +7,24 @@ from pathlib import Path
 from animatica.ai.router import get_provider
 from animatica.ai.template import TemplateMatcher
 from animatica.ai.repair import generate_storyboard, generate_storyboard_two_stage
+from animatica.ai.guidance import check_generation_guidance
 from animatica.backends.base import RenderBackend, RenderOptions
 from animatica.backends.manim_backend import ManimBackend
 from animatica.backends import default_backends
-from animatica.components.registry import default_registry
+from animatica.components.registry import ComponentRegistry, default_registry
 from animatica.config import load_config
 from animatica.encode.probe import pick_encoder, probe_encoders
 from animatica.encode.transcode import transcode
 from animatica.paths import long_path
+from animatica.progress import ProgressFn, ProgressTracker
 from animatica.report import write_report
 from animatica.storyboard.cache import StoryboardCache
 from animatica.storyboard.lint import lint_storyboard
 from animatica.storyboard.models import Storyboard, dump_storyboard, load_storyboard
+
+# Frame lint is a non-fatal post-render quality check. Imported here so the
+# pipeline can wire it into ``make_video`` without the CLI knowing about PyAV.
+from animatica.frame_lint import FrameLintConfig, lint_video, lint_result_to_warnings  # noqa: PLC0415
 
 
 @dataclass
@@ -91,6 +97,10 @@ def make_video(
     captions: bool = True,
     two_stage: bool = False,
     jobs: int = 1,
+    frame_lint: bool = False,
+    vertical: bool = False,
+    theme: str | None = None,
+    on_progress: ProgressFn | None = None,
 ) -> MakeResult:
     render_backend = resolve_backend(backend)  # fail fast: before any file write or LLM call
     out_dir = Path(out_dir)
@@ -98,6 +108,13 @@ def make_video(
     out_dir = long_path(out_dir)
     registry = default_registry()
     warnings: list[str] = []
+
+    # One unit per post-processing step the user actually asked for; the render
+    # backend contributes its own scene units and fixes the total when it starts.
+    post_units = 1 + (1 if encoder != "auto" else 0) + (1 if frame_lint else 0)
+    progress = ProgressTracker(on_progress, post_units=post_units)
+
+    progress.announce("storyboard", "resolving storyboard")
 
     # ---- storyboard: cache -> template -> provider ----
     if storyboard_path is not None:
@@ -141,9 +158,21 @@ def make_video(
         sb, lint_notes = lint_storyboard(sb)  # model output only; never touch a hand-written --from file
         warnings.extend(lint_notes)
 
+    # Generation guidance applies to any storyboard: flag captions that
+    # describe production mechanics instead of teaching, and comparisons
+    # that lack a visual. These are notes, not errors.
+    guidance_notes = check_generation_guidance(sb)
+    warnings.extend(guidance_notes)
+
     errors = registry.validate(sb)
     if errors:
         raise ValueError("invalid storyboard: " + "; ".join(errors[:6]))
+
+    # Apply CLI theme override if specified
+    if theme is not None:
+        sb.theme.palette = theme
+
+    _check_capabilities(sb, render_backend)
 
     dump_storyboard(sb, out_dir / "storyboard.json")
 
@@ -151,7 +180,15 @@ def make_video(
     if preview:
         quality = "preview"
     render_result = render_backend.render(
-        sb, out_dir, RenderOptions(quality=quality, captions=captions, jobs=jobs)
+        sb,
+        out_dir,
+        RenderOptions(
+            quality=quality,
+            captions=captions,
+            jobs=jobs,
+            vertical=vertical,
+            progress=progress.backend,
+        ),
     )
     video = render_result.video
     warnings.extend(render_result.warnings)
@@ -162,21 +199,36 @@ def make_video(
         enc_infos = probe_encoders()
         enc = pick_encoder(encoder, enc_infos)
         encoder_used = enc.name
+        progress.advance("transcode", f"re-encoding with {enc.name}")
         transcode_result = transcode(video, out_dir / "video_transcoded.mp4", enc)
         video = transcode_result.path
         if transcode_result.warning:
             warnings.append(f"transcode: {transcode_result.warning}")
 
+    # ---- frame lint (non-fatal post-render quality check) ----
+    if frame_lint:
+        progress.advance("lint", "checking frames")
+        lint_config = FrameLintConfig(enabled=True)
+        lint_result = lint_video(
+            str(video),
+            render_result.durations,
+            lint_config,
+        )
+        warnings.extend(lint_result_to_warnings(lint_result))
+
     # ---- captions + report (single writer) ----
+    progress.advance("captions", "writing captions and report")
     _write_captions(sb, registry, out_dir / "captions.vtt")
     write_report(
         out_dir / "report.json",
         render_result.stage_times,
         warnings,
         backend={"name": render_backend.name, "version": getattr(render_backend, "version", "unknown")},
+        scene_durations=render_result.durations,
     )
 
     typer_print_provider(provider_used, encoder_used)
+    progress.finish(f"done: {video.name}")
 
     return MakeResult(
         video=video,
@@ -192,4 +244,121 @@ def typer_print_provider(provider_used: str, encoder_used: str) -> None:
 
     typer.echo(f"Provider: {provider_used}")
     typer.echo(f"Encoder: {encoder_used}")
+
+
+# ---------------------------------------------------------------------------
+# preview_frame: extract a single frame from a rendered video
+# ---------------------------------------------------------------------------
+
+def preview_frame(
+    video_path: Path | str,
+    scene_durations: list[float],
+    scene_index: int,
+    t: float,
+    out_path: Path | str | None = None,
+) -> Path:
+    """Extract frame at time `t` within `scene_index` from `video_path`.
+
+    `scene_durations` maps scene indices to cumulative time offsets so `t`
+    (seconds within the scene) is translated to the video's absolute time.
+    Returns the path to the extracted PNG frame (writes to `out_path` if given,
+    otherwise next to the video).
+
+    Raises ValueError for invalid scene_index or t (out of range, negative,
+    non-finite). If scene_durations is empty (old report without scene
+    durations), raises ValueError with an actionable message.
+    """
+    import av
+    import numpy as np
+    from PIL import Image
+
+    video_path = Path(video_path)
+    if not video_path.is_file():
+        raise FileNotFoundError(f"video not found: {video_path}")
+
+    # Validate scene_index and t before touching the video
+    if not isinstance(scene_index, int) or scene_index < 0:
+        raise ValueError(f"scene_index must be a non-negative integer, got {scene_index!r}")
+    if not isinstance(t, (int, float)) or isinstance(t, bool):
+        raise ValueError(f"t must be a number, got {t!r}")
+    if not np.isfinite(float(t)):
+        raise ValueError(f"t must be finite, got {t!r}")
+    if not scene_durations:
+        raise ValueError(
+            f"no scene durations available for {video_path}: report.json has no "
+            f"`scene_durations` field. Re-render the storyboard or specify "
+            f"`scene_durations` as a list of per-scene seconds."
+        )
+    if scene_index >= len(scene_durations):
+        raise ValueError(
+            f"scene_index {scene_index} out of range for {len(scene_durations)} scenes: "
+            f"scene_durations={scene_durations}"
+        )
+    if t < 0:
+        raise ValueError(f"t must be >= 0, got {t!r}")
+    if t > scene_durations[scene_index]:
+        raise ValueError(
+            f"t={t} is beyond scene {scene_index} duration "
+            f"{scene_durations[scene_index]}s"
+        )
+
+    # Cumulative offsets: scene 0 starts at 0, scene 1 at sum(scene 0), etc.
+    offset = sum(scene_durations[:scene_index])
+    abs_ts = offset + t
+
+    container = av.open(str(video_path))
+    try:
+        video_stream = next(s for s in container.streams if s.type == "video")
+        target_frame = None
+        for frame in container.decode(video_stream):
+            ts = float(frame.time) if frame.time is not None else 0.0
+            if ts >= abs_ts:
+                target_frame = frame
+                break
+        if target_frame is None:
+            raise ValueError(f"no frame at or after t={abs_ts:.1f}s in {video_path}")
+        img = Image.fromarray(target_frame.to_ndarray(format="rgb24"))
+    finally:
+        container.close()
+
+    if out_path is None:
+        out_path = video_path.with_suffix(f".scene{scene_index}.t{t:.1f}.png")
+    out_path = Path(out_path)
+    img.save(out_path)
+    return out_path
+
+
+def _check_capabilities(sb: Storyboard, backend: RenderBackend, registry: ComponentRegistry | None = None) -> None:
+    """Check that every component's required capabilities are supported by the backend.
+
+    Raises ``ValueError`` with an actionable message when a component requires
+    a capability the backend does not support. Checked before any rendering
+    work begins so failures are fast and clear.
+
+    Fail-closed: a backend that declares no capabilities supports nothing.
+    Components with no required capabilities are compatible with any backend.
+    """
+    cap_fn = getattr(backend, "capabilities", None)
+    supported = set(cap_fn()) if callable(cap_fn) else set(getattr(backend, "supported_capabilities", []))
+    missing: list[str] = []
+    for si, scene in enumerate(sb.scenes, 1):
+        for bi, beat in enumerate(scene.beats, 1):
+            # Look up component class from registry to get required_capabilities
+            reg = registry or default_registry()
+            try:
+                comp_cls = reg.get(beat.component).__class__
+            except KeyError:
+                continue  # unknown component: validation already caught this
+            for cap in getattr(comp_cls, "required_capabilities", []):
+                if cap not in supported:
+                    missing.append(
+                        f"scene {si}, beat {bi}: component '{beat.component}' requires "
+                        f"capability '{cap}' but backend '{backend.name}' only supports: "
+                        f"{', '.join(sorted(supported)) or '(none)'}"
+                    )
+    if missing:
+        raise ValueError(
+            "Capability incompatibility: storyboard requires capabilities the backend does not support.\n"
+            + "\n".join(f"  - {m}" for m in missing)
+        )
 

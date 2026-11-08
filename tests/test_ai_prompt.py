@@ -4,6 +4,7 @@ Root cause: providers only ever received the bare user request, so the model
 was never told to emit storyboard JSON or which components exist.
 """
 import json
+from typing import ClassVar
 
 import httpx
 import pytest
@@ -150,6 +151,11 @@ def test_provider_result_is_cached(monkeypatch, tmp_path):
         def render(self, *a, **k):
             raise RuntimeError("stop before render")
 
+        supported_capabilities: ClassVar[list[str]] = ["latex", "ffmpeg", "manim"]
+
+        def capabilities(self) -> list[str]:
+            return list(self.supported_capabilities)
+
     monkeypatch.setattr("animatica.pipeline.default_backends", lambda: {"manim": Stop()})
     for _ in range(2):
         r = CliRunner().invoke(app, ["make", "explain the taylor series", "-o", str(tmp_path)])
@@ -201,4 +207,40 @@ def test_cli_model_option_sets_override(monkeypatch, tmp_path):
     monkeypatch.setattr("animatica.pipeline.get_provider", fake)
     CliRunner().invoke(app, ["make", "explain the taylor series", "--model", "x/y", "-o", str(tmp_path)])
     assert seen["m"] == "x/y"
+
+
+# --- Prompt rule regression tests (Task 1: general prompt correction) ---
+
+def test_prompt_permits_single_scene_output():
+    reg = default_registry()
+    text = build_prompt("explain the fibonacci series with a ball bouncing on terms 0 to 15", reg)
+    assert "single scene is acceptable" in text.lower()
+    assert "prefer 3-6 scenes" not in text.lower()
+
+
+def test_prompt_title_card_optional():
+    reg = default_registry()
+    text = build_prompt("graph of sin(x)", reg)
+    assert "title_card is optional" in text.lower()
+
+
+def test_prompt_discourages_splitting_continuous_demonstration():
+    reg = default_registry()
+    text = build_prompt("explain the fibonacci series with a ball bouncing on terms 0 to 15", reg)
+    assert "do not split a continuous demonstration" in text.lower()
+    assert "keep one sequence in a single scene" in text.lower()
+
+
+def test_prompt_requires_distinct_value_per_scene():
+    reg = default_registry()
+    text = build_prompt("explain the pythagorean theorem", reg)
+    assert "each scene provides information that cannot be conveyed in the first scene" in text.lower()
+
+
+def test_prompt_allows_no_title_card():
+    reg = default_registry()
+    text = build_prompt("graph of sin(x)", reg)
+    # The prompt should not say title_card is required
+    assert "must start with title_card" not in text.lower()
+    assert "require title_card" not in text.lower()
 

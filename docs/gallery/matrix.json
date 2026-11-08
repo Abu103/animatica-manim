@@ -1,0 +1,1 @@
+{"version":"1","title":"Matrix","scenes":[{"beats":[{"component":"matrix","params":{"title":"A 2x2 Matrix","values":[[1,2],[3,4]],"highlight":[[0,0],[1,1]]},"caption":"A 2x2 matrix with diagonal cells highlighted."}]}]}

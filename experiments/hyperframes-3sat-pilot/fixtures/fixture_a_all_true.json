@@ -1,0 +1,35 @@
+{
+  "variables": [
+    {"id": "x1", "label": "x\u2081"},
+    {"id": "x2", "label": "x\u2082"},
+    {"id": "x3", "label": "x\u2083"}
+  ],
+  "clauses": [
+    {
+      "id": "c1",
+      "label": "Clause 01",
+      "rule": "one true is enough",
+      "literals": [
+        {"var": "x1", "negated": false},
+        {"var": "x2", "negated": true},
+        {"var": "x3", "negated": false}
+      ]
+    },
+    {
+      "id": "c2",
+      "label": "Clause 02",
+      "rule": "one true is enough",
+      "literals": [
+        {"var": "x1", "negated": true},
+        {"var": "x2", "negated": false},
+        {"var": "x3", "negated": true}
+      ]
+    }
+  ],
+  "assignment": {
+    "x1": true,
+    "x2": true,
+    "x3": true
+  },
+  "case_label": "TRY 01 \u2022 ALL TRUE"
+}

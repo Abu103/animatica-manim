@@ -1,0 +1,29 @@
+{
+  "version": "1",
+  "title": "Pythagoras",
+  "scenes": [
+    {
+      "beats": [
+        {
+          "component": "title_card",
+          "params": {
+            "title": "The Pythagorean theorem"
+          }
+        }
+      ]
+    },
+    {
+      "beats": [
+        {
+          "component": "equation",
+          "params": {
+            "latex": [
+              "a^2 + b^2 = c^2"
+            ],
+            "mode": "reveal"
+          }
+        }
+      ]
+    }
+  ]
+}

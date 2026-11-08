@@ -1,0 +1,25 @@
+{
+  "version": "1",
+  "title": "Benchmark: Math Scene",
+  "theme": {
+    "palette": "dark-blue",
+    "font": "default"
+  },
+  "scenes": [
+    {
+      "beats": [
+        {
+          "component": "equation",
+          "params": {
+            "mode": "reveal",
+            "latex": [
+              "a^2 + b^2 = c^2",
+              "c = \\sqrt{a^2 + b^2}"
+            ]
+          },
+          "caption": "The Pythagorean theorem rendered as LaTeX."
+        }
+      ]
+    }
+  ]
+}

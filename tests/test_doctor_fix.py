@@ -26,11 +26,91 @@ def test_tex_packages_include_the_ones_that_bit_us():
 def test_fix_installs_tinytex_and_packages_on_windows():
     run = FakeRun()
     which = lambda name: "/bin/tlmgr" if name == "tlmgr" else None
-    actions = fix_dependencies(run=run, which=which, platform="win32", bundled_ffmpeg=lambda: None)
+    actions = fix_dependencies(run=run, which=which, platform="win32", bundled_ffmpeg=lambda: None, sleep=lambda _: None)
     assert any("ffmpeg" in c.lower() and "winget" in c for c in run.commands)
     assert any("tinytex" in c.lower() for c in run.commands)
     assert any("tlmgr" in c and " ".join(TEX_PACKAGES) in c for c in run.commands)
     assert any("PATH" in a or "restart" in a for a in actions)
+
+
+def test_windows_tinytex_retries_transient_installer_failures(monkeypatch):
+    from animatica import doctor
+
+    attempts = []
+    installed = False
+    ensure_calls = []
+    sleeps = []
+
+    class Result:
+        def __init__(self, returncode=0, stdout="", stderr=""):
+            self.returncode = returncode
+            self.stdout = stdout
+            self.stderr = stderr
+
+    def run(cmd, **kwargs):
+        nonlocal installed
+        command = " ".join(cmd)
+        if "install-bin-windows.ps1" in command:
+            attempts.append(kwargs)
+            if len(attempts) < 3:
+                return Result(1, stderr="curl: (22) HTTP 504")
+            installed = True
+        return Result()
+
+    def which(name):
+        if installed and name in {"latex", "dvisvgm"}:
+            return f"C:/TinyTeX/bin/windows/{name}.exe"
+        return None
+
+    def ensure_tex(platform):
+        ensure_calls.append(platform)
+        return "C:/TinyTeX/bin/windows" if installed else None
+
+    monkeypatch.setattr(doctor, "ensure_tex_on_path", ensure_tex)
+    actions = doctor.fix_dependencies(
+        run=run,
+        which=which,
+        platform="win32",
+        bundled_ffmpeg=lambda: "/bundled/ffmpeg",
+        sleep=sleeps.append,
+    )
+
+    assert len(attempts) == 3
+    assert all(call["timeout"] == doctor.TINYTEX_WIN_INSTALL_TIMEOUT_SECONDS for call in attempts)
+    assert sleeps == [5, 10]
+    # One initial PATH check, then a fresh latex.exe check after each installer attempt.
+    assert ensure_calls == ["win32"] * (1 + len(attempts))
+    assert any("TinyTeX found at C:/TinyTeX/bin/windows" in action for action in actions)
+
+
+def test_windows_tinytex_retry_count_is_bounded(monkeypatch):
+    from animatica import doctor
+
+    attempts = []
+    sleeps = []
+
+    class Result:
+        returncode = 1
+        stdout = ""
+        stderr = "curl: (22) HTTP 504"
+
+    def run(cmd, **kwargs):
+        if "install-bin-windows.ps1" in " ".join(cmd):
+            attempts.append(kwargs)
+        return Result()
+
+    monkeypatch.setattr(doctor, "ensure_tex_on_path", lambda _platform: None)
+    actions = doctor.fix_dependencies(
+        run=run,
+        which=lambda _name: None,
+        platform="win32",
+        bundled_ffmpeg=lambda: "/bundled/ffmpeg",
+        sleep=sleeps.append,
+    )
+
+    assert len(attempts) == doctor.TINYTEX_WIN_INSTALL_ATTEMPTS == 3
+    assert sleeps == [5, 10]
+    assert any("failed after 3 attempts" in action and "HTTP 504" in action for action in actions)
 
 
 def test_fix_linux_uses_apt_and_texlive():
@@ -49,7 +129,7 @@ def test_fix_skips_what_is_already_present():
 def test_fix_continues_past_a_failing_command():
     run = FakeRun(fail_on=["winget"])
     which = lambda name: "/bin/tlmgr" if name == "tlmgr" else None
-    actions = fix_dependencies(run=run, which=which, platform="win32", bundled_ffmpeg=lambda: None)
+    actions = fix_dependencies(run=run, which=which, platform="win32", bundled_ffmpeg=lambda: None, sleep=lambda _: None)
     # ffmpeg failed, but TinyTeX + tlmgr still attempted
     assert any("tinytex" in c.lower() for c in run.commands)
     assert any("tlmgr" in c for c in run.commands)
