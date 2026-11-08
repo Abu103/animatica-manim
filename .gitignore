@@ -46,3 +46,6 @@ experiments/hyperframes-binary-search-pilot/assets/*.wav
 
 # Windows helper script for the 3-SAT pilot.
 experiments/hyperframes-3sat-pilot/run-windows.ps1
+
+# bootstrap-installed native bundle (wheels + shared libs)
+native/
