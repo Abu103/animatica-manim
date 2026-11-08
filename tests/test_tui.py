@@ -51,7 +51,11 @@ async def _click(app, pilot, selector: str) -> bool:
     widget = _q(app, selector)
     widget.scroll_visible(top=True, animate=False)
     await pilot.pause()
-    clicked = await pilot.click(widget)
+    # Pilot.click defaults to the widget's top-left corner (offset=(0, 0)).
+    # In a scroll pane that point can be clipped or covered; click inside the
+    # visible center and keep the hit-test result for tests that need it.
+    offset = (max(0, widget.size.width // 2), max(0, widget.size.height // 2))
+    clicked = await pilot.click(widget, offset=offset)
     await pilot.pause()
     return clicked
 
@@ -233,28 +237,23 @@ async def test_wizard_shell_shows_one_step_and_obvious_navigation_at_80x24():
         assert _q(app, "#step-nav").region.bottom == _q(app, "#status").region.y
         assert _q(app, "#status").region.bottom == _q(app, "Footer").region.y
 
+        async def click_step(button_id: str, expected: str) -> None:
+            clicked = await _click(app, pilot, button_id)
+            assert clicked, f"{button_id} click missed its target at 80x24"
+            assert await _wait_for(app, pilot, lambda: steps.current == expected), (
+                f"{button_id} did not navigate to {expected}; current={steps.current!r}"
+            )
+
         _q(app, "#prompt-input").value = "explain tides"
-        await _click(app, pilot, "#next")
-        await _settle(pilot)
-        assert _q(app, "#steps").current == "pane-storyboard"
+        await click_step("#next", "pane-storyboard")
         assert _q(app, "#back").disabled is False
-        await _click(app, pilot, "#next")
-        await _settle(pilot)
-        assert _q(app, "#steps").current == "pane-job"
-        await _click(app, pilot, "#next")
-        await _settle(pilot)
-        assert _q(app, "#steps").current == "pane-render"
+        await click_step("#next", "pane-job")
+        await click_step("#next", "pane-render")
         assert _q(app, "#next").display is False
         assert _q(app, "#start").display is True
-        await _click(app, pilot, "#back")
-        await _settle(pilot)
-        assert _q(app, "#steps").current == "pane-job"
-        await _click(app, pilot, "#back")
-        await _settle(pilot)
-        assert _q(app, "#steps").current == "pane-storyboard"
-        await _click(app, pilot, "#back")
-        await _settle(pilot)
-        assert _q(app, "#steps").current == "pane-prompt"
+        await click_step("#back", "pane-job")
+        await click_step("#back", "pane-storyboard")
+        await click_step("#back", "pane-prompt")
 
 
 @pytest.mark.tui
@@ -809,10 +808,13 @@ async def test_typing_in_a_picker_filters_and_commits(monkeypatch, tmp_path):
         app.set_focus(quality.query_one("#fs-input"))
         await pilot.pause()
         await pilot.press("h", "i")
-        await pilot.pause()
-        assert [label for label, _ in quality._filtered] == ["High 1080p"]
+        assert await _wait_for(
+            app, pilot, lambda: [label for label, _ in quality._filtered] == ["High 1080p"]
+        ), f"quality filter did not converge: {quality._filtered!r}"
         await pilot.press("enter")
-        await pilot.pause()
+        assert await _wait_for(app, pilot, lambda: quality.value == "high"), (
+            f"quality selection was not committed: {quality.value!r}"
+        )
     assert app.settings.quality == "high"
 
 
