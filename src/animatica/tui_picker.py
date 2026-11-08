@@ -209,7 +209,13 @@ class FilterSelect(Container):
 
     def on_input_submitted(self, event: Input.Submitted) -> None:
         event.stop()
-        self._commit(self._list().highlighted)
+        highlighted = self._list().highlighted
+        shown = min(len(self._filtered), MAX_VISIBLE)
+        # The highlight can lag a freshly filtered list (or point past its end),
+        # so Enter falls back to the first match instead of silently doing nothing.
+        if highlighted is None or not (0 <= highlighted < shown):
+            highlighted = 0 if shown else None
+        self._commit(highlighted)
 
     def on_click(self, event: object) -> None:
         self._input().focus()

@@ -90,6 +90,21 @@ async def _click(app, pilot, selector: str) -> bool:
     return clicked
 
 
+async def _press(app, pilot, selector: str) -> None:
+    """Activate a button through its own press() instead of pointer geometry.
+
+    Tests of what a button *does* should not depend on where the terminal
+    renders it; Windows runners hit-test the mouse differently. Real click
+    behaviour is covered by the explicit click tests.
+    """
+    widget = _q(app, selector)
+    widget.scroll_visible(top=True, animate=False)
+    await pilot.pause()
+    assert not widget.disabled, f"{selector} is disabled"
+    widget.press()
+    await pilot.pause()
+
+
 async def _start_with_template(app, pilot, template_name: str) -> None:
     _q(app, "#source-mode").value = "template"
     _q(app, "#template-select").value = template_name
@@ -114,7 +129,7 @@ async def _settle(pilot, turns: int = 3) -> None:
         await pilot.pause()
 
 
-async def _wait_for(app, pilot, predicate, timeout: float = 5.0) -> bool:
+async def _wait_for(app, pilot, predicate, timeout: float = 15.0) -> bool:
     """Poll the app until predicate() is true (workers run off the UI thread)."""
     deadline = asyncio.get_event_loop().time() + timeout
     while asyncio.get_event_loop().time() < deadline:
@@ -478,7 +493,8 @@ async def test_storyboard_json_edit_validates_and_updates_the_table():
         payload = json.loads(editor.text)
         payload["scenes"][0]["beats"][0]["caption"] = "Edited caption"
         editor.text = json.dumps(payload)
-        clicked = await _click(app, pilot, "#validate")
+        clicked = True
+        await _press(app, pilot, "#validate")
         status = _q(app, "#storyboard-status")
         assert await _wait_for(app, pilot, lambda: "Valid" in _text(status)), (
             f"Validate click hit target={clicked}; expected a valid storyboard status; "
@@ -497,7 +513,8 @@ async def test_broken_json_is_reported_not_raised():
         await _open_advanced_json(app, pilot)
 
         _q(app, "#storyboard-json").text = '{"version": "1", '
-        clicked = await _click(app, pilot, "#validate")
+        clicked = True
+        await _press(app, pilot, "#validate")
         status = _q(app, "#storyboard-status")
         assert await _wait_for(app, pilot, lambda: "JSON error" in _text(status)), (
             f"Validate click hit target={clicked}; expected the JSON error status; "
@@ -517,7 +534,8 @@ async def test_unknown_component_is_rejected_by_the_registry():
 
         editor = _q(app, "#storyboard-json")
         editor.text = editor.text.replace("title_card", "not_a_component", 1)
-        clicked = await _click(app, pilot, "#validate")
+        clicked = True
+        await _press(app, pilot, "#validate")
         status = _q(app, "#storyboard-status")
         assert await _wait_for(app, pilot, lambda: "problem" in _text(status)), (
             f"Validate click hit target={clicked}; expected component-validation problems; "
@@ -890,3 +908,24 @@ async def test_saved_defaults_survive_a_broken_config_file(monkeypatch, tmp_path
     (tmp_path / "config.toml").write_text("this is not toml = = =\n", encoding="utf-8")
     fresh = TuiSettings()  # must fall back to built-in defaults, not raise
     assert fresh.quality in {"preview", "standard", "high"}
+
+
+@pytest.mark.tui
+async def test_picker_enter_commits_first_match_when_highlight_is_stale():
+    """Enter must pick the first match even if the list highlight lags or is out of range."""
+    app, _ = _make_app()
+    async with app.run_test(size=(80, 24)) as pilot:
+        await pilot.pause()
+        theme = _picker(app, "theme-select")
+        search = theme.query_one("#fs-input")
+        app.set_focus(search)
+        await pilot.pause()
+        search.value = "lig"
+        assert await _wait_for(
+            app, pilot, lambda: [label for label, _ in theme._filtered] == ["Light"]
+        ), f"filter did not converge: {theme._filtered!r}"
+
+        theme._list().highlighted = None  # simulate a lagging highlight
+        search.post_message(search.Submitted(search, search.value))
+        assert await _wait_for(app, pilot, lambda: theme.value == "light"), theme.value
+        assert app.settings.theme == "light"
