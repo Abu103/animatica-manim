@@ -212,6 +212,10 @@ def tinytex_bin_dirs(platform: str = sys.platform, env=None) -> list[Path]:
             if base:
                 dirs.append(Path(base) / "TinyTeX" / "bin" / "windows")
         dirs.append(Path("C:/tools/tinytex/bin/windows"))
+        # The prebuilt Windows bundle unpacks to <project>/.tex/bin/windows.
+        from animatica.tex_bundle import bundle_bin_dirs
+
+        dirs.extend(bundle_bin_dirs(Path.cwd()))
     else:
         home = Path(env.get("HOME") or Path.home())
         # An explicit override, then a TeX unpacked next to the project (that is
@@ -437,40 +441,59 @@ def fix_dependencies(
     latex_missing = not (have_latex and which("dvisvgm"))
     if not have_latex:
         if platform == "win32":
-            # The published tinytex-manim.zip is built from install-unx.sh on Ubuntu;
-            # it is not a Windows fallback. Retry the official Windows installer instead.
-            installer = [
-                "powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-Command",
-                f"$ProgressPreference='SilentlyContinue'; irm {TINYTEX_WIN_INSTALLER_URL} | iex",
-            ]
-            tinytex_ready = False
-            for attempt in range(1, TINYTEX_WIN_INSTALL_ATTEMPTS + 1):
-                _try(
-                    f"install TinyTeX via the official Windows installer (attempt {attempt}/{TINYTEX_WIN_INSTALL_ATTEMPTS})",
-                    installer,
-                    timeout=TINYTEX_WIN_INSTALL_TIMEOUT_SECONDS,
-                )
-                added = ensure_tex_on_path(platform)
+            # 1) the prebuilt Windows bundle (verified against a pinned sha256).
+            #    It fails closed when no hash is known, and falls through on any
+            #    download/checksum/unpack error.
+            try:
+                from animatica import tex_bundle
+
+                bundle_ok, bundle_msg = tex_bundle.install_windows_bundle(Path.cwd())
+            except Exception as exc:  # a bundle problem must never block the fallback
+                bundle_ok, bundle_msg = False, f"prebuilt bundle unavailable: {type(exc).__name__}: {exc}"
+            actions.append(bundle_msg)
+            if bundle_ok:
+                ensure_tex_on_path(platform)
                 if which("latex"):
-                    if added:
-                        actions.append(f"TinyTeX found at {added}; added to PATH for Animatica (new terminals get it via 'tlmgr path add')")
-                    else:
-                        actions.append(f"TinyTeX latex.exe is available after attempt {attempt}/{TINYTEX_WIN_INSTALL_ATTEMPTS}")
-                    tinytex_ready = True
-                    break
-                if attempt < TINYTEX_WIN_INSTALL_ATTEMPTS:
-                    delay = TINYTEX_WIN_RETRY_BASE_SECONDS * (2 ** (attempt - 1))
-                    actions.append(
-                        f"latex.exe was not found after TinyTeX attempt {attempt}/{TINYTEX_WIN_INSTALL_ATTEMPTS}; "
-                        f"retrying in {delay}s"
+                    have_latex = True
+                    latex_missing = not bool(which("dvisvgm"))
+                    actions.append("prebuilt TinyTeX bundle is in use; no upstream install needed")
+            if not have_latex:
+                # 2) the official upstream installer (the fallback).
+                # The published tinytex-manim.zip is built from install-unx.sh on Ubuntu;
+                # it is not a Windows fallback. Retry the official Windows installer instead.
+                installer = [
+                    "powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-Command",
+                    f"$ProgressPreference='SilentlyContinue'; irm {TINYTEX_WIN_INSTALLER_URL} | iex",
+                ]
+                tinytex_ready = False
+                for attempt in range(1, TINYTEX_WIN_INSTALL_ATTEMPTS + 1):
+                    _try(
+                        f"install TinyTeX via the official Windows installer (attempt {attempt}/{TINYTEX_WIN_INSTALL_ATTEMPTS})",
+                        installer,
+                        timeout=TINYTEX_WIN_INSTALL_TIMEOUT_SECONDS,
                     )
-                    sleep(delay)
-            if not tinytex_ready:
-                actions.append(
-                    f"TinyTeX install failed after {TINYTEX_WIN_INSTALL_ATTEMPTS} attempts; latex.exe was not found.\n"
-                    + describe_tex_search(platform)
-                    + (f"\ninstaller output (last lines):\n{last_tail[0]}" if last_tail[0].strip() else "")
-                )
+                    added = ensure_tex_on_path(platform)
+                    if which("latex"):
+                        if added:
+                            actions.append(f"TinyTeX found at {added}; added to PATH for Animatica (new terminals get it via 'tlmgr path add')")
+                        else:
+                            actions.append(f"TinyTeX latex.exe is available after attempt {attempt}/{TINYTEX_WIN_INSTALL_ATTEMPTS}")
+                        tinytex_ready = True
+                        have_latex = True
+                        break
+                    if attempt < TINYTEX_WIN_INSTALL_ATTEMPTS:
+                        delay = TINYTEX_WIN_RETRY_BASE_SECONDS * (2 ** (attempt - 1))
+                        actions.append(
+                            f"latex.exe was not found after TinyTeX attempt {attempt}/{TINYTEX_WIN_INSTALL_ATTEMPTS}; "
+                            f"retrying in {delay}s"
+                        )
+                        sleep(delay)
+                if not tinytex_ready:
+                    actions.append(
+                        f"TinyTeX install failed after {TINYTEX_WIN_INSTALL_ATTEMPTS} attempts; latex.exe was not found.\n"
+                        + describe_tex_search(platform)
+                        + (f"\ninstaller output (last lines):\n{last_tail[0]}" if last_tail[0].strip() else "")
+                    )
         elif platform == "darwin":
             _try("install TinyTeX", ["bash", "-c", "curl -fsSL https://yihui.org/tinytex/install-unx.sh | sh"])
             ensure_tex_on_path(platform)

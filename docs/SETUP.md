@@ -45,10 +45,16 @@ animatica make "graph of sin(x)" -o out --preview
 
 `ffmpeg`: a system ffmpeg is used if present, otherwise the binary bundled in the `imageio-ffmpeg` wheel.
 
-## Pre-baked TinyTeX release asset (Linux only)
+## Pre-baked TinyTeX release asset
 
-`.github/workflows/build-tinytex.yml` builds a **Linux** TinyTeX archive. There is no Windows/macOS prebuilt
-archive; Windows uses the official installer above. Do not use the Linux archive on Windows.
+`.github/workflows/build-tinytex.yml` builds a **Linux** TinyTeX archive. It is a
+Unix tree and must not be used on Windows.
+
+`.github/workflows/build-tinytex-windows.yml` builds a separate **Windows**
+TinyTeX archive (`tinytex-manim-win.zip`). `animatica doctor --fix` prefers it
+on Windows, but only after verifying its sha256; when the hash is unknown or
+does not match, the official installer above is used instead. See
+`docs/NATIVE_DEPS.md` for the details.
 
 ## Known limits
 

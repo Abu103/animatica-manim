@@ -67,15 +67,51 @@ to cairo image surfaces, so nothing actually opens a display.
 
 ## Windows
 
-No bundle is needed: the Windows wheels of `pycairo` and `manimpango` ship the
-cairo/pango DLLs, so `scripts/bootstrap.ps1` just installs them. The two installers
-otherwise do the same job (source, environment, LaTeX, verify, then `animatica tui`).
+No cairo/pango bundle is needed: the Windows wheels of `pycairo` and `manimpango`
+ship the cairo/pango DLLs, so `scripts/bootstrap.ps1` just installs them. The two
+installers otherwise do the same job (source, environment, LaTeX, verify, then
+`animatica tui`).
+
+### The prebuilt LaTeX bundle for Windows
+
+The Linux LaTeX bundle is built on Ubuntu and cannot serve Windows (its
+binaries are ELF, not PE). `.github/workflows/build-tinytex-windows.yml` builds
+a separate TinyTeX tree on `windows-latest` with the upstream Windows
+installer, and publishes it as the release asset `tinytex-manim-win.zip` on the
+`tex-deps-v1-windows` tag.
+
+`animatica doctor --fix` uses it in this order on Windows:
+
+1. **The prebuilt bundle**, but only when its sha256 is known and matches.
+   The bundle is downloaded, the hash is verified *before* unpacking, and the
+   tree is unpacked to `<project>/.tex/` so `bin/windows` sits where
+   `tinytex_bin_dirs` looks for it.
+2. **The upstream TinyTeX installer** (`rstudio/tinytex`), retried three times
+   with a bounded backoff. This is the fallback for every bundle failure.
+
+The bundle **fails closed**: while the expected sha256 is unknown (the constant
+in `src/animatica/tex_bundle.py` is empty until it is seeded), the bundle is
+not downloaded at all and the upstream installer is used. A mismatching file is
+deleted and the fallback runs. The URL is pinned to the explicit release tag,
+never "latest", so the hash and the file cannot drift apart.
+
+Two environment variables override the bundle for testing:
+
+| Variable | Meaning |
+| --- | --- |
+| `ANIMATICA_TEX_URL` | Where to fetch the bundle from (a local `file:///` URL works). |
+| `ANIMATICA_TEX_SHA256` | The expected sha256. An override URL alone does not make an unverified bundle usable. |
+
+The build workflow's own Windows job uses both to download the artifact it
+just built and verify it end to end, so the bundle path is proven in CI before
+any hash is committed.
 
 ## Known limits
 
-- **LaTeX** is not in the bundle. `MathTex` and friends still fail; text built on
-  pango (`Text`, `MarkupText`) renders fine. The doctor report and the CI
-  workflow (`ci.yml`) cover the TeX path on a runner with `texlive`.
+- **LaTeX** is not in the Linux cairo/pango bundle. `MathTex` and friends still
+  fail on a host without a LaTeX install; text built on pango (`Text`,
+  `MarkupText`) renders fine. The doctor report and the CI workflow (`ci.yml`)
+  cover the TeX path on a runner with `texlive`.
 - **HyperFrames / headless Chrome** needs Chromium and ~12 GUI libraries — a
   separate, much larger bundle.
 - The bundle is built for **cp311 / x86_64 / glibc ≥ 2.36**. Change the container
