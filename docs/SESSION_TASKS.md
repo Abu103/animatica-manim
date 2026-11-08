@@ -12,15 +12,8 @@ Updated: 2026-11-08. Newest status on top. Any Claude session can resume from he
 - Created AGENTS.md with rule: before using/fixing a third-party API call you're unsure of, follow external-docs-lookup. (AGENTS.md did not exist on origin/main; created with this rule.)
 - Created docs/HERMES_PLAYBOOK.md failure-mode table with row: guessed library behavior -> external-docs-lookup. (HERMES_PLAYBOOK.md did not exist on origin/main; created with this table.)
 - Condition 4 research: Hermes config.yaml mcp_servers section (line 2553; schema command+args+timeout+connect_timeout for stdio, url+enabled for HTTP; doc reference website/docs/user-guide/features/mcp.md at line 1619). Active entries: mermaid (npx -y mcp-mermaid), deepwiki (http). Context7 (npx -y @upstash/context7-mcp) fits the stdio mermaid pattern -> supported. No config was edited (per instruction).
-- Config change for approval (write to ~/.hermes/config.yaml mcp_servers):
-    context7:
-      command: npx
-      args:
-        - -y
-        - "@upstash/context7-mcp"
-      timeout: 120
-      connect_timeout: 60
-  Source: ~/.hermes/config.yaml mcp_servers section (line 1619 references website/docs/user-guide/features/mcp.md; active entries line 2553). Config backed up to /tmp/config.yaml.before-docs-lookup-skill.20261108-145145 before any change (none made).
+- Config change APPLIED (hermes config set): added `mcp_servers.context7` with `@upstash/context7-mcp@4.4.4`, `lazy: true`, `timeout: 120`, `connect_timeout: 60`. Backup: /tmp/config.yaml.before-context7.20261108-151459 and /tmp/config.yaml.before-mermaid-removal.20261108-163450 (kept, not deleted). YAML parsed OK after edit. `hermes mcp list` shows context7 ✓ enabled.
+- ADVISORY MAL-2026-4147: `mcp-mermaid` (npm) has known malware advisories. Hermes' malware block caught it: `hermes mcp test mermaid` -> BLOCKED. Removed `mcp_servers.mermaid` from ~/.hermes/config.yaml via `hermes config unset mcp_servers.mermaid`. Backup kept at /tmp/config.yaml.before-mermaid-removal.20261108-163450. YAML parsed OK after removal. `mermaid` not installed, not run, not retried. `context7` and `deepwiki` remain untouched. `skills.external_dirs` untouched.
 
 ## Status (2026-11-08, Hermes session, task cards T10 + T11 + T12)
 ### T12 Windows TinyTeX bundle [Gate A, approved with conditions] - DONE, Windows VERIFIED by CI
