@@ -14,8 +14,12 @@ curl -fsSL https://raw.githubusercontent.com/Abu103/animatica-manim/main/scripts
 irm https://raw.githubusercontent.com/Abu103/animatica-manim/main/scripts/bootstrap.ps1 | iex
 ```
 
-Both scripts finish by running `animatica doctor` and print **Done** only if every check passes;
-otherwise they say setup is not complete and show what failed.
+Both scripts verify the installation with `animatica doctor`. When required checks
+pass, an interactive terminal automatically launches `animatica setup` in the same
+session. Choose `template` for offline starter examples, or choose a provider; a
+cloud provider asks for permission and an API key. In CI or without an interactive
+terminal, the wizard is skipped and the installer prints the command to run later.
+Set `ANIMATICA_SKIP_SETUP=1` to skip it explicitly.
 
 ## What it does
 
@@ -25,6 +29,7 @@ otherwise they say setup is not complete and show what failed.
      TinyTeX goes to `%APPDATA%\TinyTeX` (or `%ProgramData%\TinyTeX` if your user path has spaces/non-ASCII).
    - **Linux:** `apt install texlive texlive-latex-extra dvisvgm` (needs sudo).
 3. Verifies with `animatica doctor`.
+4. On an interactive terminal, launches `animatica setup` so you can choose an offline template or provider immediately. CI, redirected input, and `ANIMATICA_SKIP_SETUP=1` skip the prompt.
 
 Animatica finds an installed TinyTeX by itself even if it is not on your PATH, so a restart is not required
 for Animatica. (A program can never change its parent terminal's PATH; the TinyTeX installer adds it for *new* terminals.)

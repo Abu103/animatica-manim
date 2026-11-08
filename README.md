@@ -26,16 +26,27 @@ project folder and Animatica activates them on import. Windows PowerShell only:
 if script execution is blocked, use
 `powershell -ExecutionPolicy Bypass -File scripts\bootstrap.ps1` from a clone.
 
-Then everything else happens in one place:
+When dependency checks pass, an interactive terminal automatically opens the
+`animatica setup` wizard in the same session. Choose **template** for offline
+starter examples, or choose an AI provider; cloud providers ask you to confirm
+access and paste a key. There is no separate setup command to remember. In CI or
+without a terminal, the wizard is skipped; set `ANIMATICA_SKIP_SETUP=1` to skip
+it explicitly, then run the installed environment's `animatica setup` command
+(the executable paths are shown below; replace `tui` with `setup`).
+
+After setup, open the interactive studio (`animatica tui`). The installer keeps
+Animatica inside its virtual environment, so use the environment's executable:
 
 ```
-animatica tui
+# Linux / macOS
+"$HOME/animatica-manim/.venv/bin/animatica" tui
+
+# Windows PowerShell
+& "$HOME\animatica-manim\.venv\Scripts\animatica.exe" tui
 ```
 
-The studio is where you pick quality, theme, orientation and provider (arrow
-keys, or just start typing to filter the list), paste an API key, and render.
-Your job-step choices are remembered, so the next session starts where you left
-off. The equivalent non-interactive path, when you already know what you want:
+The studio guides you through an idea, scenes, style, and rendering. The
+non-interactive path, when you already know what you want, is:
 
 ```
 animatica doctor                  # what is installed, what is missing

@@ -53,6 +53,8 @@ jobs:
       # itself and finish by pointing at `animatica tui`.
       - name: Windows installer, end to end (PowerShell)
         run: pwsh -NoProfile -File scripts/bootstrap.ps1
+      - name: TUI dependency installed by bootstrap
+        run: .\\.venv\\Scripts\\python.exe -c "import textual; print('Textual import OK')"
       - name: Test extras into the venv the installer built
         run: |
           .\.venv\Scripts\python.exe -m ensurepip --upgrade 2>$null

@@ -23,9 +23,10 @@ diagram, morph, code highlight), renders them with Manim, and encodes the video.
   work offline).
 - About 15 minutes for the first install; later videos render in seconds.
 
-## Install (fast, ~30 seconds)
+## Install
 
-One command, full quality, deps installed in parallel:
+The first install takes a few minutes while Python, Manim, and system dependencies
+are prepared. Copy and run the command for your terminal:
 
 ```
 # Windows (PowerShell)
@@ -34,9 +35,10 @@ irm https://raw.githubusercontent.com/Abu103/animatica-manim/main/scripts/bootst
 curl -fsSL https://raw.githubusercontent.com/Abu103/animatica-manim/main/scripts/bootstrap.sh | bash
 ```
 
-It uses `uv` for Python deps, the bundled static ffmpeg (`imageio-ffmpeg`), and a
-pre-baked TinyTeX zip — then runs `animatica doctor` to verify. If the TinyTeX
-release asset is unavailable it falls back to `animatica doctor --fix`.
+After dependency checks pass, the installer automatically starts `animatica setup`
+in that same interactive terminal. Choose **template** for offline examples, or
+choose an AI provider (cloud providers ask permission and an API key). If there is
+no interactive terminal, it prints the setup command instead of trying to prompt.
 
 ### Manual install
 

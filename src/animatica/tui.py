@@ -55,8 +55,11 @@ def _import_textual() -> dict[str, Any]:
         from textual.app import App, ComposeResult
         from textual.binding import Binding
         from textual.containers import Grid, Horizontal, Vertical, VerticalScroll
+        from textual.screen import ModalScreen
         from textual.widgets import (
             Button,
+            Collapsible,
+            ContentSwitcher,
             DataTable,
             Footer,
             Input,
@@ -65,8 +68,6 @@ def _import_textual() -> dict[str, Any]:
             Select,
             Static,
             Switch,
-            TabbedContent,
-            TabPane,
             TextArea,
         )
         from textual import work
@@ -83,20 +84,21 @@ def _import_textual() -> dict[str, Any]:
         "App": App,
         "Binding": Binding,
         "Button": Button,
+        "Collapsible": Collapsible,
         "ComposeResult": ComposeResult,
+        "ContentSwitcher": ContentSwitcher,
         "DataTable": DataTable,
         "Footer": Footer,
         "Grid": Grid,
         "Horizontal": Horizontal,
         "Input": Input,
+        "ModalScreen": ModalScreen,
         "ProgressBar": ProgressBar,
         "RichLog": RichLog,
         "FilterSelect": FilterSelect,
         "Select": Select,
         "Static": Static,
         "Switch": Switch,
-        "TabbedContent": TabbedContent,
-        "TabPane": TabPane,
         "TextArea": TextArea,
         "Vertical": Vertical,
         "VerticalScroll": VerticalScroll,
@@ -152,108 +154,130 @@ STEPS = ("prompt", "storyboard", "job", "render")
 
 APP_CSS = """
 Screen {
-    background: #0b151b;
-    color: #eef4ef;
+    background: #101116;
+    color: #f2f2f4;
 }
 
-/* ---- top bar -------------------------------------------------------- */
+/* Quiet chrome; one accent, clear hierarchy, no dashboard clutter. */
 #topbar {
     height: 3;
     padding: 1 2 0 2;
-    background: #10222a;
-    border-bottom: solid #24424a;
+    background: #15161c;
+    border-bottom: solid #292a33;
 }
 #topbar .brand {
     width: auto;
     text-style: bold;
-    color: #a5f5cc;
+    color: #d8f99f;
     margin-right: 2;
 }
 #topbar .tagline {
     width: 1fr;
-    color: #6f8f8b;
+    color: #9a9ba5;
 }
 #topbar .step {
     width: auto;
-    color: #9fbdb5;
+    color: #d8f99f;
+    margin-right: 2;
+}
+#topbar-help { min-width: 8; margin-right: 0; }
+
+ContentSwitcher { height: 1fr; }
+VerticalScroll {
+    height: 1fr;
+    padding: 1 2;
+    scrollbar-gutter: stable;
 }
 
-/* ---- main split ------------------------------------------------------ */
-#content { height: 1fr; }
-
-/* job step: a two-column form grid (label, control) */
-#job-grid {
-    grid-size: 4;
-    grid-columns: 13 1fr 13 1fr;
-    grid-gutter: 0 1;
-    height: auto;
+#step-nav {
+    height: 4;
+    padding: 0 2;
+    border-top: solid #292a33;
+    background: #15161c;
+    align-vertical: middle;
 }
-#job-grid .field-label {
-    color: #9fbdb5;
-    height: 3;
-    content-align: left middle;
-}
-#job-grid Input, #job-grid Select, #job-grid FilterSelect { width: 1fr; }
-#job-grid FilterSelect { height: auto; }
-#job-grid FilterSelect #fs-list { background: #10231f; }
-#job-grid Switch { height: 3; }
-.warn { color: #ffad95; margin-top: 1; }
-.side-value { color: #cfe3dc; }
-.side-head { height: 1; }
-.side-head #side-duration { margin-left: 3; }
-
-/* ---- tabs ------------------------------------------------------------ */
-TabbedContent { height: 1fr; }
-TabPane { padding: 0 2; overflow-y: auto; height: 1fr; }
+#nav-note { width: 1fr; color: #8e909a; }
+#back, #next { min-width: 16; }
 
 .pane-title {
     margin-top: 1;
     text-style: bold;
-    color: #eef4ef;
-    margin-bottom: 1;
+    color: #f2f2f4;
 }
-.hint { color: #6f8f8b; }
-.field-label { color: #9fbdb5; margin-top: 1; }
+.pane-subtitle { color: #a0a1aa; margin-bottom: 0; }
+.hint { color: #858792; }
+.field-label { color: #b8b9c2; margin-top: 1; }
 .row { height: auto; margin-top: 1; }
 
-Input, TextArea { border: tall #24424a; background: #0a141b; }
-SelectCurrent { border: tall #24424a; background: #0a141b; }
-Input:focus, TextArea:focus { border: tall #a5f5cc; }
-Select:focus > SelectCurrent { border: tall #a5f5cc; }
-SelectOverlay { border: tall #24424a; }
+Input, TextArea { border: round #373943; background: #17181f; }
+SelectCurrent { border: round #373943; background: #17181f; }
+Input:focus, TextArea:focus { border: round #d8f99f; }
+Select:focus > SelectCurrent { border: round #d8f99f; }
+SelectOverlay { border: round #373943; }
 Button { margin-right: 1; min-width: 14; }
-Button.-primary { background: #a5f5cc; color: #07231c; text-style: bold; }
-Button.-error { background: #ffad95; color: #3a1f18; }
+Button:focus { border: round #d8f99f; }
+Button.-primary { background: #d8f99f; color: #171a0e; text-style: bold; }
+Button.-error { background: #f2a896; color: #24140f; }
 
-/* storyboard step */
-/* heights are computed in _layout_storyboard: fr/% rounding inside a
-   scrolling pane made the editor overflow the last screen row */
-#storyboard-table { min-height: 4; border: round #24424a; }
-#storyboard-json { min-height: 4; }
-#storyboard-json { height: 1fr; min-height: 6; }
+/* Basic job choices stay visible; infrequent controls are progressive. */
+#job-grid, #advanced-job-grid {
+    grid-size: 2;
+    grid-columns: 17 1fr;
+    grid-gutter: 0 1;
+    height: auto;
+}
+#job-grid .field-label, #advanced-job-grid .field-label {
+    color: #b8b9c2;
+    height: 3;
+    content-align: left middle;
+}
+#job-grid Input, #job-grid Select, #job-grid FilterSelect,
+#advanced-job-grid Input, #advanced-job-grid Select, #advanced-job-grid FilterSelect { width: 1fr; }
+#job-grid FilterSelect, #advanced-job-grid FilterSelect { height: auto; }
+#job-grid FilterSelect #fs-list, #advanced-job-grid FilterSelect #fs-list { background: #202126; }
+#job-grid Switch, #advanced-job-grid Switch { height: 3; }
+#job-advanced, #storyboard-advanced, #render-details { margin-top: 1; }
+.warn { color: #f2a896; margin-top: 1; }
+.side-value { color: #d1d1d7; }
+.side-head { height: 1; margin-top: 0; }
 
-/* render step */
-#render-stage { color: #cfe3dc; }
+/* Storyboard preview is primary; raw JSON is an opt-in advanced tool. */
+#storyboard-details { height: auto; }
+#storyboard-table { min-height: 5; border: round #373943; }
+#storyboard-json { height: 8; min-height: 5; }
+
+/* Keep render status obvious; technical detail is available on demand. */
+#render-stage { color: #d1d1d7; }
 #progress-bar { margin: 1 0; }
 #render-log {
     height: 1fr;
     min-height: 6;
-    border: round #24424a;
-    background: #081014;
+    border: round #373943;
+    background: #15161c;
     padding: 0 1;
 }
-#render-summary { color: #cfe3dc; margin-top: 1; }
+#render-summary { color: #d1d1d7; margin-top: 1; }
 
-/* ---- status line ----------------------------------------------------- */
 #status {
     height: 1;
     padding: 0 2;
-    background: #10222a;
-    color: #9fbdb5;
+    background: #1a1b22;
+    color: #b4b5bd;
 }
-#status.ok { color: #a5f5cc; }
-#status.error { color: #ffad95; }
-#status.busy { color: #f0c97f; }
+#status.ok { color: #d8f99f; }
+#status.error { color: #f2a896; }
+#status.busy { color: #f1ca7d; }
+
+HelpScreen { align: center middle; background: #000000; }
+#help-card {
+    width: 72;
+    height: auto;
+    max-height: 90%;
+    padding: 1 2;
+    border: round #45464f;
+    background: #191a21;
+}
+#help-card .pane-title { margin-top: 0; }
 """
 
 
@@ -359,13 +383,43 @@ class AnimaticaTuiApp:
         settings = self.settings
         wrapper = self
 
+        class HelpScreen(w["ModalScreen"]):
+            BINDINGS = [
+                w["Binding"]("escape", "close", "Close", show=False),
+                w["Binding"]("f1", "close", "Close", show=False),
+            ]
+
+            def compose(self) -> w["ComposeResult"]:  # type: ignore[valid-type]
+                with w["Vertical"](id="help-card"):
+                    yield w["Static"]("A simple four-step flow", classes="pane-title")
+                    yield w["Static"](
+                        "1  Idea     Describe a topic, pick a starter, or open a storyboard.\n"
+                        "2  Scenes   Preview a starter or file; prompt scenes are created at "
+                        "render.\n"
+                        "3  Style    Keep the recommended settings or adjust the options.\n"
+                        "4  Render   Create the video and open it when it is ready.\n\n"
+                        "Tab moves between controls. Enter selects. F1 or Escape closes help.\n"
+                        "Ctrl+J continues; Ctrl+B goes back; Ctrl+R starts a render.",
+                        id="help-copy",
+                    )
+                    with w["Horizontal"](classes="row"):
+                        yield w["Button"]("Close", id="close-help", variant="primary")
+
+            def on_button_pressed(self, event: Any) -> None:
+                if getattr(event.button, "id", "") == "close-help":
+                    self.dismiss()
+
+            def action_close(self) -> None:
+                self.dismiss()
+
         class StudioApp(w["App"]):
             CSS = APP_CSS
             TITLE = "Animatica"
             BINDINGS = [
-                w["Binding"]("ctrl+j", "next_step", "Next step"),
-                w["Binding"]("ctrl+b", "prev_step", "Previous step"),
+                w["Binding"]("ctrl+j", "next_step", "Continue"),
+                w["Binding"]("ctrl+b", "prev_step", "Back"),
                 w["Binding"]("ctrl+r", "start_render", "Render"),
+                w["Binding"]("f1", "help", "Help"),
                 w["Binding"]("ctrl+q", "quit", "Quit"),
             ]
 
@@ -384,114 +438,187 @@ class AnimaticaTuiApp:
 
             def compose(self) -> w["ComposeResult"]:  # type: ignore[valid-type]
                 with w["Horizontal"](id="topbar"):
-                    yield w["Static"]("◆ Animatica", classes="brand")
-                    yield w["Static"]("prompt → explainer video", id="tagline", classes="tagline")
+                    yield w["Static"]("ANIMATICA", classes="brand")
+                    yield w["Static"](
+                        "Create a video from an idea",
+                        id="tagline",
+                        classes="tagline",
+                    )
                     yield w["Static"]("", id="topbar-step", classes="step")
+                    yield w["Button"]("Help · F1", id="topbar-help")
 
-                with w["Vertical"](id="content"):
-                    with w["TabbedContent"](initial="pane-prompt", id="steps"):
-                        with w["TabPane"]("1 · Prompt", id="pane-prompt"):
-                            yield from self._compose_prompt()
-                        with w["TabPane"]("2 · Storyboard", id="pane-storyboard"):
-                            yield from self._compose_storyboard()
-                        with w["TabPane"]("3 · Job", id="pane-job"):
-                            yield from self._compose_job()
-                        with w["TabPane"]("4 · Render", id="pane-render"):
-                            yield from self._compose_render()
+                with w["ContentSwitcher"](initial="pane-prompt", id="steps"):
+                    with w["VerticalScroll"](id="pane-prompt"):
+                        yield from self._compose_prompt()
+                    with w["VerticalScroll"](id="pane-storyboard"):
+                        yield from self._compose_storyboard()
+                    with w["VerticalScroll"](id="pane-job"):
+                        yield from self._compose_job()
+                    with w["VerticalScroll"](id="pane-render"):
+                        yield from self._compose_render()
 
-                yield w["Static"]("Ready. Start with a prompt or an offline template.", id="status")
+                with w["Horizontal"](id="step-nav"):
+                    yield w["Button"]("← Back", id="back", disabled=True)
+                    yield w["Static"]("", id="nav-note")
+                    yield w["Button"]("Continue →", id="next", variant="primary")
+
+                yield w["Static"]("Ready. Choose how to start.", id="status")
                 yield w["Footer"]()
 
             def _compose_prompt(self):
-                yield w["Static"]("What should the video explain?", classes="pane-title")
+                yield w["Static"]("Start with an idea", classes="pane-title")
+                yield w["Static"](
+                    "Describe a topic, choose a starter, or open a storyboard.",
+                    classes="pane-subtitle",
+                )
+                yield w["Static"]("How would you like to begin?", classes="field-label")
+                yield w["Select"](
+                    options=[
+                        ("Describe a topic", "prompt"),
+                        ("Choose a starter", "template"),
+                        ("Open a storyboard file", "storyboard"),
+                    ],
+                    value="prompt",
+                    allow_blank=False,
+                    id="source-mode",
+                )
                 yield w["Input"](
-                    placeholder="prompt · e.g. explain the pythagorean theorem", id="prompt-input"
+                    placeholder="e.g. Why do leaves change color?",
+                    id="prompt-input",
                 )
                 template_options = [(name, name) for name, _ in TemplateMatcher().list_templates()]
                 yield w["Select"](
                     options=template_options,
                     allow_blank=True,
-                    prompt="…or pick an offline template (no API key)",
+                    prompt="Choose an offline starter",
                     id="template-select",
                 )
                 yield w["Input"](
-                    placeholder="…or open an existing storyboard.json", id="sb-path-input"
+                    placeholder="Path to storyboard.json",
+                    id="sb-path-input",
                 )
-                yield w["Static"]("Use exactly one of the three.", classes="hint")
+                yield w["Static"](
+                    "Scenes from an idea are drafted when you create the video.",
+                    id="source-hint",
+                    classes="hint",
+                )
                 with w["Horizontal"](classes="row"):
-                    yield w["Button"]("Continue →", id="next", variant="primary")
                     yield w["Button"]("Clear", id="clear")
                 yield w["Static"]("", id="prompt-status", classes="hint")
 
             def _compose_storyboard(self):
-                yield w["Static"]("Review the scenes before spending render time", classes="pane-title")
-                with w["Horizontal"](classes="row"):
-                    yield w["Button"]("Validate", id="validate", variant="primary")
-                    yield w["Button"]("Reload", id="reload")
-                    yield w["Button"]("Continue →", id="to-render")
-                    yield w["Static"]("", id="storyboard-status", classes="hint")
-                yield w["DataTable"](id="storyboard-table", zebra_stripes=True)
-                yield w["TextArea"](id="storyboard-json", language="json")
-
-            def _compose_render(self):
-                yield w["Static"]("Render", classes="pane-title")
-                yield w["Static"]("Not started.", id="render-stage")
-                yield w["ProgressBar"](id="progress-bar", total=None, show_eta=False)
-                with w["Horizontal"](classes="row"):
-                    yield w["Button"]("Start render", id="start", variant="primary")
-                    yield w["Button"]("Cancel", id="cancel", variant="error", disabled=True)
-                    yield w["Button"]("Open video", id="open-video", disabled=True)
-                yield w["Static"]("", id="render-summary")
-                yield w["RichLog"](id="render-log", markup=True, wrap=True)
+                yield w["Static"]("Your scene plan", classes="pane-title")
+                yield w["Static"](
+                    "Review the flow before creating your video.",
+                    classes="pane-subtitle",
+                )
+                yield w["Static"](
+                    "Your scene plan will be drafted when you create the video.\n"
+                    "There is nothing to review yet; you can continue to choose a style.",
+                    id="storyboard-empty",
+                    classes="hint",
+                )
+                with w["Vertical"](id="storyboard-details"):
+                    with w["Horizontal"](classes="side-head"):
+                        yield w["Static"]("", id="storyboard-summary", classes="side-value")
+                    yield w["DataTable"](id="storyboard-table", zebra_stripes=True)
+                    with w["Collapsible"](
+                        title="Advanced · raw storyboard JSON",
+                        collapsed=True,
+                        id="storyboard-advanced",
+                    ):
+                        yield w["Static"](
+                            "Edit only if you are comfortable with the storyboard format.",
+                            classes="hint",
+                        )
+                        with w["Horizontal"](classes="row"):
+                            yield w["Button"]("Validate edits", id="validate")
+                            yield w["Button"]("Reload", id="reload")
+                        yield w["TextArea"](id="storyboard-json", language="json")
+                yield w["Static"]("", id="storyboard-status", classes="hint")
 
             def _compose_job(self):
-                yield w["Static"]("Job settings", classes="pane-title")
-                with w["Horizontal"](classes="side-head"):
-                    yield w["Static"]("source: —", id="side-source", classes="side-value")
-                    yield w["Static"]("", id="side-duration", classes="side-value")
+                yield w["Static"]("Choose a style", classes="pane-title")
+                yield w["Static"](
+                    "The recommended settings are ready to use. Change only what you need.",
+                    classes="pane-subtitle",
+                )
+                yield w["Static"]("Source: —", id="side-source", classes="side-value")
+                yield w["Static"]("", id="output-summary", classes="hint")
+                yield w["Static"]("", id="overwrite-warning", classes="warn")
 
                 with w["Grid"](id="job-grid"):
-                    yield w["Static"]("Output folder", classes="field-label")
-                    yield w["Input"](value=str(self.settings.output_dir), id="output-dir")
-                    yield w["Static"]("Orientation", classes="field-label")
+                    yield w["Static"]("Quality", classes="field-label")
+                    yield w["FilterSelect"](
+                        options=QUALITY_CHOICES,
+                        value=self.settings.quality,
+                        id="quality-select",
+                    )
+                    yield w["Static"]("Format", classes="field-label")
                     yield w["FilterSelect"](
                         options=ORIENTATION_CHOICES,
                         value=self.settings.orientation,
                         id="orientation-select",
                     )
 
-                    yield w["Static"]("Quality", classes="field-label")
-                    yield w["FilterSelect"](
-                        options=QUALITY_CHOICES, value=self.settings.quality, id="quality-select"
-                    )
-                    yield w["Static"]("Provider", classes="field-label")
-                    yield w["FilterSelect"](
-                        options=PROVIDER_CHOICES, value=self.settings.provider, id="provider-select"
+                with w["Collapsible"](
+                    title="More options",
+                    collapsed=True,
+                    id="job-advanced",
+                ):
+                    with w["Grid"](id="advanced-job-grid"):
+                        yield w["Static"]("Provider", classes="field-label")
+                        yield w["FilterSelect"](
+                            options=PROVIDER_CHOICES,
+                            value=self.settings.provider,
+                            id="provider-select",
+                        )
+                        yield w["Static"]("Theme", classes="field-label")
+                        yield w["FilterSelect"](
+                            options=THEME_CHOICES,
+                            value=self.settings.theme,
+                            id="theme-select",
+                        )
+                        yield w["Static"]("Burn captions", classes="field-label")
+                        yield w["Switch"](value=self.settings.captions, id="captions-switch")
+                        yield w["Static"]("Frame lint", classes="field-label")
+                        yield w["Switch"](value=self.settings.frame_lint, id="frame-lint-switch")
+                        yield w["Static"]("Output folder", classes="field-label")
+                        yield w["Input"](value=str(self.settings.output_dir), id="output-dir")
+                    yield w["Static"](
+                        "Template runs offline. Other providers may need an API key.",
+                        id="provider-hint",
+                        classes="hint",
                     )
 
-                    yield w["Static"]("Theme", classes="field-label")
-                    yield w["FilterSelect"](
-                        options=THEME_CHOICES, value=self.settings.theme, id="theme-select"
-                    )
-                    yield w["Static"]("Burn captions", classes="field-label")
-                    yield w["Switch"](value=self.settings.captions, id="captions-switch")
-
-                    yield w["Static"]("Frame lint", classes="field-label")
-                    yield w["Switch"](value=self.settings.frame_lint, id="frame-lint-switch")
-                    yield w["Static"]("", classes="field-label")
-                    yield w["Static"]("", classes="field-label")
-
+            def _compose_render(self):
+                yield w["Static"]("Create your video", classes="pane-title")
                 yield w["Static"](
-                    "Template runs offline; other providers need an API key.",
-                    id="provider-hint",
-                    classes="hint",
+                    "Rendering can take a few minutes. Progress and errors will appear here.",
+                    classes="pane-subtitle",
                 )
-                yield w["Static"]("", id="overwrite-warning", classes="warn")
+                yield w["Static"]("Ready to start.", id="render-stage")
+                yield w["ProgressBar"](id="progress-bar", total=None, show_eta=False)
+                with w["Horizontal"](classes="row"):
+                    yield w["Button"]("Create video", id="start", variant="primary")
+                    yield w["Button"]("Cancel", id="cancel", variant="error", disabled=True)
+                    yield w["Button"]("Open video", id="open-video", disabled=True)
+                yield w["Static"]("", id="render-summary")
+                with w["Collapsible"](
+                    title="Render details",
+                    collapsed=True,
+                    id="render-details",
+                ):
+                    yield w["RichLog"](id="render-log", markup=True, wrap=True)
 
             def on_mount(self) -> None:
                 self._layout_storyboard()
-                self._refresh_sidebar()
-                self._set_status("Ready. Start with a prompt or an offline template.")
+                self._q("#tagline", w["Static"]).display = self.size.width >= 96
+                self._apply_source_mode("prompt")
+                self._q("#storyboard-details").display = False
+                self._refresh_job_summary()
+                self._goto("prompt")
+                self._set_status("Ready. Choose how to start.")
 
             # -- small helpers --------------------------------------------
 
@@ -506,109 +633,153 @@ class AnimaticaTuiApp:
             def _set_pane_status(self, widget_id: str, message: str) -> None:
                 self._q(f"#{widget_id}", w["Static"]).update(message)
 
-            #: Where focus should land when a step becomes active. This is not
-            #: cosmetic: TabbedContent re-activates the pane that contains the
-            #: focused widget, so leaving focus on the button we just clicked
-            #: (now hidden) would immediately switch the step back.
-            _FOCUS_TARGETS = {
-                "prompt": "#prompt-input",
-                "storyboard": "#validate",
-                "job": "#output-dir",
-                "render": "#start",
-            }
+            def _apply_source_mode(self, mode: str) -> None:
+                visible = {
+                    "prompt": "#prompt-input",
+                    "template": "#template-select",
+                    "storyboard": "#sb-path-input",
+                }
+                for selector in visible.values():
+                    self._q(selector).display = selector == visible.get(mode)
+                hints = {
+                    "prompt": (
+                        "We will try an offline match. Use an AI provider in More options "
+                        "for a custom explanation."
+                    ),
+                    "template": (
+                        "Pick a ready-made example. Templates work offline and need no API key."
+                    ),
+                    "storyboard": "Choose a storyboard JSON file you already have.",
+                }
+                self._q("#source-hint", w["Static"]).update(hints.get(mode, ""))
 
             def _goto(self, step: str) -> None:
-                self._q("#steps", w["TabbedContent"]).active = f"pane-{step}"
-                if step in self._FOCUS_TARGETS:
-                    self.call_after_refresh(self._focus, step)
+                if step not in STEPS:
+                    return
+                self._q("#steps", w["ContentSwitcher"]).current = f"pane-{step}"
+                self._q("#next", w["Button"]).display = step != "render"
+                self._q("#back", w["Button"]).disabled = step == "prompt" or self.busy
+                index = STEPS.index(step) + 1
+                label = {
+                    "prompt": "Idea",
+                    "storyboard": "Scenes",
+                    "job": "Style",
+                    "render": "Render",
+                }[step]
+                self._q("#nav-note", w["Static"]).update(f"{index} of 4  ·  {label}")
+                self.call_after_refresh(self._focus, step)
                 self._update_topbar()
 
             def on_resize(self, event: Any) -> None:
-                # 80 columns is a supported size; the tagline is the first thing
-                # to go when the topbar cannot fit both texts.
-                tagline = self._q("#tagline", w["Static"])
-                tagline.display = event.size.width >= 96
+                # Keep the header calm at the supported 80-column size.
+                self._q("#tagline", w["Static"]).display = event.size.width >= 96
                 self._layout_storyboard()
 
-            #: rows taken by chrome around a step: topbar 3, tabs 2, status 1, footer 1
-            _CHROME_ROWS = 7
+            #: topbar 3, navigation 4 (including its border), status 1 and footer 1
+            _CHROME_ROWS = 9
 
             def _layout_storyboard(self) -> None:
-                """Split the storyboard step between the scene table and the editor.
-
-                Both widgets are sized explicitly: fractional heights are rounded
-                per widget inside a scrolling pane, which pushed the editor's last
-                row over the status bar at 80x24.
-                """
+                """Keep the scene preview and optional JSON editor usable at 80x24."""
                 try:
                     pane_rows = max(8, self.size.height - self._CHROME_ROWS)
-                    space = max(8, pane_rows - 6)  # heading, 2 margins, button row
-                    table_rows = max(4, min(12, space // 2))
-                    editor_rows = max(4, space - table_rows)
+                    table_rows = max(5, min(12, pane_rows - 8))
                     self._q("#storyboard-table", w["DataTable"]).styles.height = table_rows
-                    self._q("#storyboard-json", w["TextArea"]).styles.height = editor_rows
+                    self._q("#storyboard-json", w["TextArea"]).styles.height = max(6, pane_rows - 8)
                 except Exception:
                     pass
 
             def _focus(self, step: str) -> None:
+                if step == "prompt":
+                    mode = str(self._q("#source-mode", w["Select"]).value or "prompt")
+                    selector = {
+                        "prompt": "#prompt-input",
+                        "template": "#template-select",
+                        "storyboard": "#sb-path-input",
+                    }.get(mode, "#source-mode")
+                else:
+                    selector = {
+                        "storyboard": "#next",
+                        "job": "#output-dir",
+                        "render": "#start",
+                    }[step]
                 try:
-                    self._q(self._FOCUS_TARGETS[step]).focus()
-                except Exception:  # disabled/hidden targets are not fatal
+                    self._q(selector).focus()
+                except Exception:  # hidden or disabled focus targets are not fatal
                     pass
                 try:
-                    # Focusing a child leaves the pane scrolled by a row, which
-                    # hides the step heading. A step always opens at the top.
                     self._q(f"#pane-{step}").scroll_home(animate=False)
                 except Exception:
                     pass
 
             def _current_step(self) -> str:
-                active = self._q("#steps", w["TabbedContent"]).active or "pane-prompt"
-                return active.replace("pane-", "")
+                current = self._q("#steps", w["ContentSwitcher"]).current or "pane-prompt"
+                return current.replace("pane-", "")
 
             def _update_topbar(self) -> None:
                 step = self._current_step()
                 index = STEPS.index(step) + 1 if step in STEPS else 0
-                self._q("#topbar-step", w["Static"]).update(
-                    f"step {index}/4 · {step} · provider: {self.settings.provider}"
-                )
+                label = {
+                    "prompt": "IDEA",
+                    "storyboard": "SCENES",
+                    "job": "STYLE",
+                    "render": "RENDER",
+                }.get(step, "")
+                self._q("#topbar-step", w["Static"]).update(f"{index:02d} / 04  ·  {label}")
 
             # -- settings sync --------------------------------------------
 
             def _sync_settings(self) -> None:
                 s = self.settings
-                # the prompt lives in a widget, so it must be read live: pressing
-                # Start straight from the Render step skips the Prompt step.
-                s.prompt = self._q("#prompt-input", w["Input"]).value.strip()
-                s.output_dir = Path(self._q("#output-dir", w["Input"]).value.strip() or DEFAULT_OUTPUT_DIR)
-                s.quality = str(self._q("#quality-select", w["FilterSelect"]).value or DEFAULT_QUALITY)
-                s.theme = str(self._q("#theme-select", w["FilterSelect"]).value or DEFAULT_THEME)
+                # The selected source mode is explicit: hidden alternate inputs
+                # never compete with the source the user chose.
+                source_mode = str(self._q("#source-mode", w["Select"]).value or "prompt")
+                s.prompt = (
+                    self._q("#prompt-input", w["Input"]).value.strip()
+                    if source_mode == "prompt"
+                    else ""
+                )
+                path_value = self._q("#sb-path-input", w["Input"]).value.strip()
+                s.storyboard_path = (
+                    Path(path_value) if source_mode == "storyboard" and path_value else None
+                )
+                s.output_dir = Path(
+                    self._q("#output-dir", w["Input"]).value.strip() or DEFAULT_OUTPUT_DIR
+                )
+                s.quality = str(
+                    self._q("#quality-select", w["FilterSelect"]).value or DEFAULT_QUALITY
+                )
+                s.theme = str(
+                    self._q("#theme-select", w["FilterSelect"]).value or DEFAULT_THEME
+                )
                 s.orientation = str(
                     self._q("#orientation-select", w["FilterSelect"]).value or DEFAULT_ORIENTATION
                 )
-                s.provider = str(self._q("#provider-select", w["FilterSelect"]).value or DEFAULT_PROVIDER)
+                s.provider = str(
+                    self._q("#provider-select", w["FilterSelect"]).value or DEFAULT_PROVIDER
+                )
                 s.captions = bool(self._q("#captions-switch", w["Switch"]).value)
                 s.frame_lint = bool(self._q("#frame-lint-switch", w["Switch"]).value)
 
             def _save_defaults(self) -> None:
                 _persist_defaults(self.settings)
 
-            def _refresh_sidebar(self) -> None:
+            def _refresh_job_summary(self) -> None:
                 self._sync_settings()
-                self._q("#side-source", w["Static"]).update(f"source: {self.source_label}")
+                self._q("#side-source", w["Static"]).update(f"Source: {self.source_label}")
+                self._q("#output-summary", w["Static"]).update(
+                    f"Saving to {self.settings.output_dir} · change under More options"
+                )
                 self._update_topbar()
                 existing = self.settings.existing_outputs()
-                self._q("#overwrite-warning", w["Static"]).update(
-                    "These will be overwritten:\n" + "\n".join(f"· {name}" for name in existing)
-                    if existing
-                    else ""
-                )
+                warning = self._q("#overwrite-warning", w["Static"])
+                warning.update(f"Will overwrite: {', '.join(existing)}" if existing else "")
+                warning.display = bool(existing)
                 self._refresh_duration()
 
             def _refresh_duration(self) -> None:
-                target = self._q("#side-duration", w["Static"])
+                summary = self._q("#storyboard-summary", w["Static"])
                 if self.storyboard is None:
-                    target.update("")
+                    summary.update("")
                     return
                 registry = default_registry()
                 total = 0.0
@@ -616,129 +787,198 @@ class AnimaticaTuiApp:
                     for beat in scene.beats:
                         try:
                             component = registry.get(beat.component)
-                            total += component.duration(component.Params.model_validate(beat.params))
+                            total += component.duration(
+                                component.Params.model_validate(beat.params)
+                            )
                         except Exception:  # unknown/invalid component: leave it out
                             continue
-                target.update(f"≈ {total:.1f}s · {len(self.storyboard.scenes)} scenes")
+                duration = f"about {total:.0f}s" if total else "duration varies"
+                summary.update(
+                    f"{self.storyboard.title}  ·  {len(self.storyboard.scenes)} scenes  · "
+                    f"{duration}"
+                )
 
             # -- storyboard plumbing --------------------------------------
 
             def _show_storyboard(self, storyboard: Storyboard, source: str) -> None:
                 self.storyboard = storyboard
                 self.source_label = source
-                self._q("#side-source", w["Static"]).update(f"source: {source}")
+                self._q("#storyboard-empty", w["Static"]).display = False
+                self._q("#storyboard-details").display = True
+                self._q("#side-source", w["Static"]).update(f"Source: {source}")
 
                 self._refresh_table()
-                self._q("#storyboard-json", w["TextArea"]).text = storyboard.model_dump_json(indent=2)
+                self._q("#storyboard-json", w["TextArea"]).text = storyboard.model_dump_json(
+                    indent=2
+                )
                 self._refresh_duration()
                 self._set_status(f"Loaded {source}: {len(storyboard.scenes)} scene(s).", "ok")
+
+            def _beat_preview(self, beat: Any) -> str:
+                """Turn internal component params into a compact, human label."""
+                params = beat.params
+                detail: Any = (
+                    params.get("title")
+                    or params.get("label")
+                    or params.get("fn")
+                    or params.get("text")
+                )
+                if detail is None and params.get("latex"):
+                    detail = (
+                        params["latex"][0]
+                        if isinstance(params["latex"], list)
+                        else params["latex"]
+                    )
+                if detail is None and params.get("items"):
+                    items = params["items"]
+                    if isinstance(items, (list, tuple)):
+                        detail = ", ".join(str(item) for item in items[:3])
+                        if len(items) > 3:
+                            detail += ", …"
+                    else:
+                        detail = str(items)
+                if detail is None and params.get("labels"):
+                    labels = params["labels"]
+                    if isinstance(labels, (list, tuple)):
+                        detail = ", ".join(str(item) for item in labels[:3])
+                        if len(labels) > 3:
+                            detail += ", …"
+                    else:
+                        detail = str(labels)
+                visual = beat.component.replace("_", " ").title()
+                if detail not in (None, ""):
+                    visual += f" · {detail}"
+                return visual
 
             def _refresh_table(self) -> None:
                 assert self.storyboard is not None
                 table = self._q("#storyboard-table", w["DataTable"])
-                # the columns are added once and reused: clear(columns=True) plus
-                # add_columns in the same tick left the table without rows
+                # The user-facing columns describe the visual and narration;
+                # implementation params stay in the Advanced JSON disclosure.
                 if not table.columns:
-                    table.add_columns("scene", "beat", "component", "params", "caption")
+                    table.add_columns("Scene", "Visual", "Narration")
                 table.clear(columns=False)
                 for si, scene in enumerate(self.storyboard.scenes, 1):
-                    for bi, beat in enumerate(scene.beats, 1):
-                        params = json.dumps(beat.params, ensure_ascii=False)
-                        if len(params) > 48:
-                            params = params[:45] + "…"
-                        table.add_row(str(si), str(bi), beat.component, params, beat.caption or "—")
+                    for beat in scene.beats:
+                        table.add_row(
+                            f"Scene {si}",
+                            self._beat_preview(beat),
+                            beat.caption or "—",
+                        )
                 if table.row_count:
                     table.move_cursor(row=0, column=0)
                 table.scroll_home(animate=False)
 
             def _advance_from_prompt(self) -> None:
-                prompt = self._q("#prompt-input", w["Input"]).value.strip()
-                sb_path_text = self._q("#sb-path-input", w["Input"]).value.strip()
-                template_value = self._q("#template-select", w["Select"]).value
-                template_name = (
-                    str(template_value)
-                    if template_value not in (None, w["Select"].NULL, "")
-                    else None
-                )
-
-                sources = sum(bool(x) for x in (prompt, sb_path_text, template_name))
-                if sources == 0:
-                    self._set_pane_status(
-                        "prompt-status", "Enter a prompt, choose a template, or open a storyboard."
-                    )
-                    self._set_status("Nothing selected yet.", "error")
-                    return
-                if sources > 1:
-                    self._set_pane_status(
-                        "prompt-status", "Pick only one: prompt, template, or storyboard file."
-                    )
-                    self._set_status("Two sources are set; choose one.", "error")
-                    return
-
-                self.settings.prompt = prompt
+                mode = str(self._q("#source-mode", w["Select"]).value or "prompt")
                 self._sync_settings()
+                self._set_pane_status("prompt-status", "")
 
-                if sb_path_text:
+                if mode == "prompt":
+                    prompt = self.settings.prompt
+                    if not prompt:
+                        self._set_pane_status("prompt-status", "Write a topic to continue.")
+                        self._set_status("Add an idea first.", "error")
+                        return
+                    # The generated storyboard appears during render. Keep this
+                    # step honest rather than showing a fake or stale preview.
+                    self.storyboard = None
+                    self.source_label = "prompt"
+                    self._q("#side-source", w["Static"]).update("Source: prompt")
+                    self._q("#storyboard-empty", w["Static"]).display = True
+                    self._q("#storyboard-details").display = False
+                    self._refresh_duration()
+                    self._set_status("Idea saved. Continue to choose a style.", "ok")
+                    self._goto("storyboard")
+                    return
+
+                if mode == "template":
+                    template_value = self._q("#template-select", w["Select"]).value
+                    template_name = (
+                        str(template_value)
+                        if template_value not in (None, w["Select"].NULL, "")
+                        else None
+                    )
+                    if template_name is None:
+                        self._set_pane_status("prompt-status", "Choose a starter to continue.")
+                        self._set_status("Choose a starter first.", "error")
+                        return
+                    storyboard = TemplateMatcher().by_name(template_name)
+                    if storyboard is None:
+                        self._set_pane_status(
+                            "prompt-status", f"Starter {template_name!r} not found."
+                        )
+                        self._set_status("That starter is no longer available.", "error")
+                        return
+                    self.settings.prompt = ""
+                    self.settings.storyboard_path = None
+                    self._show_storyboard(storyboard, f"template: {template_name}")
+                    self._goto("storyboard")
+                    return
+
+                if mode == "storyboard":
+                    sb_path_text = self._q("#sb-path-input", w["Input"]).value.strip()
+                    if not sb_path_text:
+                        self._set_pane_status("prompt-status", "Enter the storyboard file path.")
+                        self._set_status("Choose a storyboard file first.", "error")
+                        return
                     path = Path(sb_path_text).expanduser()
                     if not path.is_file():
                         self._set_pane_status("prompt-status", f"Not found: {sb_path_text}")
                         self._set_status("Storyboard file not found.", "error")
                         return
                     try:
-                        self._show_storyboard(load_storyboard(path), f"file: {path.name}")
+                        storyboard = load_storyboard(path)
                     except Exception as exc:
                         self._set_pane_status("prompt-status", f"Invalid storyboard: {exc}")
                         self._set_status("That file is not a valid storyboard.", "error")
                         return
+                    self.settings.prompt = ""
+                    self.settings.storyboard_path = path
+                    self._show_storyboard(storyboard, f"file: {path.name}")
                     self._goto("storyboard")
                     return
 
-                if template_name:
-                    storyboard = TemplateMatcher().by_name(template_name)
-                    if storyboard is None:
-                        self._set_pane_status("prompt-status", f"Template {template_name!r} not found.")
-                        self._set_status("Template not found.", "error")
-                        return
-                    self._show_storyboard(storyboard, f"template: {template_name}")
-                    self._goto("storyboard")
-                    return
+                self._set_status("Choose how to start.", "error")
 
-                # Prompt only: the storyboard is generated during render.
-                self.storyboard = None
-                self.source_label = f"prompt ({self.settings.provider})"
-                self._q("#side-source", w["Static"]).update(f"source: {self.source_label}")
-                self._q("#side-duration", w["Static"]).update("")
-                self._q("#prompt-status", w["Static"]).update(
-                    f"Will ask {self.settings.provider} for a storyboard at render time."
-                )
-                self._set_status("Prompt set. Continue to Render when ready.", "ok")
-                self._goto("render")
+            def _validate_storyboard(self) -> bool:
+                if self.storyboard is None:
+                    self._set_pane_status(
+                        "storyboard-status", "The scene plan will be created at render time."
+                    )
+                    return True
 
-            def _validate_storyboard(self) -> None:
                 raw = self._q("#storyboard-json", w["TextArea"]).text
                 try:
                     storyboard = Storyboard.model_validate(json.loads(raw))
                 except json.JSONDecodeError as exc:
-                    self._set_pane_status("storyboard-status", f"JSON error at line {exc.lineno}: {exc.msg}")
+                    self._set_pane_status(
+                        "storyboard-status", f"JSON error at line {exc.lineno}: {exc.msg}"
+                    )
                     self._set_status("Storyboard JSON is not valid JSON.", "error")
-                    return
+                    return False
                 except Exception as exc:
                     self._set_pane_status("storyboard-status", f"Schema error: {exc}")
                     self._set_status("Storyboard does not match the schema.", "error")
-                    return
+                    return False
 
                 errors = default_registry().validate(storyboard)
                 if errors:
                     preview = "; ".join(errors[:3])
-                    self._set_pane_status("storyboard-status", f"{len(errors)} problem(s): {preview}")
-                    self._set_status("Storyboard uses components or params that cannot render.", "error")
-                    return
+                    self._set_pane_status(
+                        "storyboard-status", f"{len(errors)} problem(s): {preview}"
+                    )
+                    self._set_status(
+                        "Storyboard uses components or params that cannot render.", "error"
+                    )
+                    return False
 
                 self.storyboard = storyboard
                 self._refresh_table()
                 self._refresh_duration()
                 self._set_pane_status("storyboard-status", "Valid.")
                 self._set_status("Storyboard validated.", "ok")
+                return True
 
             # -- rendering -------------------------------------------------
 
@@ -748,7 +988,9 @@ class AnimaticaTuiApp:
                     return
                 self._sync_settings()
                 if self.storyboard is None and not self.settings.prompt.strip():
-                    self._set_status("Nothing to render: add a prompt or load a storyboard.", "error")
+                    self._set_status(
+                        "Nothing to render: add a prompt or load a storyboard.", "error"
+                    )
                     return
 
                 self._goto("render")
@@ -767,7 +1009,9 @@ class AnimaticaTuiApp:
                 self._logged_label = ""
                 self._q("#render-stage", w["Static"]).update("Working…")
                 self._q("#render-summary", w["Static"]).update("")
+                self._q("#render-details", w["Collapsible"]).collapsed = True
                 self._q("#progress-bar", w["ProgressBar"]).update(total=None, progress=0)
+                self._q("#back", w["Button"]).disabled = True
                 self._q("#start", w["Button"]).disabled = True
                 self._q("#cancel", w["Button"]).disabled = False
                 self._q("#open-video", w["Button"]).disabled = True
@@ -835,11 +1079,19 @@ class AnimaticaTuiApp:
                     else:
                         self.call_from_thread(self._render_done, result)
                 except StoryboardGenerationError as exc:
-                    self.call_from_thread(self._render_failed, "Storyboard generation failed", list(exc.errors[:6]))
+                    self.call_from_thread(
+                        self._render_failed,
+                        "Storyboard generation failed",
+                        list(exc.errors[:6]),
+                    )
                 except (ProviderError, RateLimited) as exc:
                     self.call_from_thread(self._render_failed, "Provider error", [str(exc)])
                 except Exception as exc:  # noqa: BLE001 - surface everything in the log
-                    self.call_from_thread(self._render_failed, "Render failed", [f"{type(exc).__name__}: {exc}"])
+                    self.call_from_thread(
+                        self._render_failed,
+                        "Render failed",
+                        [f"{type(exc).__name__}: {exc}"],
+                    )
 
             def _stop_timer(self) -> None:
                 if self._timer is not None:
@@ -851,6 +1103,7 @@ class AnimaticaTuiApp:
                 self.busy = False
                 self._q("#start", w["Button"]).disabled = False
                 self._q("#cancel", w["Button"]).disabled = True
+                self._q("#back", w["Button"]).disabled = self._current_step() == "prompt"
 
             def _render_done(self, result: MakeResult) -> None:
                 self._finish()
@@ -871,6 +1124,8 @@ class AnimaticaTuiApp:
                 log.write(f"[b green]done[/b green] {result.video}")
                 for warning in result.warnings:
                     log.write(f"[yellow]warning[/yellow] {warning}")
+                if result.warnings:
+                    self._q("#render-details", w["Collapsible"]).collapsed = False
                 self._set_status(f"Done in {time.monotonic() - self.started_at:0.1f}s.", "ok")
 
             def _render_failed(self, title: str, lines: list[str]) -> None:
@@ -880,12 +1135,14 @@ class AnimaticaTuiApp:
                 log.write(f"[b red]{title}[/b red]")
                 for line in lines:
                     log.write(f"  {line}")
-                self._set_status(f"{title}. See the log.", "error")
+                self._q("#render-details", w["Collapsible"]).collapsed = False
+                self._set_status(f"{title}. See the details below.", "error")
 
             def _render_cancelled(self) -> None:
                 self._finish()
                 self._q("#render-stage", w["Static"]).update("Cancelled.")
                 self._q("#render-log", w["RichLog"]).write("[yellow]cancelled[/yellow]")
+                self._q("#render-details", w["Collapsible"]).collapsed = False
                 self._set_status("Render cancelled.", "busy")
 
             # -- events ----------------------------------------------------
@@ -894,20 +1151,20 @@ class AnimaticaTuiApp:
                 self._choice_changed(getattr(event.filter_select, "id", "") or "")
 
             def on_select_changed(self, event: Any) -> None:
-                self._choice_changed(getattr(event.select, "id", "") or "")
+                widget_id = getattr(event.select, "id", "") or ""
+                if widget_id == "source-mode":
+                    self._apply_source_mode(str(event.value or "prompt"))
+                self._choice_changed(widget_id)
 
             def _choice_changed(self, widget_id: str) -> None:
                 self._sync_settings()
                 self._update_topbar()
-                if (
-                    widget_id == "provider-select"
-                    and self.storyboard is None
-                    and self.settings.prompt.strip()
-                ):
-                    self.source_label = f"prompt ({self.settings.provider})"
-                    self._q("#side-source", w["Static"]).update(f"source: {self.source_label}")
-                # choices are the user's defaults: remember them for next launch
-                self._save_defaults()
+                if widget_id == "provider-select" and self.storyboard is None:
+                    self.source_label = "prompt"
+                    self._q("#side-source", w["Static"]).update("Source: prompt")
+                # Job choices are remembered for the next launch.
+                if widget_id != "source-mode":
+                    self._save_defaults()
 
             def on_switch_changed(self, event: Any) -> None:
                 self._sync_settings()
@@ -915,27 +1172,46 @@ class AnimaticaTuiApp:
 
             def on_input_changed(self, event: Any) -> None:
                 if event.input.id == "prompt-input":
-                    self.settings.prompt = event.value.strip()
+                    if self._q("#source-mode", w["Select"]).value == "prompt":
+                        self.settings.prompt = event.value.strip()
+                elif event.input.id == "sb-path-input":
+                    if self._q("#source-mode", w["Select"]).value == "storyboard":
+                        path = event.value.strip()
+                        self.settings.storyboard_path = Path(path).expanduser() if path else None
                 elif event.input.id == "output-dir":
                     self.settings.output_dir = Path(event.value.strip() or DEFAULT_OUTPUT_DIR)
-                    existing = self.settings.existing_outputs()
-                    self._q("#overwrite-warning", w["Static"]).update(
-                        "These will be overwritten:\n"
-                        + "\n".join(f"· {name}" for name in existing)
-                        if existing
-                        else ""
+                    self._q("#output-summary", w["Static"]).update(
+                        f"Saving to {self.settings.output_dir} · change under More options"
                     )
+                    existing = self.settings.existing_outputs()
+                    warning = self._q("#overwrite-warning", w["Static"])
+                    warning.update(f"Will overwrite: {', '.join(existing)}" if existing else "")
+                    warning.display = bool(existing)
 
             def on_button_pressed(self, event: Any) -> None:
                 button_id = getattr(event.button, "id", "")
                 if button_id == "next":
-                    self._advance_from_prompt()
+                    self._continue()
+                elif button_id == "back":
+                    self.action_prev_step()
+                elif button_id == "topbar-help":
+                    self.push_screen(HelpScreen())
                 elif button_id == "clear":
+                    self._q("#source-mode", w["Select"]).value = "prompt"
+                    self._apply_source_mode("prompt")
                     self._q("#prompt-input", w["Input"]).value = ""
                     self._q("#sb-path-input", w["Input"]).value = ""
                     self._q("#template-select", w["Select"]).clear()
+                    self.storyboard = None
+                    self.source_label = "—"
+                    self.settings.prompt = ""
+                    self.settings.storyboard_path = None
+                    self._q("#side-source", w["Static"]).update("Source: —")
+                    self._q("#storyboard-empty", w["Static"]).display = True
+                    self._q("#storyboard-details").display = False
+                    self._refresh_duration()
                     self._set_pane_status("prompt-status", "")
-                    self._set_status("Cleared.", "")
+                    self._set_status("Cleared.")
                 elif button_id == "validate":
                     self._validate_storyboard()
                 elif button_id == "reload":
@@ -944,8 +1220,6 @@ class AnimaticaTuiApp:
                         self._set_status("Reloaded the loaded storyboard.", "ok")
                     else:
                         self._set_status("Nothing loaded to reload.", "error")
-                elif button_id == "to-render":
-                    self._goto("render")
                 elif button_id == "start":
                     self._start_render()
                 elif button_id == "cancel":
@@ -955,16 +1229,28 @@ class AnimaticaTuiApp:
 
             # -- actions ---------------------------------------------------
 
-            def action_next_step(self) -> None:
+            def _continue(self) -> None:
                 step = self._current_step()
                 if step == "prompt":
                     self._advance_from_prompt()
                 elif step == "storyboard":
+                    if self._validate_storyboard():
+                        self._goto("job")
+                elif step == "job":
+                    self._sync_settings()
+                    self._save_defaults()
+                    self._refresh_job_summary()
                     self._goto("render")
-                else:
+                elif step == "render":
                     self._start_render()
 
+            def action_next_step(self) -> None:
+                self._continue()
+
             def action_prev_step(self) -> None:
+                if self.busy:
+                    self._set_status("Wait for the render to finish before going back.", "busy")
+                    return
                 step = self._current_step()
                 index = STEPS.index(step)
                 if index > 0:
@@ -972,6 +1258,9 @@ class AnimaticaTuiApp:
 
             def action_start_render(self) -> None:
                 self._start_render()
+
+            def action_help(self) -> None:
+                self.push_screen(HelpScreen())
 
             def action_validate(self) -> None:
                 self._validate_storyboard()

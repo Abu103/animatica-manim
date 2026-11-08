@@ -3,9 +3,9 @@
 #   irm https://raw.githubusercontent.com/Abu103/animatica-manim/main/scripts/bootstrap.ps1 | iex
 #
 # One command: source, Python + manim, ffmpeg and (optionally) LaTeX, then a
-# verification that only prints "Ready" when a render can actually work.
-# Afterwards run `animatica tui` - the studio is where quality, theme, provider
-# and API keys are set, and the choices are remembered.
+# verification that only reports success when a render can actually work. On an
+# interactive terminal it then launches `animatica setup`; unattended installs
+# skip the wizard and print the command to run later.
 #
 # Windows needs no separate cairo/pango step: the Windows wheels of pycairo and
 # manimpango contain the DLLs, so `pip install` alone gives a working manim.
@@ -15,6 +15,7 @@
 #   ANIMATICA_HOME        where to put the checkout      (default %USERPROFILE%\animatica-manim)
 #   ANIMATICA_REF         git branch/tag to install      (default main)
 #   ANIMATICA_TEX=0       skip the LaTeX step
+#   ANIMATICA_SKIP_SETUP=1 install only; do not launch the setup wizard
 #
 # Failures use `throw` (not `exit`) so a failure under `irm | iex` does not close
 # your terminal.
@@ -28,6 +29,17 @@ $ghRepo = if ($env:ANIMATICA_GH_REPO) { $env:ANIMATICA_GH_REPO } else { "Abu103/
 $ghRef = if ($env:ANIMATICA_REF) { $env:ANIMATICA_REF } else { "main" }
 $doTex = $env:ANIMATICA_TEX -ne "0"
 
+function Test-InteractiveTerminal {
+    if ($env:ANIMATICA_SKIP_SETUP -eq "1" -or $env:CI -or $env:GITHUB_ACTIONS) {
+        return $false
+    }
+    try {
+        return -not [Console]::IsInputRedirected
+    } catch {
+        return $false
+    }
+}
+
 function Invoke-Checked {
     param([string]$What, [scriptblock]$Command)
     & $Command
@@ -40,9 +52,69 @@ function Write-Step {
     Write-Host "[$Number] $Text"
 }
 
+function Sync-ExistingCheckout {
+    param([string]$Path)
+
+    if (-not (Test-Path (Join-Path $Path ".git"))) {
+        throw "The existing source at $Path is not a Git checkout, so it cannot be safely updated to '$ghRef'. Set ANIMATICA_HOME to a new folder (for example `$HOME\animatica-manim-test) and rerun."
+    }
+    if (-not (Get-Command git -ErrorAction SilentlyContinue)) {
+        throw "Git is needed to update the existing checkout at $Path. Install Git or set ANIMATICA_HOME to a new folder."
+    }
+
+    Push-Location $Path
+    $savedPreference = $ErrorActionPreference
+    try {
+        # Native git stderr must not become a terminating PowerShell error; check exit codes.
+        $ErrorActionPreference = "Continue"
+        $status = (& git status --porcelain 2>$null | Out-String).Trim()
+        if ($LASTEXITCODE -ne 0) { throw "Could not inspect the existing checkout at $Path." }
+        if ($status) {
+            throw "The existing checkout at $Path has local changes. It was left untouched. Set ANIMATICA_HOME to a new folder and rerun to test $ghRef safely."
+        }
+
+        $remoteRef = "refs/remotes/origin/$ghRef"
+        & git fetch --quiet origin "+refs/heads/${ghRef}:$remoteRef" 2>$null | Out-Null
+        $fetchCode = $LASTEXITCODE
+        if ($fetchCode -eq 0) {
+            & git show-ref --quiet --verify "refs/heads/$ghRef" 2>$null
+            $localBranchCode = $LASTEXITCODE
+            if ($localBranchCode -eq 0) {
+                & git merge-base --is-ancestor "refs/heads/$ghRef" $remoteRef 2>$null
+                if ($LASTEXITCODE -ne 0) {
+                    throw "Local branch $ghRef has commits not on origin; it was left untouched. Set ANIMATICA_HOME to a new folder to test safely."
+                }
+                & git switch --quiet $ghRef 2>$null
+                if ($LASTEXITCODE -ne 0) { throw "Could not switch to branch $ghRef." }
+                & git merge --ff-only --quiet $remoteRef 2>$null
+                if ($LASTEXITCODE -ne 0) { throw "Could not fast-forward branch $ghRef to origin." }
+            } else {
+                & git switch --quiet --track --create $ghRef $remoteRef 2>$null
+                if ($LASTEXITCODE -ne 0) { throw "Could not create local branch $ghRef from origin." }
+            }
+        } else {
+            & git fetch --quiet origin "refs/tags/${ghRef}:refs/tags/${ghRef}" 2>$null | Out-Null
+            if ($LASTEXITCODE -ne 0) {
+                throw "Could not fetch branch or tag '$ghRef' from origin. Check the ref/network, or use a fresh ANIMATICA_HOME folder."
+            }
+            & git switch --quiet --detach "refs/tags/$ghRef" 2>$null
+            if ($LASTEXITCODE -ne 0) { throw "Could not check out tag $ghRef." }
+        }
+
+        $branch = (& git branch --show-current 2>$null | Out-String).Trim()
+        $head = (& git rev-parse --short HEAD 2>$null | Out-String).Trim()
+        if ($branch) { Write-Host "  -> $branch @ $head" }
+        else { Write-Host "  -> tag $ghRef @ $head" }
+    } finally {
+        $ErrorActionPreference = $savedPreference
+        Pop-Location
+    }
+}
+
 # --------------------------------------------------------------------------- #
 # 0. source: a checkout, a git clone, or a plain ZIP (no git needed)
 # --------------------------------------------------------------------------- #
+$useExistingRoot = $false
 if ($PSScriptRoot -and (Test-Path (Join-Path $PSScriptRoot "..\src\animatica\__init__.py"))) {
     $root = Split-Path $PSScriptRoot -Parent
     Write-Host "Using the checkout at $root"
@@ -50,6 +122,7 @@ if ($PSScriptRoot -and (Test-Path (Join-Path $PSScriptRoot "..\src\animatica\__i
     $root = if ($env:ANIMATICA_HOME) { $env:ANIMATICA_HOME } else { Join-Path $env:USERPROFILE "animatica-manim" }
     if (Test-Path (Join-Path $root "src\animatica\__init__.py")) {
         Write-Host "Using the existing checkout at $root"
+        $useExistingRoot = $true
     } else {
         Write-Step "0/4" "downloading Animatica ($ghRef)"
         if (Get-Command git -ErrorAction SilentlyContinue) {
@@ -68,6 +141,7 @@ if ($PSScriptRoot -and (Test-Path (Join-Path $PSScriptRoot "..\src\animatica\__i
         }
     }
 }
+if ($useExistingRoot) { Sync-ExistingCheckout -Path $root }
 Set-Location $root
 Write-Host "  -> $root"
 
@@ -108,11 +182,11 @@ $ErrorActionPreference = "Continue"
 & $py -m ensurepip --upgrade *> $null
 $ErrorActionPreference = "Stop"
 
-Write-Host "  installing animatica + manim (this is the slow part)"
+Write-Host "  installing animatica + manim + TUI (this is the slow part)"
 if (Get-Command uv -ErrorAction SilentlyContinue) {
-    Invoke-Checked "uv pip install" { uv pip install --python $py -e . }
+    Invoke-Checked "uv pip install" { uv pip install --python $py -e ".[tui]" }
 } else {
-    Invoke-Checked "pip install" { & $py -m pip install --disable-pip-version-check -q -e . }
+    Invoke-Checked "pip install" { & $py -m pip install --disable-pip-version-check -q -e ".[tui]" }
 }
 $animatica = Join-Path $root ".venv\Scripts\animatica.exe"
 if (-not (Test-Path $animatica)) { throw "animatica.exe was not created in .venv\Scripts." }
@@ -145,7 +219,27 @@ Write-Step "4/4" "verifying"
 $ErrorActionPreference = "Continue"
 $raw = (& $animatica doctor --json) -join "`n"
 $ErrorActionPreference = "Stop"
-$checks = @($raw | ConvertFrom-Json)
+$parsed = $raw | ConvertFrom-Json
+$checkResults = New-Object 'System.Collections.Generic.List[object]'
+function Add-DoctorCheck {
+    param([object]$Value, [System.Collections.Generic.List[object]]$Results)
+    if ($null -eq $Value) { return }
+    if ($Value -is [System.Array]) {
+        foreach ($item in $Value) { Add-DoctorCheck -Value $item -Results $Results }
+    } else {
+        [void]$Results.Add($Value)
+    }
+}
+Add-DoctorCheck -Value $parsed -Results $checkResults
+$checks = $checkResults.ToArray()
+if ($checks.Count -eq 0) { throw "doctor --json returned no checks; refusing to report success." }
+foreach ($c in $checks) {
+    if ($null -eq $c -or $c.PSObject.Properties.Name -notcontains "name" -or
+        $c.PSObject.Properties.Name -notcontains "ok" -or
+        $c.name -isnot [string] -or $c.ok -isnot [bool]) {
+        throw "doctor --json returned an unexpected result; refusing to report success."
+    }
+}
 foreach ($c in $checks) {
     if ($c.ok) {
         Write-Host ("[OK ] {0}: {1}" -f $c.name, $c.detail)
@@ -176,10 +270,27 @@ if ($env:GITHUB_PATH) {
 }
 
 Write-Host ""
-Write-Host "Ready. Two commands from here:"
-Write-Host ""
-Write-Host "  $animatica tui                 # do everything, and set your defaults, here"
-Write-Host "  $animatica make `"graph of sin(x)`" -o out"
-Write-Host ""
-Write-Host "The studio is where you pick quality, theme, provider and API keys: pick with"
-Write-Host "the arrow keys or start typing to filter the list. Choices are remembered."
+Write-Host "Install complete and verified."
+if (Test-InteractiveTerminal) {
+    Write-Host "Starting Animatica setup. Choose Template for offline examples, or an AI provider."
+    $ErrorActionPreference = "Continue"
+    & $animatica setup
+    $setupExitCode = $LASTEXITCODE
+    $ErrorActionPreference = "Stop"
+    if ($setupExitCode -ne 0) {
+        Write-Host "Setup wizard exited with status $setupExitCode. The install is complete; rerun:"
+        Write-Host "  $animatica setup"
+        throw "First-run setup did not finish (exit code $setupExitCode)."
+    }
+    Write-Host ""
+    Write-Host "Setup complete. Open Animatica Studio with:"
+    Write-Host "  $animatica tui"
+} else {
+    if ($env:ANIMATICA_SKIP_SETUP -eq "1") {
+        Write-Host "Interactive setup skipped (ANIMATICA_SKIP_SETUP=1)."
+    } else {
+        Write-Host "No interactive terminal detected; install is ready."
+    }
+    Write-Host "Run this in a terminal to configure your provider:"
+    Write-Host "  $animatica setup"
+}

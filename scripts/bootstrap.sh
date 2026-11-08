@@ -3,10 +3,10 @@
 #
 #   curl -fsSL https://raw.githubusercontent.com/Abu103/animatica-manim/main/scripts/bootstrap.sh | bash
 #
-# Gets you from a bare machine to a working render: python + manim + the cairo/pango
-# libraries manim needs (system packages when available, otherwise a prebuilt
-# bundle — no manual downloads), ffmpeg, and optionally LaTeX. Afterwards it opens
-# nothing and asks nothing: run `animatica tui` and set your defaults there.
+# Gets you from a bare machine to a working render: Python + Manim, cairo/pango
+# (system packages or a prebuilt bundle), ffmpeg, and optional LaTeX. After
+# verification, it opens `animatica setup` on an interactive terminal. Use
+# ANIMATICA_SKIP_SETUP=1 for unattended installs; then run the printed command.
 #
 # Environment (all optional):
 #   ANIMATICA_HOME        where to put the checkout        (default ~/animatica-manim)
@@ -14,6 +14,7 @@
 #   ANIMATICA_NATIVE_URL  tar.gz with wheels/ + lib/       (default: repo release)
 #   ANIMATICA_TEX=0       skip the LaTeX (TinyTeX) step
 #   ANIMATICA_NATIVE=0    never touch cairo/pango
+#   ANIMATICA_SKIP_SETUP=1 install only; do not launch the setup wizard
 #
 # Flags: --full (always try LaTeX), --native-only (stop after the native deps),
 #        --help
@@ -47,10 +48,61 @@ if [ -n "${BASH_SOURCE[0]:-}" ] && [ -f "${BASH_SOURCE[0]}" ]; then
   self_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 fi
 
+# If the caller points us at an old existing checkout, switch that clean checkout to
+# the requested ref before installing. Never overwrite local edits or unpushed commits.
+sync_existing_checkout() {
+  if [ ! -e "$ROOT/.git" ]; then
+    say "ERROR: $ROOT is not a Git checkout, so I cannot safely update it to $GH_REF."
+    say "Use a fresh folder, for example: ANIMATICA_HOME=\"$HOME/animatica-manim-test\""
+    return 1
+  fi
+  if ! have git; then
+    say "ERROR: Git is needed to update the existing checkout at $ROOT."
+    say "Use a fresh folder with Git installed, or set ANIMATICA_HOME to another path."
+    return 1
+  fi
+
+  local status remote_ref
+  if ! status="$(git -C "$ROOT" status --porcelain 2>/dev/null)"; then
+    say "ERROR: could not inspect the existing checkout at $ROOT."
+    return 1
+  fi
+  if [ -n "$status" ]; then
+    say "ERROR: $ROOT has local changes; I will not switch branches or overwrite them."
+    say "For a safe test, set ANIMATICA_HOME to a new folder and rerun this installer."
+    return 1
+  fi
+
+  remote_ref="refs/remotes/origin/$GH_REF"
+  if git -C "$ROOT" fetch -q origin "+refs/heads/$GH_REF:$remote_ref" 2>/dev/null; then
+    if git -C "$ROOT" show-ref --quiet --verify "refs/heads/$GH_REF"; then
+      if ! git -C "$ROOT" merge-base --is-ancestor "refs/heads/$GH_REF" "$remote_ref" 2>/dev/null; then
+        say "ERROR: local branch $GH_REF has commits not on origin; I will not discard them."
+        say "For a safe test, set ANIMATICA_HOME to a new folder and rerun this installer."
+        return 1
+      fi
+      git -C "$ROOT" checkout -q "$GH_REF" || return 1
+      git -C "$ROOT" merge --ff-only -q "$remote_ref" || return 1
+    else
+      git -C "$ROOT" checkout -q --track -b "$GH_REF" "$remote_ref" || return 1
+    fi
+  elif git -C "$ROOT" fetch -q origin "refs/tags/$GH_REF:refs/tags/$GH_REF" 2>/dev/null; then
+    git -C "$ROOT" checkout -q --detach "refs/tags/$GH_REF" || return 1
+  else
+    say "ERROR: could not fetch branch or tag '$GH_REF' from origin."
+    say "Check the ref/network, or use a fresh ANIMATICA_HOME folder."
+    return 1
+  fi
+
+  say "  -> $(git -C "$ROOT" rev-parse --abbrev-ref HEAD) @ $(git -C "$ROOT" rev-parse --short HEAD)"
+}
+
+USE_EXISTING_ROOT=0
 if [ -n "$self_dir" ] && [ -f "$self_dir/../src/animatica/__init__.py" ]; then
   ROOT="$(cd "$self_dir/.." && pwd)"
   say "Using the checkout at $ROOT"
 elif [ -f "$ROOT/src/animatica/__init__.py" ]; then
+  USE_EXISTING_ROOT=1
   say "Using the existing checkout at $ROOT"
 else
   step "0/4" "downloading Animatica ($GH_REF)"
@@ -64,6 +116,9 @@ else
 fi
 cd "$ROOT"
 say "  -> $ROOT"
+if [ "$USE_EXISTING_ROOT" = "1" ]; then
+  sync_existing_checkout
+fi
 
 # --------------------------------------------------------------------------- #
 # 1. cairo + pango: the libraries manim's pycairo/manimpango need
@@ -191,8 +246,8 @@ if [ "$BUNDLE_USED" = "1" ]; then
   # never tries to compile pycairo/manimpango against missing headers.
   pip_install --no-deps "$ROOT"/native/wheels/*.whl
 fi
-say "  installing animatica + manim (this is the slow part, ~1 min)"
-pip_install -e "$ROOT"
+say "  installing animatica + manim + TUI (this is the slow part, ~1 min)"
+pip_install -e ".[tui]"
 
 # --------------------------------------------------------------------------- #
 # 3. LaTeX (optional: needed for MathTex, not for text or shapes)
@@ -269,17 +324,29 @@ if [ "${REQUIRED_FAILS:-1}" = "0" ]; then
     say "      Text, shapes, charts and everything else render fine."
     say "      Add it later with: animatica doctor --fix"
   fi
-  cat <<'EOF'
-
-Ready. Two commands from here:
-
-  animatica tui                 # do everything, and set your defaults, here
-  animatica make "graph of sin(x)" -o out/
-
-`animatica tui` is the place to tweak quality, theme, provider and API keys:
-pick with the arrow keys or start typing to filter the list. Nothing else to
-configure and no environment variables to export.
-EOF
+  say ""
+  say "Install complete and verified."
+  if [ "${ANIMATICA_SKIP_SETUP:-0}" = "1" ]; then
+    say "Interactive setup skipped (ANIMATICA_SKIP_SETUP=1)."
+    say "Run this when ready: $ROOT/.venv/bin/animatica setup"
+  elif [ -z "${CI:-}" ] && [ -z "${GITHUB_ACTIONS:-}" ] && [ -t 1 ] \
+      && ( : </dev/tty ) 2>/dev/null; then
+    say "Starting Animatica setup. Choose Template for offline examples, or an AI provider."
+    if "$ROOT/.venv/bin/animatica" setup </dev/tty; then
+      say ""
+      say "Setup complete. Open Animatica Studio with:"
+      say "  $ROOT/.venv/bin/animatica tui"
+    else
+      setup_status=$?
+      say "Setup wizard exited with status $setup_status. The install is complete; rerun:"
+      say "  $ROOT/.venv/bin/animatica setup"
+      exit "$setup_status"
+    fi
+  else
+    say "No interactive terminal detected; install is ready."
+    say "Run this in a terminal to configure your provider:"
+    say "  $ROOT/.venv/bin/animatica setup"
+  fi
 else
   say ""
   say "Some checks failed (see the FAIL lines above). Re-run this script, or:"

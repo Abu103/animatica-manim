@@ -16,6 +16,7 @@ from typer.testing import CliRunner
 from animatica.ai.template import TemplateMatcher
 from animatica.cli import app as cli_app
 from animatica.pipeline import MakeResult
+from animatica.storyboard.models import dump_storyboard
 from animatica.tui import AnimaticaTuiApp, TuiSettings, run_tui
 
 
@@ -44,10 +45,29 @@ def _status(app) -> str:
 async def _click(app, pilot, selector: str) -> None:
     """Click a control, scrolling it into view first (panes scroll at 80x24)."""
     widget = _q(app, selector)
-    widget.scroll_visible(top=True)
+    widget.scroll_visible(top=True, animate=False)
     await pilot.pause()
     await pilot.click(widget)
     await pilot.pause()
+
+
+async def _start_with_template(app, pilot, template_name: str) -> None:
+    _q(app, "#source-mode").value = "template"
+    _q(app, "#template-select").value = template_name
+    await _settle(pilot)
+    await _click(app, pilot, "#next")
+    await _settle(pilot)
+
+
+async def _open_advanced_json(app, pilot) -> None:
+    _q(app, "#storyboard-advanced").collapsed = False
+    await _settle(pilot)
+
+
+async def _advance_to_render(app, pilot) -> None:
+    while _q(app, "#steps").current != "pane-render":
+        await _click(app, pilot, "#next")
+        await _settle(pilot)
 
 
 async def _settle(pilot, turns: int = 3) -> None:
@@ -137,7 +157,8 @@ async def test_prompt_step_has_its_controls_at_80x24():
         assert _q(app, "#template-select") is not None
         assert _q(app, "#sb-path-input") is not None
         assert _q(app, "#next") is not None
-        assert "step 1/4" in _text(_q(app, "#topbar-step"))
+        assert _q(app, "#tagline").display is False
+        assert "01 / 04" in _text(_q(app, "#topbar-step"))
         assert "Ready" in _status(app)
 
 
@@ -146,6 +167,8 @@ async def test_job_step_exposes_options_at_80x24():
     app, _ = _make_app()
     async with app.run_test(size=(80, 24)) as pilot:
         await pilot.pause()
+        app._goto("job")
+        await _settle(pilot)
         for selector in (
             "#output-dir",
             "#quality-select",
@@ -156,6 +179,24 @@ async def test_job_step_exposes_options_at_80x24():
             "#frame-lint-switch",
         ):
             assert _q(app, selector) is not None, selector
+        advanced = _q(app, "#job-advanced")
+        assert advanced.collapsed is True
+        assert app.query("#job-advanced #output-dir").nodes, "output path stays in More options"
+        assert str(app.settings.output_dir) in _text(_q(app, "#output-summary"))
+        assert _q(app, "#output-summary").region.bottom <= 19
+
+
+@pytest.mark.tui
+async def test_more_options_disclosure_opens_by_click_at_80x24():
+    app, _ = _make_app()
+    async with app.run_test(size=(80, 24)) as pilot:
+        await pilot.pause()
+        app._goto("job")
+        await _settle(pilot)
+        advanced = _q(app, "#job-advanced")
+        assert advanced.collapsed is True
+        await _click(app, pilot, "#job-advanced CollapsibleTitle")
+        assert advanced.collapsed is False
 
 
 @pytest.mark.tui
@@ -171,6 +212,109 @@ async def test_switches_and_selects_write_through_to_settings():
         assert wrapper.settings.quality == "high"
 
 
+@pytest.mark.tui
+async def test_wizard_shell_shows_one_step_and_obvious_navigation_at_80x24():
+    app, _ = _make_app()
+    async with app.run_test(size=(80, 24)) as pilot:
+        await pilot.pause()
+        steps = _q(app, "#steps")
+        assert steps.__class__.__name__ == "ContentSwitcher"
+        assert steps.current == "pane-prompt"
+        assert _q(app, "#pane-storyboard").display is False
+        assert _q(app, "#back").disabled is True
+        assert _q(app, "#next").display is True
+        assert "IDEA" in _text(_q(app, "#topbar-step")).upper()
+        assert _q(app, "#next").region.bottom == _q(app, "#step-nav").region.bottom
+        assert _q(app, "#step-nav").region.bottom == _q(app, "#status").region.y
+        assert _q(app, "#status").region.bottom == _q(app, "Footer").region.y
+
+        _q(app, "#prompt-input").value = "explain tides"
+        await _click(app, pilot, "#next")
+        await _settle(pilot)
+        assert _q(app, "#steps").current == "pane-storyboard"
+        assert _q(app, "#back").disabled is False
+        await _click(app, pilot, "#next")
+        await _settle(pilot)
+        assert _q(app, "#steps").current == "pane-job"
+        await _click(app, pilot, "#next")
+        await _settle(pilot)
+        assert _q(app, "#steps").current == "pane-render"
+        assert _q(app, "#next").display is False
+        assert _q(app, "#start").display is True
+        await _click(app, pilot, "#back")
+        await _settle(pilot)
+        assert _q(app, "#steps").current == "pane-job"
+        await _click(app, pilot, "#back")
+        await _settle(pilot)
+        assert _q(app, "#steps").current == "pane-storyboard"
+        await _click(app, pilot, "#back")
+        await _settle(pilot)
+        assert _q(app, "#steps").current == "pane-prompt"
+
+
+@pytest.mark.tui
+async def test_alternate_sources_are_hidden_until_chosen():
+    app, _ = _make_app()
+    async with app.run_test(size=(80, 24)) as pilot:
+        await pilot.pause()
+        source_modes = app.query("#source-mode").nodes
+        assert source_modes, "the input type should be visible and explicit"
+        source_mode = source_modes[0]
+        assert source_mode.value == "prompt"
+        assert _q(app, "#prompt-input").display is True
+        assert _q(app, "#template-select").display is False
+        assert _q(app, "#sb-path-input").display is False
+
+        source_mode.value = "template"
+        await _settle(pilot)
+        assert _q(app, "#prompt-input").display is False
+        assert _q(app, "#template-select").display is True
+        assert _q(app, "#sb-path-input").display is False
+
+        source_mode.value = "storyboard"
+        await _settle(pilot)
+        assert _q(app, "#prompt-input").display is False
+        assert _q(app, "#template-select").display is False
+        assert _q(app, "#sb-path-input").display is True
+
+
+@pytest.mark.tui
+async def test_help_opens_from_keyboard_and_escape_closes_it():
+    app, _ = _make_app()
+    async with app.run_test(size=(80, 24)) as pilot:
+        await pilot.pause()
+        await pilot.press("f1")
+        await _settle(pilot)
+        assert app.screen.query("#help-copy").nodes
+        await pilot.press("escape")
+        await _settle(pilot)
+        assert app.screen.id == "_default"
+
+        await _click(app, pilot, "#topbar-help")
+        await _settle(pilot)
+        assert app.screen.query("#help-copy").nodes
+        await pilot.click(app.screen.query_one("#close-help"))
+        await _settle(pilot)
+        assert app.screen.id == "_default"
+
+
+@pytest.mark.tui
+async def test_raw_storyboard_json_is_behind_collapsed_advanced_section():
+    from textual.widgets import Collapsible
+
+    app, _ = _make_app()
+    template_name = TemplateMatcher().list_templates()[0][0]
+    async with app.run_test(size=(80, 24)) as pilot:
+        await pilot.pause()
+        assert app.query("#source-mode").nodes, "source mode must be explicit"
+        await _start_with_template(app, pilot, template_name)
+        advanced = _q(app, "#storyboard-advanced", Collapsible)
+        assert advanced.collapsed is True
+        assert _q(app, "#storyboard-json") is not None
+        await _click(app, pilot, "#storyboard-advanced CollapsibleTitle")
+        assert advanced.collapsed is False
+
+
 # ---------------------------------------------------------------------------
 # Prompt validation
 # ---------------------------------------------------------------------------
@@ -184,12 +328,12 @@ async def test_empty_prompt_is_rejected_with_a_reason():
         await _click(app, pilot, "#next")
         await _settle(pilot)
 
-        assert "Enter a prompt" in _text(_q(app, "#prompt-status"))
+        assert "Write a topic" in _text(_q(app, "#prompt-status"))
         assert "error" in _q(app, "#status").classes
 
 
 @pytest.mark.tui
-async def test_two_sources_are_rejected():
+async def test_explicit_source_mode_ignores_unselected_hidden_values():
     app, _ = _make_app()
     async with app.run_test(size=(80, 24)) as pilot:
         await pilot.pause()
@@ -198,8 +342,11 @@ async def test_two_sources_are_rejected():
         await _click(app, pilot, "#next")
         await _settle(pilot)
 
-        assert "only one" in _text(_q(app, "#prompt-status")).lower()
-        assert "Two sources" in _status(app)
+        assert _q(app, "#steps").current == "pane-storyboard"
+        assert app.storyboard is None
+        assert app.settings.prompt == "explain tides"
+        assert _q(app, "#storyboard-empty").display is True
+        assert "error" not in _q(app, "#status").classes
 
 
 @pytest.mark.tui
@@ -207,12 +354,38 @@ async def test_missing_storyboard_file_is_reported(tmp_path):
     app, _ = _make_app()
     async with app.run_test(size=(80, 24)) as pilot:
         await pilot.pause()
+        _q(app, "#source-mode").value = "storyboard"
         _q(app, "#sb-path-input").value = str(tmp_path / "absent.json")
+        await _settle(pilot)
         await _click(app, pilot, "#next")
         await _settle(pilot)
 
         assert "Not found" in _text(_q(app, "#prompt-status"))
         assert "not found" in _status(app).lower()
+
+
+@pytest.mark.tui
+async def test_storyboard_file_mode_loads_a_real_file(tmp_path):
+    template_name = TemplateMatcher().list_templates()[0][0]
+    storyboard = TemplateMatcher().by_name(template_name)
+    assert storyboard is not None
+    path = tmp_path / "ready.json"
+    dump_storyboard(storyboard, path)
+
+    app, _ = _make_app()
+    async with app.run_test(size=(80, 24)) as pilot:
+        await pilot.pause()
+        _q(app, "#source-mode").value = "storyboard"
+        _q(app, "#sb-path-input").value = str(path)
+        await _settle(pilot)
+        await _click(app, pilot, "#next")
+        await _settle(pilot)
+
+        assert app.storyboard is not None
+        assert app.storyboard.title == storyboard.title
+        assert app.settings.storyboard_path == path
+        assert _q(app, "#storyboard-table").row_count > 0
+        assert "file: ready.json" in _text(_q(app, "#side-source"))
 
 
 @pytest.mark.tui
@@ -225,7 +398,7 @@ async def test_typing_does_not_navigate():
         await _settle(pilot)
 
         assert _q(app, "#prompt-input") is not None  # still on step 1
-        assert "step 1/4" in _text(_q(app, "#topbar-step"))
+        assert "01 / 04" in _text(_q(app, "#topbar-step"))
 
 
 # ---------------------------------------------------------------------------
@@ -239,17 +412,22 @@ async def test_template_loads_a_storyboard_into_the_table():
     template_name = TemplateMatcher().list_templates()[0][0]
     async with app.run_test(size=(100, 30)) as pilot:
         await pilot.pause()
-        _q(app, "#template-select").value = template_name
-        await _click(app, pilot, "#next")
-        await _settle(pilot)
+        assert _q(app, "#tagline").display is True
+        await _start_with_template(app, pilot, template_name)
 
         table = _q(app, "#storyboard-table")
         assert app.storyboard is not None
         assert table.row_count == sum(len(scene.beats) for scene in app.storyboard.scenes)
         assert table.row_count >= 1
+        first = table.get_row_at(0)
+        assert first[0] == "Scene 1"
+        assert "Title Card" in first[1]
+        assert [column.label.plain for column in table.columns.values()] == [
+            "Scene", "Visual", "Narration"
+        ]
         assert "template:" in _text(_q(app, "#side-source"))
-        assert "scenes" in _text(_q(app, "#side-duration"))
-        assert _q(app, "#steps").active == "pane-storyboard"
+        assert "scenes" in _text(_q(app, "#storyboard-summary"))
+        assert _q(app, "#steps").current == "pane-storyboard"
 
 
 @pytest.mark.tui
@@ -258,9 +436,8 @@ async def test_storyboard_json_edit_validates_and_updates_the_table():
     template_name = TemplateMatcher().list_templates()[0][0]
     async with app.run_test(size=(100, 30)) as pilot:
         await pilot.pause()
-        _q(app, "#template-select").value = template_name
-        await _click(app, pilot, "#next")
-        await _settle(pilot)
+        await _start_with_template(app, pilot, template_name)
+        await _open_advanced_json(app, pilot)
 
         editor = _q(app, "#storyboard-json")
         payload = json.loads(editor.text)
@@ -279,9 +456,8 @@ async def test_broken_json_is_reported_not_raised():
     template_name = TemplateMatcher().list_templates()[0][0]
     async with app.run_test(size=(100, 30)) as pilot:
         await pilot.pause()
-        _q(app, "#template-select").value = template_name
-        await _click(app, pilot, "#next")
-        await _settle(pilot)
+        await _start_with_template(app, pilot, template_name)
+        await _open_advanced_json(app, pilot)
 
         _q(app, "#storyboard-json").text = '{"version": "1", '
         await _click(app, pilot, "#validate")
@@ -297,9 +473,8 @@ async def test_unknown_component_is_rejected_by_the_registry():
     template_name = TemplateMatcher().list_templates()[0][0]
     async with app.run_test(size=(100, 30)) as pilot:
         await pilot.pause()
-        _q(app, "#template-select").value = template_name
-        await _click(app, pilot, "#next")
-        await _settle(pilot)
+        await _start_with_template(app, pilot, template_name)
+        await _open_advanced_json(app, pilot)
 
         editor = _q(app, "#storyboard-json")
         editor.text = editor.text.replace("title_card", "not_a_component", 1)
@@ -315,14 +490,17 @@ async def test_existing_outputs_are_flagged_before_rendering(tmp_path):
     (tmp_path / "video.mp4").write_bytes(b"old")
     (tmp_path / "report.json").write_text("{}")
     app, _ = _make_app()
-    async with app.run_test(size=(100, 30)) as pilot:
+    async with app.run_test(size=(80, 24)) as pilot:
         await pilot.pause()
+        app._goto("job")
         _q(app, "#output-dir").value = str(tmp_path)
         await _settle(pilot)
 
         warning = _text(_q(app, "#overwrite-warning"))
-        assert "overwritten" in warning
+        assert "Will overwrite" in warning
         assert "video.mp4" in warning
+        region = _q(app, "#overwrite-warning").region
+        assert region.y >= 3 and region.bottom <= 19, "warning must be visible before Continue"
 
 
 # ---------------------------------------------------------------------------
@@ -442,11 +620,8 @@ async def test_render_completes_and_shows_the_video(tmp_path, monkeypatch):
     async with app.run_test(size=(100, 30)) as pilot:
         await pilot.pause()
         _q(app, "#output-dir").value = str(tmp_path)
-        _q(app, "#template-select").value = template_name
-        await _click(app, pilot, "#next")
-        await _settle(pilot)
-        await _click(app, pilot, "#to-render")
-        await _settle(pilot)
+        await _start_with_template(app, pilot, template_name)
+        await _advance_to_render(app, pilot)
         await _click(app, pilot, "#start")
 
         assert await _wait_for(app, pilot, lambda: _text(_q(app, "#render-stage")) == "Complete.")
@@ -470,8 +645,7 @@ async def test_render_failure_is_logged_and_does_not_crash(tmp_path, monkeypatch
         _q(app, "#prompt-input").value = "explain entropy"
         await _click(app, pilot, "#next")
         await _settle(pilot)
-        await _click(app, pilot, "#to-render")
-        await _settle(pilot)
+        await _advance_to_render(app, pilot)
         await _click(app, pilot, "#start")
 
         assert await _wait_for(app, pilot, lambda: "failed" in _text(_q(app, "#status")).lower())
@@ -495,8 +669,7 @@ async def test_cancel_requests_a_stop_and_reports_it(tmp_path, monkeypatch):
         _q(app, "#prompt-input").value = "explain entropy"
         await _click(app, pilot, "#next")
         await _settle(pilot)
-        await _click(app, pilot, "#to-render")
-        await _settle(pilot)
+        await _advance_to_render(app, pilot)
         await _click(app, pilot, "#start")
         await pilot.pause()
 
@@ -522,7 +695,7 @@ async def test_nothing_to_render_is_refused():
 
 
 @pytest.mark.tui
-async def test_ctrl_j_advances_from_prompt_to_render():
+async def test_ctrl_j_advances_one_step_from_idea_to_scenes():
     app, _ = _make_app()
     async with app.run_test(size=(80, 24)) as pilot:
         await pilot.pause()
@@ -530,7 +703,7 @@ async def test_ctrl_j_advances_from_prompt_to_render():
         await pilot.press("ctrl+j")
         await _settle(pilot)
 
-        assert _q(app, "#steps").active == "pane-render"
+        assert _q(app, "#steps").current == "pane-storyboard"
         assert "prompt" in _text(_q(app, "#side-source"))
 
 
@@ -545,7 +718,7 @@ async def test_ctrl_b_goes_back_a_step():
         await pilot.press("ctrl+b")
         await _settle(pilot)
 
-        assert _q(app, "#steps").active == "pane-job"
+        assert _q(app, "#steps").current == "pane-prompt"
 
 
 # ---------------------------------------------------------------------------
