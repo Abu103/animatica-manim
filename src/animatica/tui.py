@@ -426,8 +426,8 @@ class AnimaticaTuiApp:
             CSS = APP_CSS
             TITLE = "Animatica"
             BINDINGS = [
-                w["Binding"]("ctrl+j", "next_step", "Continue"),
-                w["Binding"]("ctrl+b", "prev_step", "Back"),
+                w["Binding"]("ctrl+j", "next_step", "Continue", priority=True),
+                w["Binding"]("ctrl+b", "prev_step", "Back", priority=True),
                 w["Binding"]("ctrl+r", "start_render", "Render"),
                 w["Binding"]("ctrl+shift+c", "copy_render_log", "Copy details", show=False),
                 w["Binding"]("f1", "help", "Help"),
@@ -642,6 +642,19 @@ class AnimaticaTuiApp:
                 status = self._q("#status", w["Static"])
                 status.update(message)
                 status.classes = kind
+
+            def _binding_blocked(self) -> bool:
+                """True when a modal screen or an open picker owns the keyboard.
+
+                ``priority=True`` bindings fire even while a widget has focus, so the
+                navigation keys must opt out when a modal (help, error, ...) or an open
+                FilterSelect drop-down is active: typing ``ctrl+j`` / ``ctrl+b`` then
+                must not step through the wizard behind the overlay.
+                """
+                if len(self.screen_stack) > 1:
+                    return True
+                FilterSelect = w["FilterSelect"]
+                return any(fs.has_class("open") for fs in self.query(FilterSelect))
 
             def _set_pane_status(self, widget_id: str, message: str) -> None:
                 self._q(f"#{widget_id}", w["Static"]).update(message)
@@ -1290,9 +1303,13 @@ class AnimaticaTuiApp:
                     self._start_render()
 
             def action_next_step(self) -> None:
+                if self._binding_blocked():
+                    return
                 self._continue()
 
             def action_prev_step(self) -> None:
+                if self._binding_blocked():
+                    return
                 if self.busy:
                     self._set_status("Wait for the render to finish before going back.", "busy")
                     return

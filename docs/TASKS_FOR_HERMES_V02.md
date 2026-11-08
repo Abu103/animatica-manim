@@ -30,10 +30,23 @@ Accept: `python -m pytest -q tests/test_doctor_fix.py` passes. Windows behavior:
 Do not: change the Linux bundle; push; publish a release.
 
 ### T13 TUI keys with an Input focused  [Gate A]
-Problem: owner found Alt+Left/Alt+Right do not move between steps while an Input has focus (docs/TUI.md mentions them; bindings in `src/animatica/tui.py` are ctrl+j / ctrl+b).
+Problem: `ctrl+j` (continue) and `ctrl+b` (back) did not change steps while an
+`Input` widget had keyboard focus — Textual routes `ctrl+j` to the focused
+`Input` as `newline`/`submit`, so the app-level navigation binding never fired.
+The bindings themselves are correct (`ctrl+j` / `ctrl+b`); docs/TUI.md already
+documents them. The fix makes the app bindings win over a focused Input, while
+opting out when a modal screen or an open picker drop-down owns the keyboard.
 Files: src/animatica/tui.py, docs/TUI.md, tests/test_tui.py.
-Steps: reproduce with a Pilot test first (focus `#prompt-input`, press `alt+right`, expect step change; red test). Decide with owner: add `priority=True` bindings for alt+left/alt+right, or correct the docs to ctrl+j/ctrl+b. Terminals may not deliver Alt+arrows reliably (UNVERIFIED); prefer a documented fallback.
-Accept: new test passes; `python -m pytest -q tests/test_tui.py`; follow `cross-platform-tui-tests`.
+Steps: (1) add `priority=True` to the `ctrl+j`/`ctrl+b` bindings in
+`src/animatica/tui.py`. (2) Guard `action_next_step`/`action_prev_step` so they
+return early when a modal screen is pushed or a FilterSelect drop-down is open.
+(3) Add tests: navigation with an Input focused, typing still inserts
+characters, no navigation while a modal or picker is active, no-op on the first
+and last pane. (4) Confirm docs/TUI.md lists `ctrl+j`/`ctrl+b` (it does; no
+Alt+arrow references remain).
+Accept: new tests pass; `python -m pytest -q tests/test_tui.py`; follow
+`cross-platform-tui-tests`. Real-terminal `ctrl+j` delivery is UNVERIFIED on
+Windows; the documented fallback is the Back/Continue buttons.
 
 ### T14 Graph legend and x-axis ticks vs caption  [Gate A]
 Problem: owner ran "explain taylor series" and saw a missing graph legend and x-axis tick labels overlapping the caption. `components/graph.py` already builds a legend for two curves and leaves headroom above the caption band, so first find the case that fails.
