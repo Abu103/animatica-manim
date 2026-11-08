@@ -1,7 +1,19 @@
 # Animatica session log (live, edit as you go)
 Updated: 2026-11-08. Newest status on top. Any Claude session can resume from here.
 
-## Status (2026-11-08, Hermes session, task cards T10 + T11)
+## Status (2026-11-08, Hermes session, task cards T10 + T11 + T12)
+
+### T12 Windows TinyTeX bundle [Gate A, approved with conditions] - DONE (code), Windows UNVERIFIED
+- First-try pass: yes. Strikes: 0. Escalated: no.
+- Branch: `hermes/t12-windows-tinytex`.
+- Changed: new `.github/workflows/build-tinytex-windows.yml`, new `src/animatica/tex_bundle.py`, new `tests/test_tex_bundle.py` (15 tests), `src/animatica/doctor.py` (bundle path + `tinytex_bin_dirs`), `tests/test_doctor_fix.py` (+2 tests), `scripts/bootstrap.ps1`, `docs/NATIVE_DEPS.md`, `docs/SETUP.md`, CHANGELOG.md.
+- Design: bundle first, upstream TinyTeX installer as fallback. Fails closed: with an empty sha256 constant the bundle is NOT downloaded at all. URL pinned to the explicit release tag (never "latest"), tag + sha256 kept as one constant pair. Hash verified on the downloaded file BEFORE unpacking; a mismatch deletes the file, logs one line and falls through. Env overrides `ANIMATICA_TEX_URL` / `ANIMATICA_TEX_SHA256` (an override URL alone does NOT bypass verification).
+- Unpack: staged in a temp dir and moved into `<project>/.tex/` only when complete, so an interrupted unpack never looks installed. Zip entries that escape the target are rejected (two independent guards: a `..` pre-filter and a resolved-path check in the extraction loop). Layout normalised so `bin/windows` lands where `tinytex_bin_dirs` looks.
+- RED proof: with the bundle call removed, both new doctor tests fail ("the prebuilt bundle must be tried" / "the upstream installer must run when the bundle failed"); with the hash check disabled, the mismatch test fails; with the zip-slip `..` filter disabled the in-loop guard still catches it (defence in depth, verified by hand).
+- Verified: `python -m pytest -q tests/test_doctor_fix.py` -> 10 passed. `python scripts/ci_tests.py` -> 762 passed, 0 failed, 0 skipped, 0 errors, 0 warnings. `bootstrap.ps1` parses cleanly (checked with the Windows PowerShell parser via powershell.exe). The workflow YAML parses and defines 4 triggers + 11 steps. The Linux bundle path is untouched (`git diff --name-only` shows no change to build-tinytex.yml / tex-deps.yml / bootstrap.sh).
+- NOT verified (Windows): the real download, unpack and compile on Windows. That needs the Windows CI job, which needs the branch pushed. Until that job is green, Windows behaviour is UNVERIFIED.
+- OPEN ITEM (not part of T12): seed `WINDOWS_TEX_SHA256` in `src/animatica/tex_bundle.py` with the hash from the first successful `build-tinytex-windows.yml` run, and publish the `tex-deps-v1-windows` release with the asset. Until then the bundle is never used by a real user (fail closed).
+- OPEN ITEM: the `tex-deps-v1-windows` release tag does not exist yet on GitHub; the release asset is published when a release event fires.
 
 ### T10 Install the agent pack [trivial] - DONE
 - First-try pass: yes. Strikes: 0. Escalated: no.

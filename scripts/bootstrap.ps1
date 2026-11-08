@@ -196,17 +196,28 @@ if (-not (Test-Path $animatica)) { throw "animatica.exe was not created in .venv
 # --------------------------------------------------------------------------- #
 if ($doTex) {
     Write-Step "3/4" "LaTeX for equations (optional)"
-    $ErrorActionPreference = "Continue"
-    & $animatica doctor *> $null
-    $doctorExit = $LASTEXITCODE
-    $ErrorActionPreference = "Stop"
-    if ($doctorExit -ne 0) {
-        Write-Host "  running: animatica doctor --fix --yes"
-        $ErrorActionPreference = "Continue"
-        & $animatica doctor --fix --yes
-        $ErrorActionPreference = "Stop"
+
+    # The prebuilt Windows bundle is tried first: it is a verified download,
+    # while the upstream TinyTeX installer is a live network call that failed
+    # with HTTP 504 in CI. The bundle is only used when its sha256 is known
+    # and matches; otherwise `animatica doctor --fix` falls back to upstream.
+    $texDir = Join-Path $root ".tex"
+    $texBin = Join-Path $texDir "bin\windows"
+    if (Test-Path (Join-Path $texBin "latex.exe")) {
+        Write-Host "  -> LaTeX bundle already unpacked in $texDir"
     } else {
-        Write-Host "  -> already available"
+        $ErrorActionPreference = "Continue"
+        & $animatica doctor *> $null
+        $doctorExit = $LASTEXITCODE
+        $ErrorActionPreference = "Stop"
+        if ($doctorExit -ne 0) {
+            Write-Host "  running: animatica doctor --fix --yes"
+            $ErrorActionPreference = "Continue"
+            & $animatica doctor --fix --yes
+            $ErrorActionPreference = "Stop"
+        } else {
+            Write-Host "  -> already available"
+        }
     }
 } else {
     Write-Step "3/4" "LaTeX: skipped (ANIMATICA_TEX=0)"

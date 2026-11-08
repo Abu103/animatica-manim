@@ -32,6 +32,7 @@
 - Fix: multi-scene videos failed to join with a relative `-o` dir / Windows paths (ffmpeg concat list now uses absolute forward-slash paths); ffmpeg stderr is surfaced on failure. `--model` / `ANIMATICA_MODEL` override; NIM default model updated.
 
 ## Unreleased
+- New: prebuilt Windows LaTeX bundle (task card T12). `.github/workflows/build-tinytex-windows.yml` builds TinyTeX on `windows-latest` and publishes `tinytex-manim-win.zip`; `animatica doctor --fix` on Windows tries it first, verified against a pinned sha256, and falls back to the upstream TinyTeX installer. The bundle fails closed: it is not downloaded at all while its expected hash is unknown.
 - Fix/F5-F7: stabilize renderer (F1-F4) and wire the backend seam (`--backend`, `--jobs`, single `report.json` writer); cache key now covers model + two-stage mode + registry fingerprint.
 - New: `--jobs` scene parallelism via threads (`render_scenes_parallel`); default stays `1` (timings: jobs 1 = 13.8s, jobs 4 = 15.8s on the fibonacci gallery — no gain at small scale, per spec 16.3).
 - Fix: `array_viz` swap moves both boxes simultaneously from original centers (was overlapping); `low`/`high`/`mid` now draw.

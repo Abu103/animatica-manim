@@ -113,6 +113,104 @@ def test_windows_tinytex_retry_count_is_bounded(monkeypatch):
     assert any("failed after 3 attempts" in action and "HTTP 504" in action for action in actions)
 
 
+def test_windows_uses_the_prebuilt_bundle_before_the_upstream_installer(monkeypatch, tmp_path):
+    """The verified bundle is tried first; the upstream installer is skipped."""
+    from animatica import doctor
+
+    monkeypatch.chdir(tmp_path)
+    bundle_calls = []
+    installer_calls = []
+    installed = {"value": False}
+
+    class Result:
+        returncode = 0
+        stdout = ""
+        stderr = ""
+
+    def install_windows_bundle(root, env=None, **kwargs):
+        bundle_calls.append(root)
+        installed["value"] = True
+        return True, "prebuilt LaTeX bundle installed"
+
+    def ensure_tex(platform):
+        return None
+
+    def which(name):
+        # latex only appears once the bundle has been installed
+        if installed["value"] and name in ("latex", "dvisvgm"):
+            return f"C:/TinyTeX/bin/windows/{name}.exe"
+        return None
+
+    def run(cmd, **kwargs):
+        command = " ".join(cmd)
+        if "install-bin-windows.ps1" in command:
+            installer_calls.append(command)
+        return Result()
+
+    monkeypatch.setattr(doctor, "ensure_tex_on_path", ensure_tex)
+    monkeypatch.setattr("animatica.tex_bundle.install_windows_bundle", install_windows_bundle)
+
+    actions = doctor.fix_dependencies(
+        run=run,
+        which=which,
+        platform="win32",
+        bundled_ffmpeg=lambda: "/bundled/ffmpeg",
+        sleep=lambda _: None,
+    )
+
+    assert bundle_calls, "the prebuilt bundle must be tried"
+    assert installer_calls == [], "the upstream installer must not run when the bundle works"
+    assert any("bundle" in a.lower() for a in actions)
+
+
+def test_windows_falls_back_to_the_upstream_installer_when_the_bundle_fails(monkeypatch, tmp_path):
+    """A failed bundle must not stop the upstream installer from running."""
+    from animatica import doctor
+
+    monkeypatch.chdir(tmp_path)
+    installer_calls = []
+
+    class Result:
+        returncode = 0
+        stdout = ""
+        stderr = ""
+
+    def install_windows_bundle(root, env=None, **kwargs):
+        return False, "sha256 mismatch; bundle deleted"
+
+    def ensure_tex(platform):
+        return None
+
+    installed = {"value": False}
+
+    def which(name):
+        # latex is absent at first; the upstream installer provides it
+        if installed["value"] and name in ("latex", "dvisvgm"):
+            return f"C:/TinyTeX/bin/windows/{name}.exe"
+        return None
+
+    def run(cmd, **kwargs):
+        command = " ".join(cmd)
+        if "install-bin-windows.ps1" in command:
+            installer_calls.append(command)
+            installed["value"] = True
+        return Result()
+
+    monkeypatch.setattr(doctor, "ensure_tex_on_path", ensure_tex)
+    monkeypatch.setattr("animatica.tex_bundle.install_windows_bundle", install_windows_bundle)
+
+    actions = doctor.fix_dependencies(
+        run=run,
+        which=which,
+        platform="win32",
+        bundled_ffmpeg=lambda: "/bundled/ffmpeg",
+        sleep=lambda _: None,
+    )
+
+    assert installer_calls, "the upstream installer must run when the bundle failed"
+    assert any("mismatch" in a.lower() for a in actions)
+
+
 def test_fix_linux_uses_apt_and_texlive():
     run = FakeRun()
     fix_dependencies(run=run, which=lambda name: None, platform="linux", bundled_ffmpeg=lambda: None)
