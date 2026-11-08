@@ -145,6 +145,15 @@ PROVIDER_CHOICES = [
 # never the current working directory (which might be Downloads).
 DEFAULT_OUTPUT_DIR = Path.home() / "animatica-output"
 
+
+def _path_from_input(value: str | Path | None, default: Path | None = None) -> Path | None:
+    """Parse a pasted path, accepting the surrounding quotes Explorer often adds."""
+    text = str(value or "").strip()
+    if len(text) >= 2 and text[0] == text[-1] and text[0] in ("'", '"'):
+        text = text[1:-1].strip()
+    return Path(text).expanduser() if text else default
+
+
 STEPS = ("prompt", "storyboard", "job", "render")
 
 
@@ -399,7 +408,8 @@ class AnimaticaTuiApp:
                         "3  Style    Keep the recommended settings or adjust the options.\n"
                         "4  Render   Create the video and open it when it is ready.\n\n"
                         "Tab moves between controls. Enter selects. F1 or Escape closes help.\n"
-                        "Ctrl+J continues; Ctrl+B goes back; Ctrl+R starts a render.",
+                        "Ctrl+J continues; Ctrl+B goes back; Ctrl+R starts a render.\n"
+                        "Ctrl+Shift+C copies render details.",
                         id="help-copy",
                     )
                     with w["Horizontal"](classes="row"):
@@ -419,6 +429,7 @@ class AnimaticaTuiApp:
                 w["Binding"]("ctrl+j", "next_step", "Continue"),
                 w["Binding"]("ctrl+b", "prev_step", "Back"),
                 w["Binding"]("ctrl+r", "start_render", "Render"),
+                w["Binding"]("ctrl+shift+c", "copy_render_log", "Copy details", show=False),
                 w["Binding"]("f1", "help", "Help"),
                 w["Binding"]("ctrl+q", "quit", "Quit"),
             ]
@@ -433,6 +444,7 @@ class AnimaticaTuiApp:
                 self.started_at = 0.0
                 self.cancel_event = threading.Event()
                 self._timer: Any = None
+                self._render_log_lines: list[str] = []
 
             # -- layout ----------------------------------------------------
 
@@ -603,6 +615,7 @@ class AnimaticaTuiApp:
                     yield w["Button"]("Create video", id="start", variant="primary")
                     yield w["Button"]("Cancel", id="cancel", variant="error", disabled=True)
                     yield w["Button"]("Open video", id="open-video", disabled=True)
+                    yield w["Button"]("Copy details", id="copy-render-log", disabled=True)
                 yield w["Static"]("", id="render-summary")
                 with w["Collapsible"](
                     title="Render details",
@@ -632,6 +645,28 @@ class AnimaticaTuiApp:
 
             def _set_pane_status(self, widget_id: str, message: str) -> None:
                 self._q(f"#{widget_id}", w["Static"]).update(message)
+
+            def _append_render_log(self, text: str, style: str | None = None) -> None:
+                """Keep a plain-text copy for clipboard while rendering safe Rich markup."""
+                from rich.markup import escape
+
+                plain = str(text)
+                self._render_log_lines.append(plain)
+                escaped = escape(plain)
+                rendered = f"[{style}]{escaped}[/{style}]" if style else escaped
+                self._q("#render-log", w["RichLog"]).write(rendered)
+                self._q("#copy-render-log", w["Button"]).disabled = False
+
+            def _copy_render_log(self) -> None:
+                if not self._render_log_lines:
+                    self._set_status("No render details to copy yet.", "busy")
+                    return
+                try:
+                    self.copy_to_clipboard("\n".join(self._render_log_lines))
+                except Exception as exc:  # noqa: BLE001 - clipboard support is terminal-dependent
+                    self._set_status(f"Could not copy render details: {exc}", "error")
+                    return
+                self._set_status("Render details copied. Paste with Ctrl+V.", "ok")
 
             def _apply_source_mode(self, mode: str) -> None:
                 visible = {
@@ -740,11 +775,15 @@ class AnimaticaTuiApp:
                 )
                 path_value = self._q("#sb-path-input", w["Input"]).value.strip()
                 s.storyboard_path = (
-                    Path(path_value) if source_mode == "storyboard" and path_value else None
+                    _path_from_input(path_value)
+                    if source_mode == "storyboard" and path_value
+                    else None
                 )
-                s.output_dir = Path(
-                    self._q("#output-dir", w["Input"]).value.strip() or DEFAULT_OUTPUT_DIR
+                output_dir = _path_from_input(
+                    self._q("#output-dir", w["Input"]).value, DEFAULT_OUTPUT_DIR
                 )
+                assert output_dir is not None
+                s.output_dir = output_dir
                 s.quality = str(
                     self._q("#quality-select", w["FilterSelect"]).value or DEFAULT_QUALITY
                 )
@@ -917,14 +956,15 @@ class AnimaticaTuiApp:
                     return
 
                 if mode == "storyboard":
-                    sb_path_text = self._q("#sb-path-input", w["Input"]).value.strip()
-                    if not sb_path_text:
+                    path_input = self._q("#sb-path-input", w["Input"])
+                    sb_path_text = path_input.value.strip()
+                    path = _path_from_input(sb_path_text)
+                    if path is None:
                         self._set_pane_status("prompt-status", "Enter the storyboard file path.")
                         self._set_status("Choose a storyboard file first.", "error")
                         return
-                    path = Path(sb_path_text).expanduser()
                     if not path.is_file():
-                        self._set_pane_status("prompt-status", f"Not found: {sb_path_text}")
+                        self._set_pane_status("prompt-status", f"Not found: {path}")
                         self._set_status("Storyboard file not found.", "error")
                         return
                     try:
@@ -996,10 +1036,14 @@ class AnimaticaTuiApp:
                 self._goto("render")
                 log = self._q("#render-log", w["RichLog"])
                 log.clear()
-                log.write("[b]Starting render[/b]")
-                log.write(f"quality={self.settings.quality}  theme={self.settings.theme}  "
-                          f"captions={'on' if self.settings.captions else 'off'}")
-                log.write(f"output={self.settings.output_dir}")
+                self._render_log_lines.clear()
+                self._q("#copy-render-log", w["Button"]).disabled = True
+                self._append_render_log("Starting render", style="b")
+                self._append_render_log(
+                    f"quality={self.settings.quality}  theme={self.settings.theme}  "
+                    f"captions={'on' if self.settings.captions else 'off'}"
+                )
+                self._append_render_log(f"output={self.settings.output_dir}")
 
                 self.busy = True
                 self.cancel_event.clear()
@@ -1046,7 +1090,7 @@ class AnimaticaTuiApp:
                 self._progress_label = event.label or self._progress_label
                 if event.label and event.label != self._logged_label:
                     self._logged_label = event.label
-                    self._q("#render-log", w["RichLog"]).write(f"[dim]{event.label}[/dim]")
+                    self._append_render_log(event.label, style="dim")
                 elapsed = time.monotonic() - self.started_at
                 self._q("#render-stage", w["Static"]).update(
                     f"{self._progress_label}  ·  {elapsed:0.0f}s"
@@ -1120,10 +1164,9 @@ class AnimaticaTuiApp:
                     summary.append(f"{len(result.warnings)} warning(s) — see the log")
                 self._q("#render-summary", w["Static"]).update("\n".join(summary))
 
-                log = self._q("#render-log", w["RichLog"])
-                log.write(f"[b green]done[/b green] {result.video}")
+                self._append_render_log(f"done {result.video}", style="b green")
                 for warning in result.warnings:
-                    log.write(f"[yellow]warning[/yellow] {warning}")
+                    self._append_render_log(f"warning {warning}", style="yellow")
                 if result.warnings:
                     self._q("#render-details", w["Collapsible"]).collapsed = False
                 self._set_status(f"Done in {time.monotonic() - self.started_at:0.1f}s.", "ok")
@@ -1131,17 +1174,16 @@ class AnimaticaTuiApp:
             def _render_failed(self, title: str, lines: list[str]) -> None:
                 self._finish()
                 self._q("#render-stage", w["Static"]).update(title)
-                log = self._q("#render-log", w["RichLog"])
-                log.write(f"[b red]{title}[/b red]")
+                self._append_render_log(title, style="b red")
                 for line in lines:
-                    log.write(f"  {line}")
+                    self._append_render_log(f"  {line}")
                 self._q("#render-details", w["Collapsible"]).collapsed = False
                 self._set_status(f"{title}. See the details below.", "error")
 
             def _render_cancelled(self) -> None:
                 self._finish()
                 self._q("#render-stage", w["Static"]).update("Cancelled.")
-                self._q("#render-log", w["RichLog"]).write("[yellow]cancelled[/yellow]")
+                self._append_render_log("cancelled", style="yellow")
                 self._q("#render-details", w["Collapsible"]).collapsed = False
                 self._set_status("Render cancelled.", "busy")
 
@@ -1176,10 +1218,11 @@ class AnimaticaTuiApp:
                         self.settings.prompt = event.value.strip()
                 elif event.input.id == "sb-path-input":
                     if self._q("#source-mode", w["Select"]).value == "storyboard":
-                        path = event.value.strip()
-                        self.settings.storyboard_path = Path(path).expanduser() if path else None
+                        self.settings.storyboard_path = _path_from_input(event.value)
                 elif event.input.id == "output-dir":
-                    self.settings.output_dir = Path(event.value.strip() or DEFAULT_OUTPUT_DIR)
+                    output_dir = _path_from_input(event.value, DEFAULT_OUTPUT_DIR)
+                    assert output_dir is not None
+                    self.settings.output_dir = output_dir
                     self._q("#output-summary", w["Static"]).update(
                         f"Saving to {self.settings.output_dir} · change under More options"
                     )
@@ -1226,6 +1269,8 @@ class AnimaticaTuiApp:
                     self._cancel_render()
                 elif button_id == "open-video":
                     self._open_video()
+                elif button_id == "copy-render-log":
+                    self._copy_render_log()
 
             # -- actions ---------------------------------------------------
 
@@ -1259,6 +1304,9 @@ class AnimaticaTuiApp:
             def action_start_render(self) -> None:
                 self._start_render()
 
+            def action_copy_render_log(self) -> None:
+                self._copy_render_log()
+
             def action_help(self) -> None:
                 self.push_screen(HelpScreen())
 
@@ -1269,8 +1317,8 @@ class AnimaticaTuiApp:
                 if not self.busy:
                     return
                 self.cancel_event.set()
-                self._q("#render-log", w["RichLog"]).write(
-                    "[yellow]cancel requested[/yellow] — stops at the next stage boundary"
+                self._append_render_log(
+                    "cancel requested — stops at the next stage boundary", style="yellow"
                 )
                 self._set_status("Cancelling after the current stage…", "busy")
 

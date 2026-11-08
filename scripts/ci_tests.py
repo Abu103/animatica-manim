@@ -64,10 +64,24 @@ _ANNOTATION_HEAD = re.compile(r"^(FAILED|ERROR|SKIPPED|E   )")
 
 
 def _excerpt(text: str, limit: int = 12) -> list[str]:
-    """The lines most worth seeing when the suite is not clean."""
-    interesting = [ln.rstrip() for ln in text.splitlines() if _ANNOTATION_HEAD.match(ln.strip())]
+    """The lines most worth seeing when the suite is not clean.
+
+    Prioritize pytest's ``FAILED tests/...::test_name`` summary over traceback
+    context. Otherwise a burst of ``E`` lines can consume the annotation limit
+    before the actionable test names are shown in GitHub's Checks UI.
+    """
+    lines = [line.rstrip() for line in text.splitlines()]
+    summaries = [
+        line for line in lines
+        if line.strip().startswith(("FAILED ", "ERROR ", "SKIPPED "))
+    ]
+    details = [line for line in lines if _ANNOTATION_HEAD.match(line.strip())]
+    interesting: list[str] = []
+    for line in [*summaries, *details]:
+        if line not in interesting:
+            interesting.append(line)
     if not interesting:
-        interesting = [ln.rstrip() for ln in text.splitlines() if "warning" in ln.lower()][:limit]
+        interesting = [ln for ln in lines if "warning" in ln.lower()][:limit]
     return interesting[:limit]
 
 

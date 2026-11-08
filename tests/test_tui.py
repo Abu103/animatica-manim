@@ -42,13 +42,18 @@ def _status(app) -> str:
     return _text(_q(app, "#status"))
 
 
-async def _click(app, pilot, selector: str) -> None:
-    """Click a control, scrolling it into view first (panes scroll at 80x24)."""
+async def _click(app, pilot, selector: str) -> bool:
+    """Click a control, scrolling it into view first (panes scroll at 80x24).
+
+    Return Textual Pilot's hit-test result so tests can distinguish a missed
+    click from a handler that failed to update application state.
+    """
     widget = _q(app, selector)
     widget.scroll_visible(top=True, animate=False)
     await pilot.pause()
-    await pilot.click(widget)
+    clicked = await pilot.click(widget)
     await pilot.pause()
+    return clicked
 
 
 async def _start_with_template(app, pilot, template_name: str) -> None:
@@ -365,7 +370,7 @@ async def test_missing_storyboard_file_is_reported(tmp_path):
 
 
 @pytest.mark.tui
-async def test_storyboard_file_mode_loads_a_real_file(tmp_path):
+async def test_storyboard_file_mode_loads_quoted_path_and_preserves_display(tmp_path):
     template_name = TemplateMatcher().list_templates()[0][0]
     storyboard = TemplateMatcher().by_name(template_name)
     assert storyboard is not None
@@ -376,7 +381,8 @@ async def test_storyboard_file_mode_loads_a_real_file(tmp_path):
     async with app.run_test(size=(80, 24)) as pilot:
         await pilot.pause()
         _q(app, "#source-mode").value = "storyboard"
-        _q(app, "#sb-path-input").value = str(path)
+        quoted_path = f'"{path}"'
+        _q(app, "#sb-path-input").value = quoted_path
         await _settle(pilot)
         await _click(app, pilot, "#next")
         await _settle(pilot)
@@ -384,6 +390,7 @@ async def test_storyboard_file_mode_loads_a_real_file(tmp_path):
         assert app.storyboard is not None
         assert app.storyboard.title == storyboard.title
         assert app.settings.storyboard_path == path
+        assert _q(app, "#sb-path-input").value == quoted_path
         assert _q(app, "#storyboard-table").row_count > 0
         assert "file: ready.json" in _text(_q(app, "#side-source"))
 
@@ -443,10 +450,13 @@ async def test_storyboard_json_edit_validates_and_updates_the_table():
         payload = json.loads(editor.text)
         payload["scenes"][0]["beats"][0]["caption"] = "Edited caption"
         editor.text = json.dumps(payload)
-        await _click(app, pilot, "#validate")
-        await _settle(pilot)
-
-        assert "Valid" in _text(_q(app, "#storyboard-status"))
+        clicked = await _click(app, pilot, "#validate")
+        assert clicked, "Validate button click missed its target"
+        status = _q(app, "#storyboard-status")
+        assert await _wait_for(app, pilot, lambda: "Valid" in _text(status)), (
+            f"Expected a valid storyboard status; pane={_text(status)!r}, "
+            f"app_status={_status(app)!r}"
+        )
         assert "validated" in _status(app).lower()
 
 
@@ -460,10 +470,13 @@ async def test_broken_json_is_reported_not_raised():
         await _open_advanced_json(app, pilot)
 
         _q(app, "#storyboard-json").text = '{"version": "1", '
-        await _click(app, pilot, "#validate")
-        await _settle(pilot)
-
-        assert "JSON error" in _text(_q(app, "#storyboard-status"))
+        clicked = await _click(app, pilot, "#validate")
+        assert clicked, "Validate button click missed its target"
+        status = _q(app, "#storyboard-status")
+        assert await _wait_for(app, pilot, lambda: "JSON error" in _text(status)), (
+            f"Expected the JSON error status; pane={_text(status)!r}, "
+            f"app_status={_status(app)!r}"
+        )
         assert "not valid JSON" in _status(app)
 
 
@@ -478,10 +491,13 @@ async def test_unknown_component_is_rejected_by_the_registry():
 
         editor = _q(app, "#storyboard-json")
         editor.text = editor.text.replace("title_card", "not_a_component", 1)
-        await _click(app, pilot, "#validate")
-        await _settle(pilot)
-
-        assert "problem" in _text(_q(app, "#storyboard-status"))
+        clicked = await _click(app, pilot, "#validate")
+        assert clicked, "Validate button click missed its target"
+        status = _q(app, "#storyboard-status")
+        assert await _wait_for(app, pilot, lambda: "problem" in _text(status)), (
+            f"Expected component-validation problems; pane={_text(status)!r}, "
+            f"app_status={_status(app)!r}"
+        )
         assert "cannot render" in _status(app)
 
 
@@ -654,6 +670,46 @@ async def test_render_failure_is_logged_and_does_not_crash(tmp_path, monkeypatch
 
 
 @pytest.mark.tui
+async def test_render_details_copy_button_and_shortcut_copy_plain_error(monkeypatch):
+    app, _ = _make_app()
+    copied = []
+    error = "OSError: [WinError 123] invalid path: '\"D:\\animatica\"'"
+
+    async with app.run_test(size=(80, 24)) as pilot:
+        monkeypatch.setattr(app, "copy_to_clipboard", copied.append)
+        app._goto("render")
+        await _settle(pilot)
+        app._render_failed("Render failed", [error])
+        await _settle(pilot)
+
+        copy_button = _q(app, "#copy-render-log")
+        assert copy_button.disabled is False
+        assert copy_button.region.width > 0
+        await _click(app, pilot, "#copy-render-log")
+        expected = f"Render failed\n  {error}"
+        assert copied[-1] == expected
+        assert "copied" in _status(app).lower()
+
+        await pilot.press("ctrl+shift+c")
+        await _settle(pilot)
+        assert copied[-1] == expected
+
+
+@pytest.mark.tui
+async def test_quoted_output_path_is_normalized_for_use_but_preserved_for_display():
+    app, _ = _make_app()
+
+    async with app.run_test(size=(80, 24)) as pilot:
+        output = _q(app, "#output-dir")
+        output.value = r'"D:\animatica"'
+        await _settle(pilot)
+
+        assert app.settings.output_dir == Path(r"D:\animatica")
+        assert output.value == r'"D:\animatica"'
+        assert '"' not in _text(_q(app, "#output-summary"))
+
+
+@pytest.mark.tui
 async def test_cancel_requests_a_stop_and_reports_it(tmp_path, monkeypatch):
     release = threading.Event()
 
@@ -769,13 +825,23 @@ async def test_choices_are_remembered_for_the_next_session(monkeypatch, tmp_path
         app.set_focus(theme.query_one("#fs-input"))
         await pilot.pause()
         await pilot.press("l", "i", "g")  # -> Light
+        assert await _wait_for(
+            app, pilot, lambda: [label for label, _ in theme._filtered] == ["Light"]
+        ), f"theme filter did not converge: {theme._filtered!r}"
         await pilot.press("enter")
-        await pilot.pause()
+        assert await _wait_for(app, pilot, lambda: theme.value == "light"), (
+            f"theme selection was not committed: {theme.value!r}"
+        )
+        assert await _wait_for(app, pilot, lambda: app.settings.theme == "light"), (
+            f"app setting was not updated: {app.settings.theme!r}"
+        )
     assert app.settings.theme == "light"
 
     from animatica.config import load_config
 
-    assert load_config().theme == "light"
+    saved_config = tmp_path / "config.toml"
+    assert saved_config.is_file(), f"config was not written: {saved_config}"
+    assert load_config().theme == "light", saved_config.read_text(encoding="utf-8")
 
     fresh = TuiSettings()
     assert fresh.theme == "light"

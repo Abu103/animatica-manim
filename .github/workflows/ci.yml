@@ -50,7 +50,7 @@ jobs:
           cache: pip
           cache-dependency-path: pyproject.toml
       # The real thing users run. It must set up Python, manim, ffmpeg and TeX by
-      # itself and finish by pointing at `animatica tui`.
+      # itself, then skip prompts safely in CI and report the next interactive command.
       - name: Windows installer, end to end (PowerShell)
         run: pwsh -NoProfile -File scripts/bootstrap.ps1
       - name: TUI dependency installed by bootstrap
@@ -60,7 +60,18 @@ jobs:
           .\.venv\Scripts\python.exe -m ensurepip --upgrade 2>$null
           .\.venv\Scripts\python.exe -m pip install --disable-pip-version-check -q -e ".[dev,tui]"
       - name: Doctor (must pass)
-        run: .\.venv\Scripts\python.exe -m animatica doctor
+        run: |
+          $ErrorActionPreference = "Continue"
+          $doctorOutput = & .\.venv\Scripts\python.exe -m animatica doctor 2>&1
+          $doctorExit = $LASTEXITCODE
+          $ErrorActionPreference = "Stop"
+          $doctorOutput | ForEach-Object { Write-Host $_ }
+          if ($doctorExit -ne 0) {
+            $doctorOutput |
+              Where-Object { "$_" -match "^\[FAIL\]" } |
+              ForEach-Object { Write-Host "::error::$($_)" }
+            exit $doctorExit
+          }
       - name: Full test suite (zero skips allowed)
         run: .\.venv\Scripts\python.exe scripts/ci_tests.py
       - name: Real render smoke test (space + non-ASCII output paths)
@@ -74,18 +85,43 @@ jobs:
       - name: TeX diagnostics (only on failure)
         if: failure()
         run: |
+          $ErrorActionPreference = "Continue"
           $env:PATH = "$env:APPDATA\TinyTeX\bin\windows;$env:PATH"
-          Write-Host "latex: $((Get-Command latex -ErrorAction SilentlyContinue).Source)"
-          foreach ($f in "standalone.cls","preview.sty","xkeyval.sty","english.ldf","amsmath.sty","amssymb.sty") {
-            Write-Host ("kpsewhich {0} -> {1}" -f $f, (kpsewhich $f))
+          $latex = Get-Command latex -ErrorAction SilentlyContinue
+          $kpse = Get-Command kpsewhich -ErrorAction SilentlyContinue
+          if ($latex) { Write-Host "latex: $($latex.Source)" } else { Write-Host "latex: unavailable" }
+          if ($kpse) {
+            foreach ($f in "standalone.cls","preview.sty","xkeyval.sty","english.ldf","amsmath.sty","amssymb.sty") {
+              $found = & $kpse.Source $f 2>$null
+              Write-Host ("kpsewhich {0} -> {1}" -f $f, ($found -join " "))
+            }
+          } else {
+            Write-Host "kpsewhich: unavailable; package-file diagnostics skipped"
           }
-          $d = Join-Path $env:RUNNER_TEMP "texdiag"; New-Item -ItemType Directory -Force $d | Out-Null
+          $d = Join-Path $env:RUNNER_TEMP "texdiag"
+          New-Item -ItemType Directory -Force $d | Out-Null
           Set-Content (Join-Path $d "t.tex") '\documentclass[preview]{standalone}\usepackage[english]{babel}\usepackage{amsmath}\usepackage{amssymb}\begin{document}$x^2$\end{document}'
-          Push-Location $d
-          latex -interaction=nonstopmode t.tex | Select-Object -Last 15
-          Write-Host "---- t.log (first error + context)"
-          Select-String -Path t.log -Pattern '^!' -Context 0,8 | Select-Object -First 1 | ForEach-Object { $_.Line; $_.Context.PostContext }
-          Pop-Location
+          if ($latex) {
+            Push-Location $d
+            try {
+              $latexOutput = & $latex.Source -interaction=nonstopmode t.tex 2>&1
+              $latexExit = $LASTEXITCODE
+              $latexOutput | Select-Object -Last 15 | ForEach-Object { Write-Host $_ }
+              Write-Host "latex exit code: $latexExit"
+              Write-Host "---- t.log (first error + context)"
+              if (Test-Path t.log) {
+                Select-String -Path t.log -Pattern '^!' -Context 0,8 | Select-Object -First 1 | ForEach-Object { $_.Line; $_.Context.PostContext }
+              } else {
+                Write-Host "t.log was not created"
+              }
+            } finally {
+              Pop-Location
+            }
+          } else {
+            Write-Host "LaTeX compile probe skipped because latex is unavailable."
+          }
+          Write-Host "TeX diagnostics complete; the original job failure remains authoritative."
+          exit 0
 
   # The HyperFrames backend has never been validated against a real browser:
   # this job gives it Node, Chrome and ffmpeg, renders a storyboard through the

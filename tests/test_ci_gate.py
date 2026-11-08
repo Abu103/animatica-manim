@@ -6,7 +6,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "scripts"))
 
-from ci_tests import parse_summary, problems  # noqa: E402
+from ci_tests import _excerpt, parse_summary, problems  # noqa: E402
 
 
 def test_parses_a_clean_summary():
@@ -46,3 +46,13 @@ def test_a_collapsed_run_cannot_pass_as_clean():
     counts = parse_summary("no tests ran in 0.01s")
     issues = problems(counts, 5, "no tests ran in 0.01s")
     assert any("no tests ran" in i for i in issues)
+
+
+def test_failure_excerpt_prioritizes_test_names_over_traceback_lines():
+    traceback = "\n".join(f"E   AssertionError: status is empty ({i})" for i in range(20))
+    summary = "FAILED tests/test_tui.py::test_storyboard_status - AssertionError"
+
+    excerpt = _excerpt(f"{traceback}\n{summary}", limit=3)
+
+    assert excerpt[0] == summary
+    assert len(excerpt) == 3

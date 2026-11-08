@@ -27,9 +27,14 @@ offline; an unmatched prompt needs a configured AI provider, available under
 | `ctrl+j` | continue to the next step |
 | `ctrl+b` | go back one step |
 | `ctrl+r` | start a render |
+| `ctrl+shift+c` | copy render details to the clipboard |
 | `f1` | open or close help |
 | `ctrl+q` | quit |
 | `tab` / `shift+tab` | move between controls |
+
+On the Render step, **Copy details** copies the complete render log as plain text;
+`ctrl+shift+c` does the same. This keeps exception messages and paths available
+for pasting into an issue without trying to select text from the terminal.
 
 Mouse and keyboard can both complete the full flow; shortcuts are optional.
 
@@ -61,6 +66,10 @@ These rules are covered by `tests/test_tui.py`, which drives the real app at
 - **Say what will be overwritten.** If the output folder already holds
   `video.mp4`, `report.json`, or `media/`, the Style step lists them before the
   user starts a render.
+- **Accept pasted paths.** Matching single or double quotes around a pasted
+  storyboard or output path are removed for file operations, avoiding Windows
+  invalid-filename errors. The input retains the text as pasted; summaries and
+  render operations use the normalized path.
 - **Focus follows navigation.** A step change moves focus to an appropriate
   control, and Back/Continue remain available independently of the scrolling
   step content.
