@@ -111,14 +111,19 @@ fetch_native_bundle() {
   curl -fsSL --max-time 240 \
     "https://github.com/$GH_REPO/releases/latest/download/animatica-native.tar.gz" \
     -o "$out" 2>/dev/null && return 0
-  # last resort: the repo tree, where the workflow can also commit it
+  # hosted hosts that can only reach codeload: the `artifacts` branch carries the
+  # bundles as plain files, so no release CDN or API token is involved.
   local tmp; tmp="$(mktemp -d)"
-  if curl -fsSL --max-time 240 \
-       "https://codeload.github.com/$GH_REPO/tar.gz/refs/heads/$GH_REF" -o "$tmp/tree.tgz" 2>/dev/null; then
-    if tar xzf "$tmp/tree.tgz" -C "$tmp" --strip-components=1 "*/native/animatica-native.tar.gz" 2>/dev/null; then
-      mv "$tmp/native/animatica-native.tar.gz" "$out" && rm -rf "$tmp" && return 0
+  for branch in "${ANIMATICA_ARTIFACT_BRANCH:-artifacts}" "$GH_REF"; do
+    if curl -fsSL --max-time 240 \
+         "https://codeload.github.com/$GH_REPO/tar.gz/refs/heads/$branch" -o "$tmp/tree.tgz" 2>/dev/null; then
+      if tar xzf "$tmp/tree.tgz" -C "$tmp" --strip-components=0 --wildcards \
+           "*/native/animatica-native.tar.gz" 2>/dev/null; then
+        found=$(find "$tmp" -name animatica-native.tar.gz -type f | head -1)
+        if [ -n "$found" ]; then mv "$found" "$out" && rm -rf "$tmp" && return 0; fi
+      fi
     fi
-  fi
+  done
   rm -rf "$tmp"
   return 1
 }
@@ -217,6 +222,21 @@ if [ "$DO_TEX" = "1" ] && ! have latex; then
         [ -d "$TEX_DIR/bin" ] && break
       fi
     done
+    # codeload-only hosts: the same bundle, committed to the artifacts branch
+    if [ ! -d "$TEX_DIR/bin" ]; then
+      tmp="$(mktemp -d)"
+      if curl -fsSL --max-time 600 \
+           "https://codeload.github.com/$GH_REPO/tar.gz/refs/heads/${ANIMATICA_ARTIFACT_BRANCH:-artifacts}" \
+           -o "$tmp/art.tgz" 2>/dev/null; then
+        tar xzf "$tmp/art.tgz" -C "$tmp" --wildcards "*/native/animatica-tex.tar.xz" 2>/dev/null || true
+        found=$(find "$tmp" -name animatica-tex.tar.xz -type f | head -1)
+        if [ -n "$found" ]; then
+          say "  -> downloaded animatica-tex.tar.xz from the artifacts branch"
+          tar xf "$found" -C "$TEX_DIR" 2>/dev/null || true
+        fi
+      fi
+      rm -rf "$tmp"
+    fi
     if [ -d "$TEX_DIR/bin" ]; then
       say "  -> TeX unpacked in $TEX_DIR (animatica finds it automatically)"
     else
