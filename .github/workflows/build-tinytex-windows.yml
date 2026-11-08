@@ -33,7 +33,6 @@ permissions:
 
 env:
   ASSET_NAME: tinytex-manim-win.zip
-  RELEASE_TAG: tex-deps-v1-windows
 
 jobs:
   tinytex-windows:
@@ -185,10 +184,43 @@ jobs:
             ${{ env.ASSET_NAME }}.sha256
           if-no-files-found: error
 
-      - name: Publish as a release asset (release events only)
+      - name: Check whether the release already carries the bundle
+        id: existing
         if: github.event_name == 'release'
+        shell: pwsh
+        run: |
+          # The bundle is NOT reproducible: it is built from whatever TinyTeX the
+          # upstream installer fetches that day, so a rebuild produces a
+          # different zip with a different sha256. When the release already
+          # carries the asset, the published (and verified) zip must win: this
+          # job then skips the publish step instead of replacing it.
+          #
+          # The tag comes from the release event, not from the RELEASE_TAG env
+          # var: this workflow runs for every published release, and each one
+          # must be checked against its own tag.
+          $ErrorActionPreference = "Continue"
+          $tag = "${{ github.event.release.tag_name }}"
+          Write-Host "release tag: $tag"
+          $assets = gh release view $tag --repo "$env:GITHUB_REPOSITORY" --json assets --jq ".assets[].name" 2>$null
+          $has = $false
+          if ($assets -and ($assets -split "`n") -contains $env:ASSET_NAME) { $has = $true }
+          Write-Host "release assets: $assets"
+          Write-Host "asset already present: $has"
+          "present=$has" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+
+      - name: Publish as a release asset (release events only, and only when absent)
+        if: github.event_name == 'release' && steps.existing.outputs.present != 'true'
         uses: softprops/action-gh-release@v2
         with:
+          tag_name: ${{ github.event.release.tag_name }}
           files: |
             ${{ env.ASSET_NAME }}
             ${{ env.ASSET_NAME }}.sha256
+
+      - name: Keep the existing release asset
+        if: github.event_name == 'release' && steps.existing.outputs.present == 'true'
+        shell: pwsh
+        run: |
+          Write-Host "The release already carries $env:ASSET_NAME; keeping the published bundle."
+          Write-Host "A rebuilt bundle has a different sha256, so it must not replace a published one."
+          Write-Host "Publish a new tag (tex-deps-v2-windows, ...) with a new tag+sha256 pair instead."

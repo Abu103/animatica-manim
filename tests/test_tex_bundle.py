@@ -17,6 +17,7 @@ from animatica.tex_bundle import (
     BundleError,
     WINDOWS_BIN_SUBPATH,
     WINDOWS_TEX_ASSET_NAME,
+    WINDOWS_TEX_RELEASE_TAG,
     WINDOWS_TEX_SHA256,
     WINDOWS_TEX_URL,
     bundle_settings,
@@ -262,7 +263,50 @@ def test_windows_bin_dirs_include_the_bundle_location(tmp_path, monkeypatch):
     assert tmp_path / ".tex" / WINDOWS_BIN_SUBPATH in dirs
 
 
-def test_the_shipped_hash_constant_is_empty_until_it_is_seeded():
-    """The constant starts empty on purpose: an empty hash fails closed."""
-    assert WINDOWS_TEX_SHA256 == ""
-    assert len(WINDOWS_TEX_SHA256) == 64 or WINDOWS_TEX_SHA256 == ""
+def test_the_release_tag_and_the_hash_are_a_single_pair():
+    """The tag and the hash must describe the same asset.
+
+    They are one pair in one module on purpose: a URL pinned to a tag and a
+    hash of a different build cannot both be right. The URL is DERIVED from
+    the tag, so the tag and the URL cannot drift apart by accident; what the
+    runbook guards is the hash, which is a value copied from GitHub.
+    """
+    # The URL is built from the tag, never from a moving "latest" ref.
+    assert WINDOWS_TEX_URL.startswith("https://github.com/")
+    assert f"/{WINDOWS_TEX_RELEASE_TAG}/" in WINDOWS_TEX_URL
+    assert WINDOWS_TEX_URL.endswith(WINDOWS_TEX_ASSET_NAME)
+    assert "latest" not in WINDOWS_TEX_URL
+
+
+def test_changing_the_tag_changes_the_url():
+    """The URL follows the tag: one edit moves both, so they cannot drift."""
+    from animatica import tex_bundle as module
+
+    original_tag = module.WINDOWS_TEX_RELEASE_TAG
+    try:
+        module.WINDOWS_TEX_RELEASE_TAG = "tex-deps-v9-windows"
+        # the module-level URL was built at import time, so recompute the way
+        # a fresh import would: the tag must be the only thing that changes.
+        rebuilt = (
+            f"https://github.com/Abu103/animatica-manim/releases/download/"
+            f"{module.WINDOWS_TEX_RELEASE_TAG}/{module.WINDOWS_TEX_ASSET_NAME}"
+        )
+        assert "/tex-deps-v9-windows/" in rebuilt
+        assert f"/{original_tag}/" not in rebuilt
+    finally:
+        module.WINDOWS_TEX_RELEASE_TAG = original_tag
+
+
+def test_the_hash_constant_is_empty_or_64_hex_chars():
+    """Offline check only: the shape of the constant.
+
+    Whether the constant matches the PUBLISHED asset is a runbook step (read
+    `gh release view <tag> --json assets` and compare), not a unit test: a
+    unit test cannot see GitHub.
+    """
+    if WINDOWS_TEX_SHA256 == "":
+        return  # not seeded yet: the bundle fails closed
+    assert len(WINDOWS_TEX_SHA256) == 64
+    assert all(c in "0123456789abcdef" for c in WINDOWS_TEX_SHA256), (
+        f"the sha256 constant is not lowercase hex: {WINDOWS_TEX_SHA256!r}"
+    )

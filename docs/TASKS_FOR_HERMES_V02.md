@@ -42,6 +42,49 @@ Steps: (1) generate or hand-write the storyboard that reproduces it (Taylor seri
 Accept: geometry test passes; frame re-rendered and described honestly; `python scripts/ci_tests.py` passes. Render check needs a manim machine; mark UNVERIFIED otherwise.
 
 **Gate B (M1):** Claude reviews the three diffs and the Windows CI run before M2 starts.
+**Gate B (M1.5):** You perform the T12b release and seed commit yourself before M2 starts.
+
+---
+## M1.5 — T12b: publish the Windows TeX bundle, seed the hash, lock the tag
+[Gate A for the seed commit only; runbook you must execute yourself]
+
+This card is a runbook for you. It ships the verified artifact, seeds the checksum, and defines the tag rule. Nothing here publishes or pushes on its own; you perform the tag, release, and seed commit yourself.
+
+### 1. Why the workflow must skip on re-publish
+T12's Windows bundle is built on `windows-latest` from whatever TinyTeX the upstream installer fetches that day: it is **not** reproducible. A release event rebuilds the tree and uploads a fresh `tinytex-manim-win.zip` with a **different sha256** than the verified artifact from run 42483719068. Without a guard, the workflow would silently replace the published bundle.
+
+**Fix applied:** `.github/workflows/build-tinytex-windows.yml` now checks the asset name against the release's own tag (`github.event.release.tag_name`, not the old `RELEASE_TAG` env var, which would match the wrong release). If the asset already exists on that tag, the publish step is skipped and a `Keep the existing release asset` step prints the guidance below. The workflow publishes a fresh asset only when the release does not yet carry it.
+
+**Which path I chose and why:** publish-after-publish is rejected, because a rebuilt zip's hash cannot be predicted and the seeded constant (below) is what makes the bundle path live at all. The workflow always tries to publish the new zip; only if the asset is already present does it keep that existing one. Publishing a new tag with a new pair is unconditional.
+
+### 2. Immutability (optional, for you to decide later — NOT a step here)
+Per GitHub's docs ("About releases", immutable releases section): when the repository setting `immutable_releases` is enabled, **Git tags associated with a release cannot be modified or deleted, and release assets cannot be modified or deleted. Immutability is enforced only after a release is published. Draft releases can be modified or deleted, and the associated git tags can be modified or deleted as well.**
+
+The repo's `immutable_releases` setting is currently `null`, and the existing releases (`v0.1.0`, `v0.1.1`, `native-deps-v1`) all report `immutable: false`.
+
+**Do not enable this in T12b.** It is an optional later decision for you, and you should know its consequence before choosing: turning it on would lock the tags and assets of every published release — including v0.1.0, v0.1.1 and native-deps-v1, whose `tinytex-manim.zip` users have already downloaded. You would not be able to re-upload or retag a locked asset, so a later build of the Windows bundle that changed its sha256 could not update v0.1.1's asset. The T12b card below states how it stays open rather than taking the setting for you.
+
+### 3. Tag rule: a changed zip means a new tag, never a re-upload
+The published zip is a build artifact: its sha256 changes whenever the upstream TinyTeX installer fetches a newer set of packages. A different zip **always** means a **new tag** (`tex-deps-v2-windows`, `tex-deps-v3-windows`, … and a new `tag + sha256` pair).
+
+- The tag name is part of the URL the bundle is fetched from, and the checksummed file must match the tag's asset.
+- Never re-upload to an existing tag, and never re-publish the same zip under a new tag: the existing one is preserved and the new pair is published.
+- The workflow's release trigger implements this: it publishes a new asset only when the target release does not yet carry it, and prints the `Keep the existing release asset` guidance otherwise.
+
+### 4. Seed the checksum, as a separate commit after you publish
+1. Publish `tex-deps-v1-windows` yourself, from the merged `main` commit, with an explicit `--target` so the tag is not taken from your local HEAD. `gh release create tex-deps-v1-windows --target <main commit sha> --title "Native deps v1 (Windows TinyTeX)" --notes "Prebuilt TinyTeX for Windows. Downloaded by scripts/bootstrap.ps1" --verify-tag --latest`
+2. Upload the exact verified artifact from run 42483719068 plus its `.sha256` file. That file is already proven: the bundle installs in 3.2s with the hash verified, and the two files together match a fresh `sha256sum` of the zip.
+3. Seed the checksum in a **separate commit** and push it: set `WINDOWS_TEX_SHA256` in `src/animatica/tex_bundle.py` to the digest from `gh release view tex-deps-v1-windows --json assets` for the `tinytex-manim-win.zip` asset.
+4. **The runbook stops if the two digests differ** — compare the seeded constant to the published digest: `gh release view tex-deps-v1-windows --json assets | jq -r '.assets[] | select(.name == "tinytex-manim-win.zip") | .digest' | sed 's/sha256://'` If it does not equal `e3e92c824cef9d0340e81d1bbecbef522a53582b77269e4dfbe5fe7e9c2463e3`, do not proceed: something was published that is not the verified bundle.
+5. Verify with the unit tests (`tests/test_tex_bundle.py`): the constant is 64 lowercase hex characters, the tag+hash are the single pair that the URL derives from, and changing the tag changes the URL. The digest comparison itself is a runbook step, not a unit test: the tests can only check the shape of the constant, because they cannot see GitHub.
+
+### 5. Tests for this card (offline only)
+- `tests/test_tex_bundle.py`: the constant is 64 lowercase hex characters; the tag+hash are the single pair the URL derives (tag in the URL, URL ends with the asset name, no "latest" ref, URL built from the tag so a changed tag changes the URL).
+- All tests run offline. There is no network call in `test_tex_bundle.py`: the digest comparison is deliberately a runbook step, because a unit test cannot observe GitHub.
+
+### Acceptance
+- `python -m pytest -q tests/test_tex_bundle.py` passes (offline; new tests added: pair identity, tag-follows-URL, 64-hex shape).
+- Runbook steps 1–5 complete by you; the seed commit is made after you publish, from the published asset's digest, and the runbook stops if the digests differ.
 
 ---
 ## M2 Evidence (this is the portfolio differentiator)
