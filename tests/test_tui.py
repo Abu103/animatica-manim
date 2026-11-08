@@ -728,13 +728,15 @@ async def test_render_details_copy_button_and_shortcut_copy_plain_error(monkeypa
         copy_button = _q(app, "#copy-render-log")
         assert copy_button.disabled is False
         assert copy_button.region.width > 0
-        await _click(app, pilot, "#copy-render-log")
+        await _press(app, pilot, "#copy-render-log")
         expected = f"Render failed\n  {error}"
+        assert await _wait_for(app, pilot, lambda: bool(copied)), "copy button copied nothing"
         assert copied[-1] == expected
         assert "copied" in _status(app).lower()
 
+        copied.clear()
         await pilot.press("ctrl+shift+c")
-        await _settle(pilot)
+        assert await _wait_for(app, pilot, lambda: bool(copied)), "ctrl+shift+c copied nothing"
         assert copied[-1] == expected
 
 
