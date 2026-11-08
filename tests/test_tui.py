@@ -43,19 +43,44 @@ def _status(app) -> str:
 
 
 async def _click(app, pilot, selector: str) -> bool:
-    """Click a control, scrolling it into view first (panes scroll at 80x24).
+    """Click a visible point inside a control, scrolling pane controls first.
 
-    Return Textual Pilot's hit-test result so tests can distinguish a missed
-    click from a handler that failed to update application state.
+    Pilot.click defaults to offset (0, 0), which may be clipped in a scroll
+    pane. Find a point that Textual itself hit-tests as this widget (or one of
+    its children) so the click stays within the visible part of the control.
     """
     widget = _q(app, selector)
-    widget.scroll_visible(top=True, animate=False)
-    await pilot.pause()
-    # Pilot.click defaults to the widget's top-left corner (offset=(0, 0)).
-    # In a scroll pane that point can be clipped or covered; click inside the
-    # visible center and keep the hit-test result for tests that need it.
-    offset = (max(0, widget.size.width // 2), max(0, widget.size.height // 2))
-    clicked = await pilot.click(widget, offset=offset)
+    if selector not in {"#next", "#back"}:
+        widget.scroll_visible(top=True, animate=False)
+        await pilot.pause()
+
+    region = widget.region
+    screen = app.screen.size.region
+    left, top = max(region.x, screen.x), max(region.y, screen.y)
+    right, bottom = min(region.right, screen.right), min(region.bottom, screen.bottom)
+    if left >= right or top >= bottom:
+        raise AssertionError(f"{selector} has no on-screen area after scrolling: {region!r}")
+
+    center_x, center_y = (left + right) // 2, (top + bottom) // 2
+    points = sorted(
+        ((x, y) for y in range(top, bottom) for x in range(left, right)),
+        key=lambda point: abs(point[0] - center_x) + abs(point[1] - center_y),
+    )
+    click_offset = None
+    for x, y in points:
+        under_pointer, _ = app.get_widget_at(x, y)
+        current = under_pointer
+        while current is not None:
+            if current is widget:
+                click_offset = (x - region.x, y - region.y)
+                break
+            current = current.parent
+        if click_offset is not None:
+            break
+    if click_offset is None:
+        raise AssertionError(f"{selector} has no visible hit-test point in {region!r}")
+
+    clicked = await pilot.click(widget, offset=click_offset)
     await pilot.pause()
     return clicked
 
@@ -237,23 +262,22 @@ async def test_wizard_shell_shows_one_step_and_obvious_navigation_at_80x24():
         assert _q(app, "#step-nav").region.bottom == _q(app, "#status").region.y
         assert _q(app, "#status").region.bottom == _q(app, "Footer").region.y
 
-        async def click_step(button_id: str, expected: str) -> None:
-            clicked = await _click(app, pilot, button_id)
-            assert clicked, f"{button_id} click missed its target at 80x24"
+        async def press_step(key: str, expected: str) -> None:
+            await pilot.press(key)
             assert await _wait_for(app, pilot, lambda: steps.current == expected), (
-                f"{button_id} did not navigate to {expected}; current={steps.current!r}"
+                f"{key} did not navigate to {expected}; current={steps.current!r}"
             )
 
         _q(app, "#prompt-input").value = "explain tides"
-        await click_step("#next", "pane-storyboard")
+        await press_step("ctrl+j", "pane-storyboard")
         assert _q(app, "#back").disabled is False
-        await click_step("#next", "pane-job")
-        await click_step("#next", "pane-render")
+        await press_step("ctrl+j", "pane-job")
+        await press_step("ctrl+j", "pane-render")
         assert _q(app, "#next").display is False
         assert _q(app, "#start").display is True
-        await click_step("#back", "pane-job")
-        await click_step("#back", "pane-storyboard")
-        await click_step("#back", "pane-prompt")
+        await press_step("ctrl+b", "pane-job")
+        await press_step("ctrl+b", "pane-storyboard")
+        await press_step("ctrl+b", "pane-prompt")
 
 
 @pytest.mark.tui
@@ -804,9 +828,13 @@ async def test_typing_in_a_picker_filters_and_commits(monkeypatch, tmp_path):
     app, _ = _make_app()
     async with app.run_test(size=(80, 24)) as pilot:
         await pilot.pause()
+        app._goto("job")
+        await _settle(pilot)
         quality = _picker(app, "quality-select")
-        app.set_focus(quality.query_one("#fs-input"))
+        search = quality.query_one("#fs-input")
+        app.set_focus(search)
         await pilot.pause()
+        assert app.focused is search, "quality search input was not focused"
         await pilot.press("h", "i")
         assert await _wait_for(
             app, pilot, lambda: [label for label, _ in quality._filtered] == ["High 1080p"]
@@ -823,9 +851,15 @@ async def test_choices_are_remembered_for_the_next_session(monkeypatch, tmp_path
     app, _ = _make_app()
     async with app.run_test(size=(80, 24)) as pilot:
         await pilot.pause()
+        app._goto("job")
+        await _settle(pilot)
+        _q(app, "#job-advanced").collapsed = False
+        await _settle(pilot)
         theme = _picker(app, "theme-select")
-        app.set_focus(theme.query_one("#fs-input"))
+        search = theme.query_one("#fs-input")
+        app.set_focus(search)
         await pilot.pause()
+        assert app.focused is search, "theme search input was not focused"
         await pilot.press("l", "i", "g")  # -> Light
         assert await _wait_for(
             app, pilot, lambda: [label for label, _ in theme._filtered] == ["Light"]
