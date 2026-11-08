@@ -37,6 +37,9 @@ On the Render step, **Copy details** copies the complete render log as plain tex
 for pasting into an issue without trying to select text from the terminal.
 
 Mouse and keyboard can both complete the full flow; shortcuts are optional.
+If a terminal does not deliver `ctrl+j` / `ctrl+b` reliably (Alt-arrow style
+shortcuts are not bound), the visible **Back** and **Continue** buttons on the
+step navigation bar are the fallback for moving between steps.
 
 ## Design rules
 
