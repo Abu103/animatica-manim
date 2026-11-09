@@ -274,3 +274,86 @@ def test_graph_end_to_end_legend_and_clipping_warning(tmp_path):
     # should be flagged as clipped.
     clipped_warnings = [w for w in warnings if "clipped" in w.lower()]
     assert len(clipped_warnings) >= 1, f"expected clipping warning, got warnings: {warnings}"
+
+
+# ---------------------------------------------------------------------------
+# T13c: library code must not write to stdout
+# ---------------------------------------------------------------------------
+
+
+def test_make_video_does_not_write_to_stdout(tmp_path, capsys, monkeypatch):
+    """make_video must not print to stdout (library code is silent)."""
+    import pathlib
+    from animatica.backends.base import RenderBackend, RenderResult
+
+    class SilentBackend(RenderBackend):
+        name = "silent"
+        supported_capabilities: ClassVar[list[str]] = []
+
+        def capabilities(self) -> list[str]:
+            return list(self.supported_capabilities)
+
+        def render(self, sb, out_dir, opts):
+            out_dir = pathlib.Path(out_dir)
+            out_dir.mkdir(parents=True, exist_ok=True)
+            (out_dir / "video.mp4").write_bytes(b"fake-video")
+            return RenderResult(
+                video=out_dir / "video.mp4",
+                durations=[1.0],
+                warnings=[],
+                stage_times={"total": 1.0},
+            )
+
+    monkeypatch.setattr("animatica.pipeline.default_backends", lambda: {"silent": SilentBackend()})
+    result = make_video("make a title card about Hello", out_dir=tmp_path, preview=True, backend="silent")
+    assert result.video.exists()
+
+    captured = capsys.readouterr()
+    assert captured.out == "", f"library code wrote to stdout: {captured.out!r}"
+
+
+def test_make_video_survives_bad_stdout_fd(tmp_path, monkeypatch):
+    """make_video must not raise when stdout's fd is bad (Windows EBADF)."""
+    import sys
+    import pathlib
+    from animatica.backends.base import RenderBackend, RenderResult
+
+    class BadStdout:
+        def write(self, text):
+            raise OSError(9, "Bad file descriptor")
+
+        def flush(self):
+            raise OSError(9, "Bad file descriptor")
+
+        def isatty(self):
+            return False
+
+        def fileno(self):
+            return 1
+
+    real_stdout = sys.stdout
+    sys.stdout = BadStdout()
+    try:
+        class SilentBackend(RenderBackend):
+            name = "silent"
+            supported_capabilities: ClassVar[list[str]] = []
+
+            def capabilities(self) -> list[str]:
+                return list(self.supported_capabilities)
+
+            def render(self, sb, out_dir, opts):
+                out_dir = pathlib.Path(out_dir)
+                out_dir.mkdir(parents=True, exist_ok=True)
+                (out_dir / "video.mp4").write_bytes(b"fake-video")
+                return RenderResult(
+                    video=out_dir / "video.mp4",
+                    durations=[1.0],
+                    warnings=[],
+                    stage_times={"total": 1.0},
+                )
+
+        monkeypatch.setattr("animatica.pipeline.default_backends", lambda: {"silent": SilentBackend()})
+        result = make_video("make a title card about Hello", out_dir=tmp_path, preview=True, backend="silent")
+        assert result.video.exists()
+    finally:
+        sys.stdout = real_stdout

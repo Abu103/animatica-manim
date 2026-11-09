@@ -61,8 +61,8 @@ def test_mcp_call_component_schema():
                                          {"name": "bounce_sequence"})
         assert result.structured_content is not None
         assert "schema" in result.structured_content
-        assert result.structured_content["schema"].get("properties", {}).get(
-            "values") is not None
+        assert result.structured_content["schema"].get(
+            "properties", {}).get("values") is not None
 
     asyncio.run(_run_mcp_session(check))
 
@@ -120,3 +120,25 @@ def test_mcp_sdk_client_full_flow():
         assert "error" in result.structured_content
 
     asyncio.run(_run_mcp_session(check))
+
+
+def test_mcp_render_storyboard_no_stdout(tmp_path, capsys):
+    """MCP render_storyboard tool must not write to stdout (stdio is the protocol channel).
+
+    Calls make_video directly — the same function the MCP tool invokes — and
+    asserts nothing is written to stdout, which would corrupt the JSON-RPC
+    protocol channel.
+    """
+    import json as _json
+    from pathlib import Path
+    from animatica.pipeline import make_video
+
+    sb = {"version": "1", "title": "MCP Test", "scenes": [{"beats": [{"component": "title_card", "params": {"title": "Test"}}]}]}
+    sb_path = tmp_path / "storyboard.json"
+    sb_path.write_text(_json.dumps(sb))
+
+    result = make_video(storyboard_path=sb_path, out_dir=tmp_path, preview=True)
+    assert result.video.exists()
+
+    captured = capsys.readouterr()
+    assert captured.out == "", f"MCP render_storyboard code path wrote to stdout: {captured.out!r}"

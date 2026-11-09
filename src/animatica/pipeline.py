@@ -34,6 +34,8 @@ class MakeResult:
     captions: Path
     report: Path
     warnings: list[str]
+    provider_used: str = ""
+    encoder_used: str = ""
 
 
 def _vtt_timestamp(seconds: float) -> str:
@@ -227,7 +229,6 @@ def make_video(
         scene_durations=render_result.durations,
     )
 
-    typer_print_provider(provider_used, encoder_used)
     progress.finish(f"done: {video.name}")
 
     return MakeResult(
@@ -236,14 +237,9 @@ def make_video(
         captions=out_dir / "captions.vtt",
         report=out_dir / "report.json",
         warnings=warnings,
+        provider_used=provider_used,
+        encoder_used=encoder_used,
     )
-
-
-def typer_print_provider(provider_used: str, encoder_used: str) -> None:
-    import typer
-
-    typer.echo(f"Provider: {provider_used}")
-    typer.echo(f"Encoder: {encoder_used}")
 
 
 # ---------------------------------------------------------------------------
