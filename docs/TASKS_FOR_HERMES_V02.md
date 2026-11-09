@@ -72,19 +72,60 @@ The published zip is a build artifact: its sha256 changes whenever the upstream 
 - The workflow's release trigger implements this: it publishes a new asset only when the target release does not yet carry it, and prints the `Keep the existing release asset` guidance otherwise.
 
 ### 4. Seed the checksum, as a separate commit after you publish
-1. Publish `tex-deps-v1-windows` yourself, from the merged `main` commit, with an explicit `--target` so the tag is not taken from your local HEAD. `gh release create tex-deps-v1-windows --target <main commit sha> --title "Native deps v1 (Windows TinyTeX)" --notes "Prebuilt TinyTeX for Windows. Downloaded by scripts/bootstrap.ps1" --verify-tag --latest`
-2. Upload the exact verified artifact from run 42483719068 plus its `.sha256` file. That file is already proven: the bundle installs in 3.2s with the hash verified, and the two files together match a fresh `sha256sum` of the zip.
-3. Seed the checksum in a **separate commit** and push it: set `WINDOWS_TEX_SHA256` in `src/animatica/tex_bundle.py` to the digest from `gh release view tex-deps-v1-windows --json assets` for the `tinytex-manim-win.zip` asset.
-4. **The runbook stops if the two digests differ** — compare the seeded constant to the published digest: `gh release view tex-deps-v1-windows --json assets | jq -r '.assets[] | select(.name == "tinytex-manim-win.zip") | .digest' | sed 's/sha256://'` If it does not equal `e3e92c824cef9d0340e81d1bbecbef522a53582b77269e4dfbe5fe7e9c2463e3`, do not proceed: something was published that is not the verified bundle.
-5. Verify with the unit tests (`tests/test_tex_bundle.py`): the constant is 64 lowercase hex characters, the tag+hash are the single pair that the URL derives from, and changing the tag changes the URL. The digest comparison itself is a runbook step, not a unit test: the tests can only check the shape of the constant, because they cannot see GitHub.
+Run it only after the T12 PR is merged, because the workflow file must exist on `main` for the release trigger to work.
 
-### 5. Tests for this card (offline only)
+1. `git fetch origin` and set `SHA=$(git rev-parse origin/main)`.
+2. Download and verify the artifact locally:
+   ```
+   mkdir -p /tmp/t12b
+   gh run download 42483719068 --name tinytex-manim-win --dir /tmp/t12b
+   sha256sum /tmp/t12b/tinytex-manim-win.zip     # must print e3e92c824cef9d0340e81d1bbecbef522a53582b77269e4dfbe5fe7e9c2463e3, else STOP
+   cat /tmp/t12b/tinytex-manim-win.zip.sha256
+   ```
+   The download command and the pre-upload hash check are required: if the digest doesn't match `e3e92c824cef9d0340e81d1bbecbef522a53582b77269e4dfbe5fe7e9c2463e3`, do not proceed.
+3. Create a **draft** release so the asset already exists when the release trigger fires (no race with the workflow's publish step):
+   ```
+   gh release create tex-deps-v1-windows --draft --target "$SHA" --latest=false \
+     --title "Native deps v1 (Windows TinyTeX)" \
+     --notes "Prebuilt TinyTeX for Windows, used by bootstrap.ps1/doctor. sha256 e3e92c824cef9d0340e81d1bbecbef522a53582b77269e4dfbe5fe7e9c2463e3. Built by workflow run 42483719068 (branch hermes/t12-windows-tinytex), verified by installing through Animatica." \
+     /tmp/t12b/tinytex-manim-win.zip /tmp/t12b/tinytex-manim-win.zip.sha256
+   ```
+   Notes: `--draft` (publishes only when you later call `gh release edit --draft=false`), `--latest=false` (don't displace v0.1.1 as Latest), no `--verify-tag` (the tag doesn't exist yet on the remote; `--target` creates it at publish). Provenance note in the release notes says the asset was built on `hermes/t12-windows-tinytex`, not main — acceptable because you verified it end to end, but stated for transparency.
+4. Publish the draft:
+   ```
+   gh release edit tex-deps-v1-windows --draft=false
+   ```
+5. **The runbook stops if the digests differ** — compare the published digest to the expected:
+   ```
+   gh release view tex-deps-v1-windows --json assets | jq -r '.assets[] | select(.name == "tinytex-manim-win.zip") | .digest'
+   ```
+   The output must equal `sha256:e3e92c824cef9d0340e81d1bbecbef522a53582b77269e4dfbe5fe7e9c2463e3`. If it doesn't, rollback:
+   ```
+   gh release delete tex-deps-v1-windows --cleanup-tag --yes
+   ```
+   Nothing has been seeded yet, so no user is affected and rollback is safe.
+6. Seed the checksum in a **separate commit** on a new branch, pushed through a PR (not directly to main):
+   - create the branch, set `WINDOWS_TEX_SHA256` in `src/animatica/tex_bundle.py` to the digest from step 5, commit, push, open a PR.
+   - CI runs CI on the branch; once green and reviewed, merge to main.
+   Verify with the unit tests (`tests/test_tex_bundle.py`): the constant is 64 lowercase hex characters, the tag+hash are the single pair that the URL derives from, and changing the tag changes the URL. The digest comparison itself is a runbook step, not a unit test: the tests can only check the shape of the constant, because they cannot see GitHub.
+
+### 5. First real test of the live path (after the seed PR merges)
+Once the seed PR runs CI, the Windows job runs `bootstrap.ps1` end to end. Because the fallback to the upstream installer is silent, that job could go green without using the bundle. **Open the Windows job log and confirm it says it installed from the bundle.** If no such log line exists, tell Hermes to add one first — without it you can't tell the two paths apart.
+
+**Pre-flight workflow check** (before you publish):
+```
+grep -nE "types:|clobber|release upload|tag_name|RELEASE_TAG" .github/workflows/build-tinytex-windows.yml
+```
+The trigger should be `release`/`published` only, there must be no `--clobber`, and the asset-exists check should use `github.event.release.tag_name`.
+
+### 6. Tests for this card (offline only)
 - `tests/test_tex_bundle.py`: the constant is 64 lowercase hex characters; the tag+hash are the single pair the URL derives (tag in the URL, URL ends with the asset name, no "latest" ref, URL built from the tag so a changed tag changes the URL).
 - All tests run offline. There is no network call in `test_tex_bundle.py`: the digest comparison is deliberately a runbook step, because a unit test cannot observe GitHub.
 
 ### Acceptance
 - `python -m pytest -q tests/test_tex_bundle.py` passes (offline; new tests added: pair identity, tag-follows-URL, 64-hex shape).
-- Runbook steps 1–5 complete by you; the seed commit is made after you publish, from the published asset's digest, and the runbook stops if the digests differ.
+- Runbook steps 1–6 complete by you; the seed commit is made after you publish, from the published asset's digest, and the runbook stops if the digests differ.
+- **No release and no tag until you approve this updated card.**
 
 ---
 ## M2 Evidence (this is the portfolio differentiator)
