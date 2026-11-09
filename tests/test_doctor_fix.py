@@ -23,9 +23,13 @@ def test_tex_packages_include_the_ones_that_bit_us():
         assert pkg in TEX_PACKAGES
 
 
-def test_fix_installs_tinytex_and_packages_on_windows():
+def test_fix_installs_tinytex_and_packages_on_windows(monkeypatch):
     run = FakeRun()
     which = lambda name: "/bin/tlmgr" if name == "tlmgr" else None
+    monkeypatch.setattr(
+        "animatica.tex_bundle.install_windows_bundle",
+        lambda root, env=None, **kwargs: (False, "bundle unavailable in test"),
+    )
     actions = fix_dependencies(run=run, which=which, platform="win32", bundled_ffmpeg=lambda: None, sleep=lambda _: None)
     assert any("ffmpeg" in c.lower() and "winget" in c for c in run.commands)
     assert any("tinytex" in c.lower() for c in run.commands)
@@ -67,6 +71,10 @@ def test_windows_tinytex_retries_transient_installer_failures(monkeypatch):
         return "C:/TinyTeX/bin/windows" if installed else None
 
     monkeypatch.setattr(doctor, "ensure_tex_on_path", ensure_tex)
+    monkeypatch.setattr(
+        "animatica.tex_bundle.install_windows_bundle",
+        lambda root, env=None, **kwargs: (False, "bundle unavailable in test"),
+    )
     actions = doctor.fix_dependencies(
         run=run,
         which=which,
@@ -100,6 +108,10 @@ def test_windows_tinytex_retry_count_is_bounded(monkeypatch):
         return Result()
 
     monkeypatch.setattr(doctor, "ensure_tex_on_path", lambda _platform: None)
+    monkeypatch.setattr(
+        "animatica.tex_bundle.install_windows_bundle",
+        lambda root, env=None, **kwargs: (False, "bundle unavailable in test"),
+    )
     actions = doctor.fix_dependencies(
         run=run,
         which=lambda _name: None,
@@ -224,9 +236,13 @@ def test_fix_skips_what_is_already_present():
     assert run.commands == []
 
 
-def test_fix_continues_past_a_failing_command():
+def test_fix_continues_past_a_failing_command(monkeypatch):
     run = FakeRun(fail_on=["winget"])
     which = lambda name: "/bin/tlmgr" if name == "tlmgr" else None
+    monkeypatch.setattr(
+        "animatica.tex_bundle.install_windows_bundle",
+        lambda root, env=None, **kwargs: (False, "bundle unavailable in test"),
+    )
     actions = fix_dependencies(run=run, which=which, platform="win32", bundled_ffmpeg=lambda: None, sleep=lambda _: None)
     # ffmpeg failed, but TinyTeX + tlmgr still attempted
     assert any("tinytex" in c.lower() for c in run.commands)

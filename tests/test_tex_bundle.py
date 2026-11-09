@@ -60,8 +60,9 @@ def test_settings_use_the_pinned_url_not_latest():
     assert tex_bundle.WINDOWS_TEX_RELEASE_TAG in WINDOWS_TEX_URL
 
 
-def test_empty_hash_fails_closed(tmp_path):
+def test_empty_hash_fails_closed(tmp_path, monkeypatch):
     """With no known sha256 the bundle is not used at all."""
+    monkeypatch.setattr(tex_bundle, "WINDOWS_TEX_SHA256", "")
     downloaded = []
 
     def download(url, dest, timeout=600):
@@ -160,8 +161,9 @@ def test_env_override_supplies_url_and_hash(tmp_path):
     assert (tmp_path / ".tex" / WINDOWS_BIN_SUBPATH / "latex.exe").is_file()
 
 
-def test_env_override_without_hash_still_fails_closed(tmp_path):
+def test_env_override_without_hash_still_fails_closed(tmp_path, monkeypatch):
     """An override URL alone must not make an unverified bundle usable."""
+    monkeypatch.setattr(tex_bundle, "WINDOWS_TEX_SHA256", "")
     downloaded = []
 
     def download(url, dest, timeout=600):
@@ -183,6 +185,29 @@ def test_bundle_settings_default_to_the_pinned_pair():
     url, sha = bundle_settings(env={})
     assert url == WINDOWS_TEX_URL
     assert sha == WINDOWS_TEX_SHA256.lower()
+
+
+def test_shipped_hash_with_wrong_bytes_is_rejected(tmp_path):
+    """With the seeded constant, a wrong payload is rejected and nothing is unpacked."""
+    downloaded = []
+
+    def download(url, dest, timeout=600):
+        downloaded.append(url)
+        dest.write_bytes(b"wrong payload bytes")
+        return dest
+
+    ok, message = install_windows_bundle(
+        tmp_path,
+        env={},
+        download_fn=download,
+    )
+
+    assert ok is False
+    assert "mismatch" in message.lower()
+    assert downloaded == [WINDOWS_TEX_URL]
+    assert not (tmp_path / ".tex").exists(), "a mismatching bundle must not be unpacked"
+    leftovers = list(tmp_path.glob("**/*.zip"))
+    assert leftovers == [], f"the bad archive was left on disk: {leftovers}"
 
 
 def test_zip_without_a_toplevel_directory_is_normalised(tmp_path):
