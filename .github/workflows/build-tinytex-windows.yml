@@ -188,6 +188,8 @@ jobs:
         id: existing
         if: github.event_name == 'release'
         shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           # The bundle is NOT reproducible: it is built from whatever TinyTeX the
           # upstream installer fetches that day, so a rebuild produces a
@@ -202,6 +204,10 @@ jobs:
           $tag = "${{ github.event.release.tag_name }}"
           Write-Host "release tag: $tag"
           $assets = gh release view $tag --repo "$env:GITHUB_REPOSITORY" --json assets --jq ".assets[].name" 2>$null
+          if ($LASTEXITCODE -ne 0) {
+            Write-Host "::error::gh release view failed for tag $tag with exit code $LASTEXITCODE; refusing to publish"
+            exit 1
+          }
           $has = $false
           if ($assets -and ($assets -split "`n") -contains $env:ASSET_NAME) { $has = $true }
           Write-Host "release assets: $assets"
@@ -210,9 +216,10 @@ jobs:
 
       - name: Publish as a release asset (release events only, and only when absent)
         if: github.event_name == 'release' && steps.existing.outputs.present != 'true'
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2.6.2
         with:
           tag_name: ${{ github.event.release.tag_name }}
+          overwrite_files: false
           files: |
             ${{ env.ASSET_NAME }}
             ${{ env.ASSET_NAME }}.sha256
