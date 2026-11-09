@@ -822,6 +822,119 @@ async def test_ctrl_b_goes_back_a_step():
         assert _q(app, "#steps").current == "pane-prompt"
 
 
+@pytest.mark.tui
+async def test_ctrl_j_ctrl_b_advance_when_an_input_has_focus():
+    """ctrl+j / ctrl+b must change steps even when an Input owns the keyboard."""
+    app, _ = _make_app()
+    async with app.run_test(size=(80, 24)) as pilot:
+        await pilot.pause()
+        inp = _q(app, "#prompt-input")
+        inp.value = "explain tides"
+        inp.focus()
+        await pilot.pause()
+        assert app.focused is inp
+
+        # ctrl+j navigates to the next step while an Input owns the keyboard.
+        await pilot.press("ctrl+j")
+        await _settle(pilot)
+        assert _q(app, "#steps").current == "pane-storyboard", (
+            f"ctrl+j did not navigate while an Input had focus; "
+            f"current={app.query_one('#steps').current!r}"
+        )
+
+        # ctrl+b goes back to the previous step (prompt).
+        await pilot.press("ctrl+b")
+        await _settle(pilot)
+        assert _q(app, "#steps").current == "pane-prompt"
+
+
+@pytest.mark.tui
+async def test_typing_into_a_focused_input_still_inserts_characters():
+    app, _ = _make_app()
+    async with app.run_test(size=(80, 24)) as pilot:
+        await pilot.pause()
+        inp = _q(app, "#prompt-input")
+        inp.focus()
+        await pilot.pause()
+        await pilot.press("b", "n", "j")
+        await _settle(pilot)
+        assert inp.value == "bnj"
+
+
+@pytest.mark.tui
+async def test_bindings_do_not_fire_while_a_modal_is_open():
+    app, _ = _make_app()
+    async with app.run_test(size=(80, 24)) as pilot:
+        await pilot.pause()
+        await pilot.press("f1")
+        await _settle(pilot)
+        # A pushed modal screen makes the stack grow beyond the base screen.
+        assert len(app.screen_stack) > 1
+        assert type(app.screen).__name__ == "HelpScreen"
+        assert app.screen.query_one("#help-copy") is not None
+
+        # ctrl+j must not navigate while the help modal is active.
+        await pilot.press("ctrl+j")
+        await _settle(pilot)
+        assert len(app.screen_stack) > 1, (
+            "ctrl+j must not dismiss the modal"
+        )
+        assert _q(app, "#steps").current == "pane-prompt"
+
+
+@pytest.mark.tui
+async def test_bindings_do_not_fire_while_a_picker_is_open():
+    app, _ = _make_app()
+    async with app.run_test(size=(80, 24)) as pilot:
+        await pilot.pause()
+        app._goto("job")
+        await _settle(pilot)
+        assert _q(app, "#steps").current == "pane-job"
+        # Opening the FilterSelect drop-down focuses its inner input.
+        picker = _q(app, "#quality-select")
+        picker.query_one("#fs-input").focus()
+        await _settle(pilot)
+        assert picker.has_class("open"), "quality picker drop-down did not open"
+
+        # ctrl+j must not navigate while the picker drop-down is open.
+        await pilot.press("ctrl+j")
+        await _settle(pilot)
+        assert _q(app, "#steps").current == "pane-job", (
+            "ctrl+j must not fire while a picker drop-down is open"
+        )
+
+
+@pytest.mark.tui
+async def test_ctrl_b_on_first_pane_is_a_noop():
+    app, _ = _make_app()
+    async with app.run_test(size=(80, 24)) as pilot:
+        await pilot.pause()
+        assert _q(app, "#steps").current == "pane-prompt"
+        await pilot.press("ctrl+b")
+        await _settle(pilot)
+        assert _q(app, "#steps").current == "pane-prompt"
+
+
+@pytest.mark.tui
+async def test_ctrl_j_on_last_pane_is_a_noop():
+    app, _ = _make_app()
+    async with app.run_test(size=(80, 24)) as pilot:
+        await pilot.pause()
+        _q(app, "#prompt-input").value = "explain tides"
+        await pilot.press("ctrl+j")
+        await _settle(pilot)
+        await pilot.press("ctrl+j")
+        await _settle(pilot)
+        await pilot.press("ctrl+j")
+        await _settle(pilot)
+        assert _q(app, "#steps").current == "pane-render"
+        await pilot.press("ctrl+j")
+        await _settle(pilot)
+        assert _q(app, "#steps").current == "pane-render", (
+            "ctrl+j on the last pane must not crash or wrap around"
+        )
+
+
 # ---------------------------------------------------------------------------
 # Defaults: the Job step is the only place users configure anything, and the
 # choices stick for the next launch.
