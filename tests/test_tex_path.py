@@ -1,5 +1,6 @@
 """TinyTeX discovery / PATH activation and honest doctor exit status (Windows logic, testable anywhere)."""
 import os
+import pytest
 from pathlib import Path
 
 from typer.testing import CliRunner
@@ -456,3 +457,12 @@ def test_an_explicit_tex_dir_is_preferred(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     env = {"HOME": str(tmp_path / "nowhere"), "ANIMATICA_TEX_DIR": str(tmp_path / "mytex")}
     assert str(tinytex_bin_dirs("linux", env)[0]) == str(explicit)
+
+
+@pytest.fixture(autouse=True)
+def _no_project_local_tex(tmp_path, monkeypatch):
+    """The Windows bundle lives in <cwd>/.tex; keep every test away from a real one."""
+    cwd = tmp_path / "cwd"
+    cwd.mkdir()
+    monkeypatch.chdir(cwd)
+
