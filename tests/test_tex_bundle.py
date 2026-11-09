@@ -15,6 +15,7 @@ import pytest
 from animatica import tex_bundle
 from animatica.tex_bundle import (
     BundleError,
+    TEX_DIR_NAME,
     WINDOWS_BIN_SUBPATH,
     WINDOWS_TEX_ASSET_NAME,
     WINDOWS_TEX_RELEASE_TAG,
@@ -335,3 +336,65 @@ def test_the_hash_constant_is_empty_or_64_hex_chars():
     assert all(c in "0123456789abcdef" for c in WINDOWS_TEX_SHA256), (
         f"the sha256 constant is not lowercase hex: {WINDOWS_TEX_SHA256!r}"
     )
+
+
+def test_install_windows_bundle_oserror_falls_back(tmp_path, monkeypatch):
+    """OSError on the per-user dir falls through to cwd .tex, in order.
+
+    Uses a fake download_fn and fake expected sha so no network happens.
+    """
+    from animatica import tex_bundle
+
+    attempts = []
+
+    def fake_download(url, dest, timeout=600):
+        attempts.append(("download", url))
+        dest.write_bytes(b"fake bundle bytes")
+        return dest
+
+    def failing_extract(zip_path, target):
+        attempts.append(("extract", target))
+        raise OSError("permission denied")
+
+    monkeypatch.setattr(tex_bundle, "extract_bundle", failing_extract)
+    monkeypatch.setattr(tex_bundle, "download", fake_download)
+
+    env = {"LOCALAPPDATA": str(tmp_path / "AppData" / "Local")}
+    fake_sha = hashlib.sha256(b"fake bundle bytes").hexdigest()
+    monkeypatch.setattr(tex_bundle, "WINDOWS_TEX_SHA256", fake_sha)
+
+    ok, message = tex_bundle.install_windows_bundle(
+        platform="win32", env=env, download_fn=fake_download
+    )
+
+    assert ok is False
+    # Per-user dir tried first, then cwd .tex fallback. Download is attempt 0.
+    per_user = tmp_path / "AppData" / "Local" / "Animatica" / "tex"
+    cwd_tex = Path.cwd() / TEX_DIR_NAME
+    extract_attempts = [t for t in attempts if t[0] == "extract"]
+    assert extract_attempts[0] == ("extract", per_user), f"first extract wrong: {extract_attempts}"
+    assert extract_attempts[1] == ("extract", cwd_tex), f"second extract wrong: {extract_attempts}"
+    assert len(extract_attempts) == 2, f"expected exactly 2 extract attempts: {extract_attempts}"
+
+
+def test_install_windows_bundle_corrupt_zip_fails_closed(tmp_path, monkeypatch):
+    """A corrupt zip raises BundleError and aborts (no fall-through)."""
+    from animatica import tex_bundle
+
+    def fake_download(url, dest, timeout=600):
+        dest.write_bytes(b"not a zip at all")
+        return dest
+
+    monkeypatch.setattr(tex_bundle, "download", fake_download)
+
+    env = {"LOCALAPPDATA": str(tmp_path / "AppData" / "Local")}
+    fake_sha = hashlib.sha256(b"not a zip at all").hexdigest()
+
+    monkeypatch.setattr(tex_bundle, "WINDOWS_TEX_SHA256", fake_sha)
+
+    ok, message = tex_bundle.install_windows_bundle(
+        platform="win32", env=env, download_fn=fake_download
+    )
+
+    assert ok is False
+    assert "escape" in message.lower() or "zip" in message.lower(), message

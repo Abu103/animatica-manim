@@ -139,7 +139,7 @@ def test_windows_uses_the_prebuilt_bundle_before_the_upstream_installer(monkeypa
         stdout = ""
         stderr = ""
 
-    def install_windows_bundle(root, env=None, **kwargs):
+    def install_windows_bundle(root=None, env=None, **kwargs):
         bundle_calls.append(root)
         installed["value"] = True
         return True, "prebuilt LaTeX bundle installed"
@@ -187,7 +187,7 @@ def test_windows_falls_back_to_the_upstream_installer_when_the_bundle_fails(monk
         stdout = ""
         stderr = ""
 
-    def install_windows_bundle(root, env=None, **kwargs):
+    def install_windows_bundle(root=None, env=None, **kwargs):
         return False, "sha256 mismatch; bundle deleted"
 
     def ensure_tex(platform):

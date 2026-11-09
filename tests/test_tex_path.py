@@ -459,10 +459,57 @@ def test_an_explicit_tex_dir_is_preferred(tmp_path, monkeypatch):
     assert str(tinytex_bin_dirs("linux", env)[0]) == str(explicit)
 
 
+def test_user_data_tex_dir_windows_ascii_localappdata(tmp_path, monkeypatch):
+    from animatica.tex_bundle import user_data_tex_dir
+
+    env = {"LOCALAPPDATA": str(tmp_path / "AppData" / "Local")}
+    result = user_data_tex_dir("win32", env)
+    assert result == Path(str(tmp_path / "AppData" / "Local")) / "Animatica" / "tex"
+
+
+def test_user_data_tex_dir_windows_non_ascii_returns_none(tmp_path, monkeypatch):
+    from animatica.tex_bundle import user_data_tex_dir
+
+    env = {"LOCALAPPDATA": str(tmp_path / "AppData" / "Local" / "Jöhn")}
+    assert user_data_tex_dir("win32", env) is None
+
+
+def test_user_data_tex_dir_windows_none_when_no_dirs(tmp_path, monkeypatch):
+    from animatica.tex_bundle import user_data_tex_dir
+
+    env = {}
+    assert user_data_tex_dir("win32", env) is None
+
+
+def test_user_data_tex_dir_none_on_linux(tmp_path, monkeypatch):
+    from animatica.tex_bundle import user_data_tex_dir
+
+    env = {"LOCALAPPDATA": str(tmp_path / "AppData" / "Local")}
+    assert user_data_tex_dir("linux", env) is None
+
+
+def test_tinytex_bin_dirs_finds_per_user_dir_with_cwd_elsewhere(tmp_path, monkeypatch):
+    from animatica.doctor import tinytex_bin_dirs
+    from animatica.tex_bundle import user_data_tex_dir
+
+    elsewhere = tmp_path / "elsewhere"
+    elsewhere.mkdir(parents=True)
+    monkeypatch.chdir(elsewhere)
+
+    env = {"LOCALAPPDATA": str(tmp_path)}
+    target = user_data_tex_dir("win32", env)
+    assert target is not None
+
+    bindir = target / Path("bin") / "windows"
+    bindir.mkdir(parents=True, exist_ok=True)
+
+    dirs = tinytex_bin_dirs("win32", env)
+    assert any(str(bindir) == str(d) for d in dirs)
+
+
 @pytest.fixture(autouse=True)
 def _no_project_local_tex(tmp_path, monkeypatch):
     """The Windows bundle lives in <cwd>/.tex; keep every test away from a real one."""
     cwd = tmp_path / "cwd"
     cwd.mkdir()
     monkeypatch.chdir(cwd)
-

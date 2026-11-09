@@ -212,6 +212,7 @@ def tinytex_bin_dirs(platform: str = sys.platform, env=None) -> list[Path]:
 
     Windows: the upstream installer uses %TINYTEX_DIR%, else %APPDATA% (only when it is plain
     ASCII), else %ProgramData%; Chocolatey uses C:\\tools\\tinytex.
+    The prebuilt Windows bundle unpacks to the per-user data dir, with <project>/.tex as fallback.
     """
     env = os.environ if env is None else env
     dirs: list[Path] = []
@@ -220,10 +221,11 @@ def tinytex_bin_dirs(platform: str = sys.platform, env=None) -> list[Path]:
             if base:
                 dirs.append(Path(base) / "TinyTeX" / "bin" / "windows")
         dirs.append(Path("C:/tools/tinytex/bin/windows"))
-        # The prebuilt Windows bundle unpacks to <project>/.tex/bin/windows.
-        from animatica.tex_bundle import bundle_bin_dirs
+        # The prebuilt Windows bundle: per-user data dir first, then cwd .tex fallback.
+        from animatica.tex_bundle import bundle_bin_dirs, user_data_tex_dir
 
-        dirs.extend(bundle_bin_dirs(Path.cwd()))
+        user_dir = user_data_tex_dir(platform, env=env)
+        dirs.extend(bundle_bin_dirs(Path.cwd(), user_dir=user_dir))
     else:
         home = Path(env.get("HOME") or Path.home())
         # An explicit override, then a TeX unpacked next to the project (that is
@@ -455,7 +457,7 @@ def fix_dependencies(
             try:
                 from animatica import tex_bundle
 
-                bundle_ok, bundle_msg = tex_bundle.install_windows_bundle(Path.cwd())
+                bundle_ok, bundle_msg = tex_bundle.install_windows_bundle()
             except Exception as exc:  # a bundle problem must never block the fallback
                 bundle_ok, bundle_msg = False, f"prebuilt bundle unavailable: {type(exc).__name__}: {exc}"
             actions.append(bundle_msg)
