@@ -1,0 +1,233 @@
+name: build-tinytex-windows
+
+# A prebuilt TinyTeX tree for Windows.
+#
+# The Linux bundle (tex-deps.yml) is built on Ubuntu with install-unx.sh and
+# cannot serve Windows: its binaries are ELF, not PE. This workflow builds the
+# same TinyTeX content on windows-latest with the upstream Windows installer,
+# so `animatica doctor --fix` has a real fallback when the upstream installer
+# is unavailable (it returned HTTP 504 in CI run #58).
+#
+# Triggers:
+#   * push / pull_request on this file -> build + verify only, the zip is
+#     uploaded as a workflow artifact (never as a release asset).
+#   * workflow_dispatch -> build + verify, and upload the zip as an artifact.
+#   * release (published) -> build + verify, and publish the zip as a release
+#     asset of that release.
+#
+# The release asset is only published from a real tag, never from a PR run.
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - ".github/workflows/build-tinytex-windows.yml"
+  pull_request:
+    paths:
+      - ".github/workflows/build-tinytex-windows.yml"
+  release:
+    types: [published]
+
+permissions:
+  contents: write   # required to attach the zip to a published release
+
+env:
+  ASSET_NAME: tinytex-manim-win.zip
+
+jobs:
+  tinytex-windows:
+    runs-on: windows-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install TinyTeX (upstream Windows installer)
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          $ProgressPreference = "SilentlyContinue"
+          irm https://raw.githubusercontent.com/rstudio/tinytex/main/tools/install-bin-windows.ps1 | iex
+
+      - name: Locate tlmgr and latex
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          $tlmgr = Get-ChildItem -Path $env:APPDATA, $env:ProgramData, "C:\tools" -Filter "tlmgr.bat" -Recurse -ErrorAction SilentlyContinue |
+                     Select-Object -First 1
+          if (-not $tlmgr) { throw "tlmgr not found after the TinyTeX install" }
+          "TEXBIN=$($tlmgr.DirectoryName)" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          "TLMGR=$($tlmgr.FullName)" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          Write-Host "tlmgr: $($tlmgr.FullName)"
+
+      - name: Install exactly the packages Manim needs
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Continue"
+          # A fresh TinyTeX is older than its package repository; tlmgr refuses to
+          # install anything until it has updated itself.
+          & $env:TLMGR update --self
+          & $env:TLMGR install standalone preview babel-english amsmath amsfonts dvisvgm xkeyval
+          if ($LASTEXITCODE -ne 0) { Write-Host "::warning title=tlmgr::tlmgr exited $LASTEXITCODE" }
+
+      - name: Check the bundle still compiles an equation
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          $env:PATH = "$env:TEXBIN;$env:PATH"
+          $latex = Get-Command latex -ErrorAction SilentlyContinue
+          if (-not $latex) { throw "latex.exe not found in $env:TEXBIN" }
+          $dvisvgm = Get-ChildItem -Path (Split-Path $env:TEXBIN -Parent) -Filter "dvisvgm.exe" -Recurse -ErrorAction SilentlyContinue |
+                      Select-Object -First 1
+          if (-not $dvisvgm) { throw "dvisvgm.exe not found under $env:TEXBIN" }
+          "DVISVGMDIR=$($dvisvgm.DirectoryName)" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          $env:PATH = "$($dvisvgm.DirectoryName);$env:PATH"
+
+          $probe = Join-Path $env:RUNNER_TEMP "probe"
+          New-Item -ItemType Directory -Path $probe -Force | Out-Null
+          Set-Location $probe
+          @"
+          \documentclass[preview]{standalone}
+          \usepackage[english]{babel}
+          \usepackage{amsmath}
+          \usepackage{amssymb}
+          \begin{document}
+          $a^2 + b^2 = c^2$
+          \end{document}
+          "@ | Set-Content -Path "t.tex" -Encoding utf8
+          latex -interaction=nonstopmode t.tex
+          dvisvgm --no-fonts t.dvi -o t.svg
+          if (-not (Test-Path "t.svg")) { throw "the probe did not produce an SVG" }
+          Write-Host ("probe compiled: {0} bytes of SVG" -f (Get-Item "t.svg").Length)
+
+      - name: Pack the bundle
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          # <TinyTeX>/bin/windows -> the TinyTeX root is two levels up.
+          $texRoot = Split-Path (Split-Path $env:TEXBIN -Parent) -Parent
+          Write-Host "TinyTeX root: $texRoot"
+          if (-not (Test-Path (Join-Path $texRoot "bin"))) { throw "$texRoot has no bin directory" }
+          $zip = Join-Path $env:GITHUB_WORKSPACE $env:ASSET_NAME
+          if (Test-Path $zip) { Remove-Item $zip -Force }
+          # The archive holds the tree's contents, so it unpacks to bin/windows.
+          Compress-Archive -Path (Join-Path $texRoot "*") -DestinationPath $zip -Force
+          $size = (Get-Item $zip).Length
+          Write-Host ("bundle size: {0} MB" -f [math]::Round($size / 1MB))
+
+      - name: Compute the sha256
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          $zip = Join-Path $env:GITHUB_WORKSPACE $env:ASSET_NAME
+          $hash = (Get-FileHash -Path $zip -Algorithm SHA256).Hash.ToLower()
+          Write-Host "sha256: $hash"
+          "$hash  $env:ASSET_NAME" | Out-File -FilePath "$env:GITHUB_WORKSPACE\$env:ASSET_NAME.sha256" -Encoding utf8 -Append
+          "BUNDLE_SHA256=$hash" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+
+      - name: Verify the bundle installs through Animatica (env override)
+        shell: pwsh
+        run: |
+          # This is the part that proves T12: Animatica downloads the artifact
+          # this job just built, verifies it against its sha256, unpacks it and
+          # finds latex + dvisvgm in it. The sha256 constant in doctor.py is
+          # still empty (fail closed), so the override is what makes the
+          # bundle path run here.
+          $ErrorActionPreference = "Stop"
+          $zip = Join-Path $env:GITHUB_WORKSPACE $env:ASSET_NAME
+          # Each `run:` block is a separate process, so the override must go
+          # through GITHUB_ENV to reach the next step.
+          "ANIMATICA_TEX_URL=file:///$($zip -replace '\\','/')" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          "ANIMATICA_TEX_SHA256=$env:BUNDLE_SHA256" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          Write-Host "ANIMATICA_TEX_URL=$env:ANIMATICA_TEX_URL"
+          Write-Host "ANIMATICA_TEX_SHA256=$env:ANIMATICA_TEX_SHA256"
+
+      - name: Install Animatica and verify the bundle path
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          Write-Host "override url: $env:ANIMATICA_TEX_URL"
+          Write-Host "override sha: $env:ANIMATICA_TEX_SHA256"
+          if (-not $env:ANIMATICA_TEX_SHA256) { throw "the sha256 override did not reach this step" }
+          $py = (Get-Command python -ErrorAction SilentlyContinue).Source
+          if (-not $py) { throw "python not found" }
+          & $py -m pip install --disable-pip-version-check -q -e ".[dev]"
+          # Run from a scratch directory so the bundle unpacks into a clean .tex
+          $work = Join-Path $env:RUNNER_TEMP "bundle-check"
+          New-Item -ItemType Directory -Path $work -Force | Out-Null
+          Set-Location $work
+          & $py -c @"
+          import sys
+          from pathlib import Path
+          from animatica.tex_bundle import install_windows_bundle
+          ok, message = install_windows_bundle(Path.cwd())
+          print('bundle install ok:', ok)
+          print('message:', message)
+          if not ok:
+              sys.exit(1)
+          bin_dir = Path('.tex') / 'bin' / 'windows'
+          if not (bin_dir / 'latex.exe').is_file():
+              print('latex.exe missing from', bin_dir)
+              sys.exit(1)
+          if not (bin_dir / 'dvisvgm.exe').is_file():
+              print('dvisvgm.exe missing from', bin_dir)
+              sys.exit(1)
+          print('bundle verified: latex.exe and dvisvgm.exe are present')
+          "@
+          if ($LASTEXITCODE -ne 0) { throw "the bundle did not install correctly" }
+
+      - name: Upload as a workflow artifact (every run)
+        uses: actions/upload-artifact@v4
+        with:
+          name: tinytex-manim-win
+          path: |
+            ${{ env.ASSET_NAME }}
+            ${{ env.ASSET_NAME }}.sha256
+          if-no-files-found: error
+
+      - name: Check whether the release already carries the bundle
+        id: existing
+        if: github.event_name == 'release' && startsWith(github.event.release.tag_name, 'tex-deps-')
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          # The bundle is NOT reproducible: it is built from whatever TinyTeX the
+          # upstream installer fetches that day, so a rebuild produces a
+          # different zip with a different sha256. When the release already
+          # carries the asset, the published (and verified) zip must win: this
+          # job then skips the publish step instead of replacing it.
+          #
+          # The tag comes from the release event, not from the RELEASE_TAG env
+          # var: this workflow runs for every published release, and each one
+          # must be checked against its own tag.
+          $ErrorActionPreference = "Continue"
+          $tag = "${{ github.event.release.tag_name }}"
+          Write-Host "release tag: $tag"
+          $assets = gh release view $tag --repo "$env:GITHUB_REPOSITORY" --json assets --jq ".assets[].name" 2>$null
+          if ($LASTEXITCODE -ne 0) {
+            Write-Host "::error::gh release view failed for tag $tag with exit code $LASTEXITCODE; refusing to publish"
+            exit 1
+          }
+          $has = $false
+          if ($assets -and ($assets -split "`n") -contains $env:ASSET_NAME) { $has = $true }
+          Write-Host "release assets: $assets"
+          Write-Host "asset already present: $has"
+          "present=$has" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+
+      - name: Publish as a release asset (release events only, and only when absent)
+        if: github.event_name == 'release' && startsWith(github.event.release.tag_name, 'tex-deps-') && steps.existing.outputs.present != 'true'
+        uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2.6.2
+        with:
+          tag_name: ${{ github.event.release.tag_name }}
+          overwrite_files: false
+          files: |
+            ${{ env.ASSET_NAME }}
+            ${{ env.ASSET_NAME }}.sha256
+
+      - name: Keep the existing release asset
+        if: github.event_name == 'release' && startsWith(github.event.release.tag_name, 'tex-deps-') && steps.existing.outputs.present == 'true'
+        shell: pwsh
+        run: |
+          Write-Host "The release already carries $env:ASSET_NAME; keeping the published bundle."
+          Write-Host "A rebuilt bundle has a different sha256, so it must not replace a published one."
+          Write-Host "Publish a new tag (tex-deps-v2-windows, ...) with a new tag+sha256 pair instead."
