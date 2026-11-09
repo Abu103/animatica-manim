@@ -1,6 +1,6 @@
 """Compare: two columns of bullets, fading in alternately. Max 6 bullets per side.
 
-Duration: 2.0 s + 0.6 s per bullet (both sides combined).
+Duration: 2.2 s + 0.6 s per bullet (both sides combined).
 """
 from __future__ import annotations
 
@@ -35,7 +35,7 @@ class Compare(Component):
 
     def duration(self, p: BaseModel) -> float:
         total = len(p.left["bullets"]) + len(p.right["bullets"])  # type: ignore[attr-defined]
-        return 2.0 + 0.6 * total
+        return 2.2 + 0.6 * total
 
     def fallback_text(self, p: BaseModel) -> str:
         lines = [f"{p.left['heading']}:"]  # type: ignore[attr-defined]
@@ -44,10 +44,9 @@ class Compare(Component):
         lines += [f"  - {b}" for b in p.right["bullets"]]  # type: ignore[attr-defined]
         return p.title + ":\n" + "\n".join(lines)  # type: ignore[attr-defined]
 
-    def play(self, scene, p, colors) -> None:
-        from manim import DOWN, FadeIn, LEFT, RIGHT, Text, VGroup
-
-        prepare(scene, colors)
+    def _build_layout(self, p: BaseModel, colors) -> tuple:
+        """Build and position title + left/right columns. No scene calls."""
+        from manim import DOWN, LEFT, RIGHT, Text, UP, VGroup
 
         def column(side: dict, edge) -> VGroup:
             head = Text(wrap(str(side["heading"]), 24), font_size=MIN_FONT_SIZE + 4, color=colors.accent)
@@ -62,8 +61,21 @@ class Compare(Component):
         title = Text(wrap(p.title, 45), font_size=MIN_FONT_SIZE + 8, color=colors.accent)
         left = column(p.left, LEFT)  # type: ignore[arg-type]
         right = column(p.right, RIGHT)  # type: ignore[arg-type]
+
+        title.to_edge(UP, buff=0.6)
+        VGroup(left, right).arrange(RIGHT, aligned_edge=UP, buff=0.8)
+        VGroup(left, right).next_to(title, DOWN, buff=0.5)
+
+        return title, left, right
+
+    def play(self, scene, p, colors) -> None:
+        from manim import FadeIn, VGroup, config
+
+        prepare(scene, colors)
+
+        title, left, right = self._build_layout(p, colors)
         group = VGroup(title, left, right)
-        fit(group)
+        fit(group, max_width=config.frame_width - 1.5)
         clock = Clock(scene, self.duration(p))
         clock.play(FadeIn(title), run_time=0.6)
         left_items = [left[0], *left[1]]
