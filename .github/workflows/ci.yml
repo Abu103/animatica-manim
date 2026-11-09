@@ -53,6 +53,20 @@ jobs:
       # itself, then skip prompts safely in CI and report the next interactive command.
       - name: Windows installer, end to end (PowerShell)
         run: pwsh -NoProfile -File scripts/bootstrap.ps1
+      - name: Doctor from a non-project directory (bundle visibility)
+        shell: pwsh
+        run: |
+          $d = Join-Path $env:TEMP "animatica-doctor-cwd-test"
+          New-Item -ItemType Directory -Force $d | Out-Null
+          $animatica = "$env:GITHUB_WORKSPACE\.venv\Scripts\animatica.exe"
+          if (-not (Test-Path $animatica)) { Write-Host "::error::animatica.exe not found at $animatica"; exit 1 }
+          $latex = Get-Command latex -ErrorAction SilentlyContinue
+          if ($latex) { Write-Host "::error::latex is on PATH ($($latex.Source)); the bundle must not be discoverable"; exit 1 }
+          Push-Location $d
+          try { $output = & $animatica doctor 2>&1 } finally { Pop-Location }
+          $output | ForEach-Object { Write-Host $_ }
+          if ($LASTEXITCODE -ne 0) { Write-Host "::error::doctor exited non-zero"; exit $LASTEXITCODE }
+          if (-not (($output | Out-String) -match '\[OK \] latex:')) { Write-Host "::error::latex not OK in doctor output"; exit 1 }
       - name: TUI dependency installed by bootstrap
         run: .\\.venv\\Scripts\\python.exe -c "import textual; print('Textual import OK')"
       - name: Test extras into the venv the installer built

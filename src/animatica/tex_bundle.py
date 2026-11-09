@@ -22,6 +22,7 @@ from __future__ import annotations
 import hashlib
 import os
 import shutil
+import sys
 import tempfile
 import urllib.error
 import urllib.request
@@ -55,6 +56,32 @@ TEX_DIR_NAME = ".tex"
 
 #: The directory inside the bundle that holds the executables, per platform.
 WINDOWS_BIN_SUBPATH = Path("bin") / "windows"
+
+
+def user_data_tex_dir(
+    platform: str | None = None, env=None
+) -> Path | None:
+    """Per-user data dir for the TeX bundle, independent of cwd.
+
+    Windows: %LOCALAPPDATA%\\Animatica\\tex if plain ASCII, else None
+    (cwd .tex is the fallback). ProgramData is intentionally not used: a
+    shared ProgramData folder lets another local user pre-create it and plant
+    a fake latex.exe. Non-Windows: None.
+    """
+    platform = platform or sys.platform
+    if env is None:
+        env = os.environ
+    if platform != "win32":
+        return None
+    base = env.get("LOCALAPPDATA")
+    if not base:
+        return None
+    candidate = Path(base) / "Animatica" / "tex"
+    try:
+        str(candidate).encode("ascii")
+    except (UnicodeEncodeError, UnicodeDecodeError):
+        return None
+    return candidate
 
 
 class BundleError(Exception):
@@ -165,22 +192,39 @@ def extract_bundle(zip_path: Path, target: Path) -> Path:
 
 
 def install_windows_bundle(
-    root: Path,
+    root: Path | None = None,
+    platform: str | None = None,
     env=None,
     download_fn=download,
     timeout: int = 600,
 ) -> tuple[bool, str]:
-    """Try to install the prebuilt Windows bundle into `root/.tex`.
+    """Try to install the prebuilt Windows bundle into a per-user data dir.
 
-    Returns (ok, message). Never raises: every failure is reported as a
-    message so the caller can fall back to the upstream installer.
+    Tries, in order: the per-user data dir from :func:`user_data_tex_dir`
+    (LOCALAPPDATA if plain ASCII), then ``<root or cwd>/.tex``. On ``OSError``
+    at any candidate, falls through to the next. BundleError and other
+    extraction errors abort immediately. Never raises: every failure is
+    reported as a message so the caller can fall back to the upstream
+    installer.
+
+    Returns (ok, message). The message names the directory that was used.
     """
     url, expected = bundle_settings(env)
     if not expected:
         # Fail closed: an unverified bundle is never used.
         return False, "no known sha256 for the prebuilt bundle; using the upstream installer"
 
-    target = Path(root) / TEX_DIR_NAME
+    env = os.environ if env is None else env
+
+    # Build the ordered list of candidate install directories.
+    candidates: list[Path] = []
+    user_dir = user_data_tex_dir(platform, env=env)
+    if user_dir is not None:
+        candidates.append(user_dir)
+    # cwd .tex is always the last fallback.
+    candidates.append(Path(root or Path.cwd()) / TEX_DIR_NAME)
+
+    # Download once, verify hash.
     with tempfile.TemporaryDirectory(prefix="animatica_texdl_") as tmp:
         archive = Path(tmp) / WINDOWS_TEX_ASSET_NAME
         try:
@@ -196,19 +240,33 @@ def install_windows_bundle(
                 pass
             return False, f"sha256 mismatch (expected {expected[:12]}..., got {actual[:12]}...); bundle deleted"
 
-        try:
-            bin_dir = extract_bundle(archive, target)
-        except BundleError as exc:
-            return False, str(exc)
-        except Exception as exc:
-            return False, f"could not unpack the bundle: {type(exc).__name__}: {exc}"
+        # Try each candidate; on OSError fall through to the next.
+        last_error: str | None = None
+        for target in candidates:
+            try:
+                bin_dir = extract_bundle(archive, target)
+                return True, f"prebuilt LaTeX bundle installed at {bin_dir}"
+            except BundleError as exc:
+                return False, str(exc)
+            except OSError as exc:
+                last_error = str(exc)
+                continue
+            except Exception as exc:
+                return False, f"could not unpack the bundle: {type(exc).__name__}: {exc}"
 
-    return True, f"prebuilt LaTeX bundle installed at {bin_dir}"
+        return False, f"could not install the bundle to any candidate directory (last error: {last_error})"
 
 
-def bundle_bin_dirs(root: Path) -> list[Path]:
-    """The Windows bin directories a bundle would provide, for tinytex_bin_dirs."""
+def bundle_bin_dirs(root: Path, user_dir: Path | None = None) -> list[Path]:
+    """The Windows bin directories a bundle would provide, for tinytex_bin_dirs.
+
+    Checks the per-user data dir first, then <root>/.tex as a fallback.
+    """
+    dirs: list[Path] = []
+    if user_dir is not None:
+        if user_dir.is_dir():
+            dirs.append(user_dir / WINDOWS_BIN_SUBPATH)
     base = Path(root) / TEX_DIR_NAME
-    if not base.is_dir():
-        return []
-    return [base / WINDOWS_BIN_SUBPATH]
+    if base.is_dir():
+        dirs.append(base / WINDOWS_BIN_SUBPATH)
+    return dirs
