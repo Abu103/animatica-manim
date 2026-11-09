@@ -74,7 +74,9 @@ The published zip is a build artifact: its sha256 changes whenever the upstream 
 ### 4. Seed the checksum, as a separate commit after you publish
 Run it only after the T12 PR is merged, because the workflow file must exist on `main` for the release trigger to work.
 
+Pre-flight (merge-base check):
 1. `git fetch origin` and set `SHA=$(git rev-parse origin/main)`.
+
 2. Download and verify the artifact locally:
    ```
    mkdir -p /tmp/t12b
