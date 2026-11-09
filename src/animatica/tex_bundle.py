@@ -37,7 +37,7 @@ from pathlib import Path
 #: upstream TinyTeX installer is used instead.
 WINDOWS_TEX_RELEASE_TAG = "tex-deps-v1-windows"
 WINDOWS_TEX_ASSET_NAME = "tinytex-manim-win.zip"
-WINDOWS_TEX_SHA256 = ""
+WINDOWS_TEX_SHA256 = "e3e92c824cef9d0340e81d1bbecbef522a53582b77269e4dfbe5fe7e9c2463e3"
 
 #: Where the bundle is fetched from. Pinned to the tag above, never "latest".
 WINDOWS_TEX_URL = (
