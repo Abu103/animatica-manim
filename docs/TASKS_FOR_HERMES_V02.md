@@ -76,8 +76,9 @@ Run it only after the T12 PR is merged, because the workflow file must exist on 
 
 Pre-flight (merge-base check):
 1. `git fetch origin` and set `SHA=$(git rev-parse origin/main)`.
+2. Verify the guard commit is in main: `git merge-base --is-ancestor e87215c "$SHA" && echo OK`. If it does not print OK, STOP.
 
-2. Download and verify the artifact locally:
+3. Download and verify the artifact locally:
    ```
    mkdir -p /tmp/t12b
    gh run download 42483719068 --name tinytex-manim-win --dir /tmp/t12b
@@ -85,7 +86,7 @@ Pre-flight (merge-base check):
    cat /tmp/t12b/tinytex-manim-win.zip.sha256
    ```
    The download command and the pre-upload hash check are required: if the digest doesn't match `e3e92c824cef9d0340e81d1bbecbef522a53582b77269e4dfbe5fe7e9c2463e3`, do not proceed.
-3. Create a **draft** release so the asset already exists when the release trigger fires (no race with the workflow's publish step):
+4. Create a **draft** release so the asset already exists when the release trigger fires (no race with the workflow's publish step):
    ```
    gh release create tex-deps-v1-windows --draft --target "$SHA" --latest=false \
      --title "Native deps v1 (Windows TinyTeX)" \
@@ -93,11 +94,11 @@ Pre-flight (merge-base check):
      /tmp/t12b/tinytex-manim-win.zip /tmp/t12b/tinytex-manim-win.zip.sha256
    ```
    Notes: `--draft` (publishes only when you later call `gh release edit --draft=false`), `--latest=false` (don't displace v0.1.1 as Latest), no `--verify-tag` (the tag doesn't exist yet on the remote; `--target` creates it at publish). Provenance note in the release notes says the asset was built on `hermes/t12-windows-tinytex`, not main — acceptable because you verified it end to end, but stated for transparency.
-4. Publish the draft:
+5. Publish the draft:
    ```
    gh release edit tex-deps-v1-windows --draft=false
    ```
-5. **The runbook stops if the digests differ** — compare the published digest to the expected:
+6. **The runbook stops if the digests differ** — compare the published digest to the expected:
    ```
    gh release view tex-deps-v1-windows --json assets | jq -r '.assets[] | select(.name == "tinytex-manim-win.zip") | .digest'
    ```
@@ -106,7 +107,7 @@ Pre-flight (merge-base check):
    gh release delete tex-deps-v1-windows --cleanup-tag --yes
    ```
    Nothing has been seeded yet, so no user is affected and rollback is safe.
-6. Seed the checksum in a **separate commit** on a new branch, pushed through a PR (not directly to main):
+7. Seed the checksum in a **separate commit** on a new branch, pushed through a PR (not directly to main):
    - create the branch, set `WINDOWS_TEX_SHA256` in `src/animatica/tex_bundle.py` to the digest from step 5, commit, push, open a PR.
    - CI runs CI on the branch; once green and reviewed, merge to main.
    Verify with the unit tests (`tests/test_tex_bundle.py`): the constant is 64 lowercase hex characters, the tag+hash are the single pair that the URL derives from, and changing the tag changes the URL. The digest comparison itself is a runbook step, not a unit test: the tests can only check the shape of the constant, because they cannot see GitHub.

@@ -186,7 +186,7 @@ jobs:
 
       - name: Check whether the release already carries the bundle
         id: existing
-        if: github.event_name == 'release'
+        if: github.event_name == 'release' && startsWith(github.event.release.tag_name, 'tex-deps-')
         shell: pwsh
         env:
           GH_TOKEN: ${{ github.token }}
@@ -215,7 +215,7 @@ jobs:
           "present=$has" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
 
       - name: Publish as a release asset (release events only, and only when absent)
-        if: github.event_name == 'release' && steps.existing.outputs.present != 'true'
+        if: github.event_name == 'release' && startsWith(github.event.release.tag_name, 'tex-deps-') && steps.existing.outputs.present != 'true'
         uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2.6.2
         with:
           tag_name: ${{ github.event.release.tag_name }}
@@ -225,7 +225,7 @@ jobs:
             ${{ env.ASSET_NAME }}.sha256
 
       - name: Keep the existing release asset
-        if: github.event_name == 'release' && steps.existing.outputs.present == 'true'
+        if: github.event_name == 'release' && startsWith(github.event.release.tag_name, 'tex-deps-') && steps.existing.outputs.present == 'true'
         shell: pwsh
         run: |
           Write-Host "The release already carries $env:ASSET_NAME; keeping the published bundle."
