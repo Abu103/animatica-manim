@@ -26,6 +26,10 @@ FREE_PROVIDER_TIP = (
     "Groq console.groq.com/keys, NVIDIA build.nvidia.com, or local Ollama (no key, ollama.com)"
 )
 
+#: Providers that do not require an API key: template (offline canned prompts)
+#: and ollama (local LLM). The doctor check must not flag them as "key missing".
+KEYLESS_PROVIDERS = frozenset({"template", "ollama"})
+
 
 def _py_fix() -> str:
     return "install Python 3.10 or newer (python.org, or py -3.11 on Windows)"
@@ -153,6 +157,10 @@ def run_checks(run=subprocess.run, which=shutil.which, deep_latex: bool = True) 
         prov_ok = True
         prov_detail = "no AI provider set: only a few canned example prompts work (offline)"
         prov_fix = FREE_PROVIDER_TIP
+    elif provider in KEYLESS_PROVIDERS:
+        prov_ok = True
+        prov_detail = f"provider {provider} (no key needed)"
+        prov_fix = ""
     else:
         key = load_key(provider)
         prov_ok = bool(key)
