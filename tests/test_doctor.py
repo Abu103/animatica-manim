@@ -43,3 +43,37 @@ def test_doctor_json_is_machine_readable():
         assert set(check) == {"name", "ok", "detail", "fix"}
     latex = next(c for c in payload if c["name"] == "latex")
     assert isinstance(latex["ok"], bool)
+
+
+def test_template_provider_needs_no_key(monkeypatch):
+    """template is offline and keyless: provider check passes with no key."""
+    from animatica.config import Config
+
+    monkeypatch.setattr("animatica.doctor.load_config", lambda: Config(provider="template"))
+    monkeypatch.setattr("animatica.doctor.load_key", lambda provider: None)
+    checks = run_checks(which=lambda cmd: None, deep_latex=False)
+    provider = next(c for c in checks if c.name == "provider")
+    assert provider.ok is True, provider.detail
+
+
+def test_ollama_provider_needs_no_key(monkeypatch):
+    """ollama is local and keyless: provider check passes with no key."""
+    from animatica.config import Config
+
+    monkeypatch.setattr("animatica.doctor.load_config", lambda: Config(provider="ollama"))
+    monkeypatch.setattr("animatica.doctor.load_key", lambda provider: None)
+    checks = run_checks(which=lambda cmd: None, deep_latex=False)
+    provider = next(c for c in checks if c.name == "provider")
+    assert provider.ok is True, provider.detail
+
+
+def test_keyed_provider_still_fails_without_key(monkeypatch):
+    """groq needs a key: provider check fails when no key is stored."""
+    from animatica.config import Config
+
+    monkeypatch.setattr("animatica.doctor.load_config", lambda: Config(provider="groq"))
+    monkeypatch.setattr("animatica.doctor.load_key", lambda provider: None)
+    checks = run_checks(which=lambda cmd: None, deep_latex=False)
+    provider = next(c for c in checks if c.name == "provider")
+    assert provider.ok is False
+    assert "key" in provider.detail.lower()
