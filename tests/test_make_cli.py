@@ -71,6 +71,25 @@ def test_make_output_dir_spaces_and_unicode(tmp_path):
     assert (out / "video.mp4").exists()
 
 
+def test_make_prints_provider_and_encoder(tmp_path, monkeypatch):
+    """CLI make prints Provider and Encoder lines after make_video returns."""
+    calls = []
+
+    class CountingProvider:
+        name = "counting"
+        def generate(self, prompt, schema):
+            calls.append(prompt)
+            return "{}"
+
+    from animatica.ai.router import get_provider
+    monkeypatch.setattr("animatica.pipeline.get_provider", lambda name, cfg: CountingProvider())
+    runner = CliRunner()
+    result = runner.invoke(app, ["make", "make a title card about hello", "-o", str(tmp_path)])
+    assert result.exit_code == 0, result.output
+    assert "Provider: template (offline)" in result.output
+    assert "Encoder: x264 (manim default)" in result.output
+
+
 def test_make_invalid_storyboard_exits_2(tmp_path):
     bad = tmp_path / "bad.json"
     bad.write_text('{"version":"1","title":"T","scenes":[{"beats":[{"component":"nope","params":{}}]}]}')

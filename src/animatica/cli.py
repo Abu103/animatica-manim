@@ -474,6 +474,8 @@ def mcp() -> None:
                         "captions": str(result_obj.captions),
                         "report": str(result_obj.report),
                         "warnings": result_obj.warnings,
+                        "provider_used": result_obj.provider_used,
+                        "encoder_used": result_obj.encoder_used,
                     }
             elif name == "preview_frame":
                 video = arguments.get("video")
@@ -692,6 +694,9 @@ def edit_cmd(
         shutil.rmtree(staging_dir, ignore_errors=True)
         raise RuntimeError("make_video returned no result")
 
+    typer.echo(f"Provider: {result.provider_used}")
+    typer.echo(f"Encoder: {result.encoder_used}")
+
     # --- Decide output destination ---
     if replace:
         # Recoverable promotion: back up existing outputs, promote new ones,
@@ -859,6 +864,8 @@ def make(
             theme=theme,
             on_progress=reporter,
         )
+        typer.echo(f"Provider: {result.provider_used}")
+        typer.echo(f"Encoder: {result.encoder_used}")
         typer.echo(f"Video: {result.video}")
         for w in result.warnings:
             typer.echo(f"Warning: {w}")
