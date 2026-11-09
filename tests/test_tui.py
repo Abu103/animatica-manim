@@ -1042,5 +1042,8 @@ async def test_picker_enter_commits_first_match_when_highlight_is_stale():
 
         theme._list().highlighted = None  # simulate a lagging highlight
         search.post_message(search.Submitted(search, search.value))
-        assert await _wait_for(app, pilot, lambda: theme.value == "light"), theme.value
-        assert app.settings.theme == "light"
+        assert await _wait_for(
+            app,
+            pilot,
+            lambda: theme.value == "light" and app.settings.theme == "light",
+        ), (theme.value, app.settings.theme)
