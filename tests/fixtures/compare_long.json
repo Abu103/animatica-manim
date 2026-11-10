@@ -1,0 +1,37 @@
+{
+  "version": "1",
+  "title": "Ganymede vs Titan",
+  "scenes": [
+    {
+      "beats": [
+        {
+          "component": "compare",
+          "params": {
+            "title": "Ganymede vs Titan",
+            "left": {
+              "heading": "Ganymede",
+              "bullets": [
+                "Icy moon with a subsurface saltwater ocean beneath its crust",
+                "Largest moon in the solar system, bigger than Mercury",
+                "Weak magnetic field induced by Jupiter's magnetosphere",
+                "Thin oxygen atmosphere detected by Galileo",
+                "Possible habitability in its subsurface ocean"
+              ]
+            },
+            "right": {
+              "heading": "Titan",
+              "bullets": [
+                "Saturn's largest moon, second largest in the solar system",
+                "Thick nitrogen atmosphere with surface pressure 1.5x Earth's",
+                "Methane lakes and seas near the poles",
+                "Huygens probe landed in 2005, first outer solar system landing",
+                "Cryovolcanism possible with water-ammonia magma"
+              ]
+            }
+          },
+          "caption": "Comparing two icy moons"
+        }
+      ]
+    }
+  ]
+}
