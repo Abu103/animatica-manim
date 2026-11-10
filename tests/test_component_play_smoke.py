@@ -19,6 +19,7 @@ import ast
 import pytest
 
 from animatica.components.registry import _EXAMPLES, default_registry
+from geometry import RecordingScene as _FakeScene
 
 # Minimum valid params for components the registry has no example for.
 _EXTRA_EXAMPLES: dict[str, dict] = {
@@ -42,38 +43,6 @@ _EXAMPLE_OVERRIDES: dict[str, dict] = {
         ],
     },
 }
-
-
-class _FakeCamera:
-    background_color = None
-
-
-class _FakeScene:
-    """Minimal stand-in for a Manim Scene used by component.play()."""
-
-    def __init__(self):
-        from manim import VMobject
-
-        self.camera = _FakeCamera()
-        self.played_run_times: list[float] = []
-        self.waited_seconds: list[float] = []
-        self.mobjects: list = [VMobject()]  # non-empty so finish() fades them out
-        self.warnings: list[str] = []
-
-    def play(self, *anims, run_time: float = 0.0):
-        self.played_run_times.append(run_time)
-
-    def wait(self, seconds: float):
-        if seconds > 1e-6:
-            self.waited_seconds.append(seconds)
-
-    def add(self, *mobs):
-        self.mobjects.extend(mobs)
-
-    def remove(self, *mobs):
-        for m in mobs:
-            if m in self.mobjects:
-                self.mobjects.remove(m)
 
 
 def _example_params(name: str) -> dict:
