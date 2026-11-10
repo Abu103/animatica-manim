@@ -266,7 +266,9 @@ jobs:
       - name: Cache the apt downloads
         uses: actions/cache@v4
         with:
-          path: /var/cache/apt/archives
+          # Only the .deb files: apt's lock and partial/ belong to root, and
+          # the cache action runs as the runner user ("Permission denied").
+          path: /var/cache/apt/archives/*.deb
           key: apt-archives-${{ runner.os }}-noble-ffmpeg-${{ env.APT_WEEK }}
       - name: System libs (cairo/pango for the manim import path, ffmpeg for the CLI)
         run: |
