@@ -227,14 +227,25 @@ def make_video(
     # "{component}: {ExceptionType}: {message}" when play() raises and the
     # beat degrades to a text card. Extract the component names so they can
     # be recorded in report.json.
+    #
+    # Only that three-part shape counts. A component may also emit an
+    # advisory that starts with its name ("compare: text scaled to 25 px
+    # (floor 32)"); those are warnings, not fallbacks, and recording them
+    # as fallbacks would report a beat as degraded when it rendered fine.
     registered = set(default_registry().names())
     fallbacks: list[str] = []
     seen_fallbacks: set[str] = set()
     for w in render_result.warnings:
-        parts = w.split(": ", 1)
-        if len(parts) == 2 and parts[0] in registered and parts[0] not in seen_fallbacks:
-            fallbacks.append(parts[0])
-            seen_fallbacks.add(parts[0])
+        parts = w.split(": ", 2)
+        if len(parts) != 3:
+            continue
+        component, exc_type = parts[0], parts[1]
+        if component not in registered or component in seen_fallbacks:
+            continue
+        if not (exc_type.endswith("Error") or exc_type.endswith("Exception")):
+            continue
+        fallbacks.append(component)
+        seen_fallbacks.add(component)
 
     write_report(
         out_dir / "report.json",

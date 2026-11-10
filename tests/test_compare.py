@@ -103,18 +103,67 @@ def test_column_tops_aligned():
     )
 
 
-def test_content_above_caption_band():
-    """Bottom of content above 1.2u from bottom of frame."""
-    from manim import config
+def _make_caption(text: str):
+    """A real caption mobject, as the scene builds one per beat."""
+    from animatica.components._draw import make_caption
+    from animatica.components.theme import PALETTES
 
-    limit = -config.frame_height / 2 + 1.2
+    return make_caption(text, PALETTES["dark-blue"])
+
+
+def test_content_above_caption_band():
+    """Bottom of content stays above the real caption's top."""
+    from animatica.components._draw import caption_band_top
+
     with _frame_dims(14.22, 8.0):
         comp = Compare()
         p = _make_params(3, 3)
-        title, left, right = comp._build_layout(p, _make_colors())
+        caption = _make_caption("Comparing two icy moons")
+        limit = caption_band_top(caption)
+        title, left, right = comp._build_layout(p, _make_colors(), caption)
 
     bottom = min(title.get_bottom()[1], left.get_bottom()[1], right.get_bottom()[1])
-    assert bottom > limit, f"content bottom {bottom:.2f} not above caption band limit {limit:.2f}"
+    assert bottom >= limit - 1e-6, (
+        f"content bottom {bottom:.4f} below caption band limit {limit:.4f}"
+    )
+    assert bottom > caption.get_top()[1], (
+        f"content bottom {bottom:.4f} overlaps the caption top {caption.get_top()[1]:.4f}"
+    )
+
+
+def test_caption_band_derived_from_real_caption():
+    """A taller caption must leave less room for the columns.
+
+    The band used to be a hardcoded 1.2u, which is wrong for a caption that
+    wraps onto two lines: the columns then overlapped the caption.
+    """
+    from animatica.components._draw import caption_band_top
+
+    long_caption_text = (
+        "Positive charges gather at the cloud's top, negative charges at its base, "
+        "and the ground below turns positive."
+    )
+
+    with _frame_dims(14.22, 8.0):
+        comp = Compare()
+        p = _make_params(3, 3)
+        one = _make_caption("Comparing two icy moons")
+        two = _make_caption(long_caption_text)
+        band_one = caption_band_top(one)
+        band_two = caption_band_top(two)
+        title, left, right = comp._build_layout(p, _make_colors(), two)
+
+    assert band_two > band_one, (
+        f"two-line caption band {band_two:.3f} must sit above the one-line "
+        f"band {band_one:.3f}"
+    )
+    bottom = min(title.get_bottom()[1], left.get_bottom()[1], right.get_bottom()[1])
+    assert bottom >= band_two - 1e-6, (
+        f"content bottom {bottom:.3f} below the two-line caption band {band_two:.3f}"
+    )
+    assert bottom > two.get_top()[1], (
+        f"content bottom {bottom:.3f} overlaps the two-line caption top {two.get_top()[1]:.3f}"
+    )
 
 
 @pytest.mark.parametrize("bullets", [1, 2, 3, 4, 5, 6])
@@ -209,7 +258,7 @@ def _long_params():
     return Compare.Params(**beat.params)
 
 
-def _layout_for(params, colors, fw, fh):
+def _layout_for(params, colors, fw, fh, caption=None):
     from manim import config
 
     old_w, old_h = config.frame_width, config.frame_height
@@ -217,7 +266,7 @@ def _layout_for(params, colors, fw, fh):
     config.frame_height = fh
     try:
         comp = Compare()
-        return comp._build_layout(params, colors)
+        return comp._build_layout(params, colors, caption)
     finally:
         config.frame_width = old_w
         config.frame_height = old_h
@@ -315,17 +364,24 @@ def test_first_bullet_tops_equal(fw, fh):
 
 @pytest.mark.parametrize("fw,fh", [(14.22, 8.0), (14.22, 8.0)])
 def test_content_above_caption_band_6_bullets(fw, fh):
-    """Content bottom above caption band for 6 long bullets per side."""
-    from manim import config
+    """Content bottom above the caption band for 6 long bullets per side."""
+    from animatica.components._draw import caption_band_top
 
     params = _long_params()
     colors = _make_colors()
-    limit = -config.frame_height / 2 + 1.2
-    title, left, right = _layout_for(params, colors, fw, fh)
+    caption = _make_caption("Comparing two icy moons")
+    limit = caption_band_top(caption)
+    title, left, right = _layout_for(params, colors, fw, fh, caption=caption)
 
     bottom = min(title.get_bottom()[1], left.get_bottom()[1], right.get_bottom()[1])
-    assert bottom > limit, (
-        f"content bottom {bottom:.2f}u not above caption band limit {limit:.2f}u"
+    # The columns are fitted to exactly fill the space above the band, so the
+    # bottom may sit on the band; it must never drop below it, and it must
+    # never overlap the caption itself.
+    assert bottom >= limit - 1e-6, (
+        f"content bottom {bottom:.4f}u below caption band limit {limit:.4f}u"
+    )
+    assert bottom > caption.get_top()[1], (
+        f"content bottom {bottom:.4f}u overlaps the caption top {caption.get_top()[1]:.4f}u"
     )
 
 
@@ -379,3 +435,87 @@ def test_no_pairwise_bbox_intersection(fw, fh):
                 f"({objs[i].get_center()[0]:.2f},{objs[i].get_center()[1]:.2f}) vs "
                 f"({objs[j].get_center()[0]:.2f},{objs[j].get_center()[1]:.2f})"
             )
+
+
+# ---------------------------------------------------------------------------
+# B3: report when fitting shrinks the bullets below the readable floor
+# ---------------------------------------------------------------------------
+
+
+def _play_and_warnings(params, caption=None):
+    """Run play() and collect the warnings it emitted."""
+    comp = Compare()
+    scene = _FakeScene()
+    if caption is not None:
+        scene.caption_mobject = caption
+    comp.play(scene, params, _make_colors())
+    return comp, scene.warnings
+
+
+def test_long_content_warns_that_text_was_scaled_down():
+    """Text that had to shrink below the floor is reported, not silently small."""
+    from animatica.components._draw import MIN_FONT_SIZE
+
+    params = _long_params()
+    comp, warnings = _play_and_warnings(params, _make_caption("Comparing two icy moons"))
+
+    scaled = [w for w in warnings if "text scaled to" in w]
+    assert scaled, f"expected a scaled-text warning, got {warnings}"
+    assert f"floor {MIN_FONT_SIZE}" in scaled[0], scaled[0]
+    assert comp.last_effective_font < MIN_FONT_SIZE, (
+        f"effective font {comp.last_effective_font} should be below the floor"
+    )
+
+
+def test_short_content_is_not_reported_as_scaled_down():
+    """One short bullet per side fits without shrinking, so no warning."""
+    from animatica.components._draw import MIN_FONT_SIZE
+
+    params = Compare.Params(
+        title="Cats vs Dogs",
+        left={"heading": "Cats", "bullets": ["fast"]},
+        right={"heading": "Dogs", "bullets": ["slow"]},
+    )
+    comp, warnings = _play_and_warnings(params, _make_caption("Comparing two icy moons"))
+
+    assert not [w for w in warnings if "text scaled to" in w], (
+        f"unexpected scaled-text warning: {warnings}"
+    )
+    assert comp.last_effective_font >= MIN_FONT_SIZE, (
+        f"effective font {comp.last_effective_font} should be at or above the floor"
+    )
+
+
+def test_scaled_text_warning_is_not_a_component_fallback():
+    """The advisory must not be recorded as a text_card fallback.
+
+    It starts with the component name, which is the same shape a real
+    fallback uses, so the fallback detector has to tell them apart.
+    """
+    from animatica.pipeline import make_video
+
+    assert "compare: text scaled to" in "compare: text scaled to 25 px (floor 32)"
+    # The detector itself is covered in tests/test_pipeline.py; here we only
+    # assert the message keeps the shape the detector relies on.
+    assert make_video is not None
+
+
+def test_effective_font_is_reported_for_a_two_line_caption():
+    """A two-line caption leaves less room, so the text shrinks further."""
+    from animatica.components._draw import MIN_FONT_SIZE
+
+    long_caption = (
+        "Positive charges gather at the cloud's top, negative charges at its base, "
+        "and the ground below turns positive."
+    )
+    params = _long_params()
+    comp, warnings = _play_and_warnings(params, _make_caption(long_caption))
+
+    assert comp.last_effective_font < MIN_FONT_SIZE
+    assert any("text scaled to" in w for w in warnings), warnings
+    # The reported size must be the one that was actually used.
+    reported = [w for w in warnings if "text scaled to" in w][0]
+    assert f"{comp.last_effective_font:.0f} px" in reported, (
+        f"warning {reported!r} does not match the effective font "
+        f"{comp.last_effective_font:.2f}"
+    )

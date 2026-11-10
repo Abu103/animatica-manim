@@ -31,6 +31,11 @@ jobs:
         run: python scripts/ci_tests.py
       - name: Real render smoke test
         run: python scripts/ci_smoke.py
+      # Renders the fixture storyboards for real and fails on any lint,
+      # fallback or timing warning. Linux only: the Windows job already
+      # spends its budget on the installer and the full suite.
+      - name: Fixture render gate (no lint/fallback/timing warnings)
+        run: python scripts/ci_render_gate.py
       - name: Installers are valid bash
         run: |
           bash -n scripts/bootstrap.sh

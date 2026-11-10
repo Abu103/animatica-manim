@@ -119,6 +119,18 @@ class Clock:
         self.wait(max(0.0, self.total - self.used))
 
 
+#: Fraction of each frame edge that frame-lint keeps free of content.
+SAFE_AREA_MARGIN = 0.05
+
+#: Buffer between the frame's bottom edge and the caption's bottom edge.
+#: Must exceed ``SAFE_AREA_MARGIN`` so the caption's descenders stay out of
+#: the safe-area band; 0.055 is the smallest value that clears it.
+CAPTION_BOTTOM_BUFF = 0.055
+
+#: Gap kept between the caption's top and the bottom of the content above it.
+CAPTION_CONTENT_GAP = 0.25
+
+
 def make_caption(text: str, colors: ThemeColors) -> Any:
     """Burned-in caption pinned to the bottom edge, sized for actual frame dimensions.
 
@@ -131,6 +143,10 @@ def make_caption(text: str, colors: ThemeColors) -> Any:
     The caption is only scaled *down* when it would overflow the frame with
     horizontal margins; short captions are never enlarged to fill the frame,
     which previously made tiny captions unreadably large and edge-to-edge.
+
+    It is pinned clear of the ``SAFE_AREA_MARGIN`` band: a caption closer to
+    the edge puts its descenders inside that band, and frame-lint then warns
+    about every single frame of the video.
     """
     from manim import DOWN, Text, config
 
@@ -154,8 +170,32 @@ def make_caption(text: str, colors: ThemeColors) -> Any:
     if cap.width > max_caption_width:
         cap.scale_to_fit_width(max_caption_width)
 
-    cap.to_edge(DOWN, buff=frame_height * 0.04)
+    cap.to_edge(DOWN, buff=frame_height * CAPTION_BOTTOM_BUFF)
     return cap
+
+
+def caption_band_top(caption: Any = None) -> float:
+    """Y coordinate above which content must stay to leave room for the caption.
+
+    The caption's height depends on how its text wraps, so the band cannot be
+    a constant: a one-line caption leaves more room than a two-line one.
+    Layout code uses this to decide how much vertical space it may use.
+
+    Pass the real caption mobject (the scene builds one per beat and keeps it
+    on ``scene.caption_mobject``) to get its exact top. With no caption on
+    screen there is nothing to collide with, but content must still stay out
+    of the safe-area band, so the band is the frame's bottom edge plus the
+    safe-area margin and a small gap.
+    """
+    from manim import config
+
+    if caption is not None:
+        return caption.get_top()[1] + CAPTION_CONTENT_GAP
+    return (
+        -config.frame_height / 2
+        + SAFE_AREA_MARGIN * config.frame_height
+        + CAPTION_CONTENT_GAP
+    )
 
 
 def clear_stage(scene: Any) -> None:
