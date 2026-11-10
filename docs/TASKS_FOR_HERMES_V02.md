@@ -144,6 +144,49 @@ The trigger should be `release`/`published` only, there must be no `--clobber`, 
 - **No release and no tag until you approve this updated card.**
 
 ---
+---
+
+## M1.6 — B4c: make the tests fast  [NORMAL; the owner's card, 2026-11-10]
+
+Why: the suite cost six minutes and the render gate two and a half, and the
+same conformance corpus was rendered twice per CI run. The owner asked for
+speed first. Measured on the owner's machine (4 cores / 8 threads, 7.7 GB RAM):
+
+| what | before | after |
+|---|---|---|
+| full suite | 369 s | ~150 s (4 workers) |
+| render gate | 145 s | 64 s cold / 2 s warm (cached) |
+| corpus renders per CI run | 35 | 18 |
+
+Files: `src/animatica/backends/scheduler.py`, new `src/animatica/render_cache.py`,
+`src/animatica/conformance.py`, `scripts/ci_render_gate.py`, `scripts/ci_tests.py`,
+`tests/conftest.py`, `tests/test_conformance.py`, `tests/test_ci_gate.py`,
+new `tests/test_render_pool.py`, new `tests/test_render_cache.py`,
+`.github/workflows/ci.yml`, `pyproject.toml`, `docs/HERMES_PLAYBOOK.md`.
+
+Steps:
+1. RED: the timeline geometry tests fail at random under `-n 4`. Cause: Manim
+   caches every rendered text as an SVG under `<media_dir>/texts`, keyed by the
+   text and the style but **not by the process**; two workers that render the
+   same string write the same file and one reads it half written. Proof:
+   `race_probe.py` -> `ParseError: no element found`. Fix: every process gets
+   its own `media_dir` (`tests/conftest.py`).
+2. A render pool: `run_in_parallel()` + `render_workers()` (cores and free
+   memory) in `backends/scheduler.py`; the gate renders the corpus in parallel.
+3. The suite stops rendering the corpus; the gate takes it over and also
+   checks the promised scene count and duration from `expected.json`.
+4. A content-addressed render cache: the storyboard, the quality, the
+   interpreter, the Manim version and a fingerprint of every source file.
+5. The suite runs on four workers (`pytest-xdist`), with the worker count
+   capped by the cores and the memory.
+6. CI: the 10m47s apt step becomes the project's own 45 MB TinyTeX bundle
+   (with a verified apt fallback), and the Windows job runs the gate too.
+
+Accept: `python scripts/ci_tests.py` clean; `python scripts/ci_render_gate.py`
+clean; the numbers in the table above.
+
+---
+
 ## M2 Evidence (this is the portfolio differentiator)
 
 ### T15 Reference prompt set  [trivial]

@@ -50,6 +50,29 @@ Intake -> Plan -> [Gate A] -> Red test -> Green -> Verify -> Self-review -> Comm
 
 Start a fresh Hermes session for each card. Long sessions drift; the files on disk are the memory, not the chat.
 
+## 3.1 The test loop (the fast lane)
+
+The suite used to cost six minutes, almost all of it in the render tests. It now runs on four workers and costs about two and a half. Use the narrowest command that answers the question:
+
+| Question | Command | Cost |
+|---|---|---|
+| Does the component I touched still work? | `pytest tests/test_<component>.py -q` | seconds |
+| Is the whole suite clean? | `python scripts/ci_tests.py` | ~2.5 min |
+| Does the corpus still render clean? | `python scripts/ci_render_gate.py` | 60 s cold, 2 s warm |
+
+`-m "not render"` is **not** a fast lane: only 35 of the 934 tests carry the
+`render` marker, so it still runs for nearly the whole time. The geometry
+tests (the ones that build real mobjects) are the bulk of the cost and they
+are not marked.
+
+Rules that follow from it:
+
+- **Run the full suite once before the PR, not before every commit.** A commit is verified by the tests of the files it touched; the full suite is the gate at the end.
+- The render gate caches its renders under `.animatica_cache/renders/`, keyed by the storyboard *and* a fingerprint of every source file. A changed component is never served from the cache, so a stale render cannot hide a regression. `ANIMATICA_NO_RENDER_CACHE=1` forces a real render.
+- `ANIMATICA_RENDER_JOBS=N` sets how many storyboards the gate renders at once; `ANIMATICA_TEST_JOBS=N` sets how many workers the suite uses.
+- The conformance corpus is rendered **once** per CI run, by the render gate. The suite does not render it any more: that was two renders of the same seventeen storyboards for the same evidence.
+
+
 ## 4. Card sizing (what keeps a weaker model reliable)
 
 - <=5 files, ~150 changed lines, exactly one acceptance command.
