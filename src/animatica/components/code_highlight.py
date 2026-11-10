@@ -37,17 +37,20 @@ class CodeHighlight(Component):
         return wrap(p.code, 40)  # type: ignore[attr-defined]
 
     def play(self, scene, p, colors: ThemeColors) -> None:
-        from manim import Code, FadeIn
+        from manim import Code, FadeIn, ORIGIN
 
         prepare(scene, colors)
         code = Code(
             code_string=p.code,  # type: ignore[attr-defined]
             language=p.language,  # type: ignore[attr-defined]
         )
+        # A code block is not centred on the origin, so scaling it left it
+        # hanging over the left edge of the frame.
+        code.move_to(ORIGIN)
         # Code blocks come out tiny (a 1-line snippet is ~2.5 units wide): scale up to fill the
         # stage, then fit() shrinks back if it overshoots.
         code.scale(min(2.2, 9.0 / max(code.width, 0.1), 4.4 / max(code.height, 0.1)))
-        fit(code)
+        fit(code, scale_up=False)
         clock = Clock(scene, self.duration(p))  # type: ignore[attr-defined]
         clock.play(FadeIn(code), run_time=1.0)
         clock.wait(1.5)
