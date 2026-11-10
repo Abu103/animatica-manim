@@ -1,0 +1,11 @@
+{
+  "compare": {
+    "small_content": "In the first frame of the beat only the burned-in caption is on screen, and the finding measures that caption, not the component: the caption is 82x26 px, 2132 px of the 4099 px the lint allows. Reported in the B4 report; the threshold or the fixture has to change, not the component."
+  },
+  "timeline": {
+    "small_content": "In the first frame of the beat only the burned-in caption is on screen, and the finding measures that caption, not the component: the caption is 82x26 px, 2132 px of the 4099 px the lint allows. Reported in the B4 report; the threshold or the fixture has to change, not the component."
+  },
+  "title_card": {
+    "small_content": "In the first frame of a beat only the burned-in caption is on screen, and the finding measures that caption, not the component. Kept for two_scene, whose caption is 157x25 px, 3925 px of the 4099 px the lint allows. Reported in the B4 report; the threshold or the fixture has to change, not the component."
+  }
+}
