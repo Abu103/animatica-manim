@@ -217,6 +217,36 @@ its own child; the suite and the gate are clean.
 
 ---
 
+---
+
+## M1.8 — B4e: the recursion tree's video was longer than its beat  [NORMAL; the owner's card, 2026-11-10]
+
+Why: the final frame of the recursion tree was missing 2 of its 14 edges, and
+the tree was drawn from the leaves up.
+
+Files: `src/animatica/components/_draw.py`, `src/animatica/components/recursion_tree.py`,
+`src/animatica/components/array_viz.py`, `src/animatica/frame_lint.py`,
+`src/animatica/pipeline.py`, `tests/test_recursion_tree.py`, `tests/test_array_viz.py`,
+`tests/test_frame_lint.py`.
+
+Steps:
+1. RED: the beat must not overrun its declared duration in the video, the whole
+   tree must be on screen before the fade-out, and the tree must be drawn from
+   the root down.
+2. Find the cause: Manim writes ceil(run_time * fps) frames per animation, so
+   a run time that is not a whole number of frames makes the video longer than
+   the beat. The tree has 29 animations; the rounding added up to 0.6s.
+3. Fix at the root: the Clock counts in frames and the tree budgets in them.
+4. Frames: 0.5 s, mid-beat, and the hold before the fade-out.
+5. array_viz: the title at the top of the frame, centred, the boxes below it.
+6. frame_lint: the caption strip is derived from the caption band, not a
+   constant.
+
+Accept: the video is as long as the beat declares, the hold frame shows all
+14 edges, the tree grows from the root, and the suite and the gate are clean.
+
+---
+
 ## M2 Evidence (this is the portfolio differentiator)
 
 ### T15 Reference prompt set  [trivial]
