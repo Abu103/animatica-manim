@@ -307,7 +307,9 @@ TLMGR_ERROR_MARKERS = ("tlmgr itself needs to be updated", "Terminating; please 
 
 
 # Packages a fresh TinyTeX lacks but Animatica needs (the 2026-11-04 sessions hit exactly these).
-TEX_PACKAGES = ("standalone", "preview", "babel-english", "amsmath", "amsfonts", "dvisvgm", "xkeyval")
+# varwidth is in the list because standalone.cls loads it for its border box: without it
+# every formula fails to compile and the equations quietly degrade to plain text.
+TEX_PACKAGES = ("standalone", "preview", "babel-english", "amsmath", "amsfonts", "dvisvgm", "xkeyval", "varwidth")
 
 # Files Manim's default template needs -> the package that provides them. Checked with kpsewhich after
 # installing, because tlmgr's exit code and messages are not reliable (it can "succeed" and install nothing).
@@ -318,6 +320,7 @@ NEEDED_TEX_FILES = {
     "english.ldf": "babel-english",
     "amsmath.sty": "amsmath",
     "amssymb.sty": "amsfonts",
+    "varwidth.sty": "varwidth",
 }
 
 
@@ -345,6 +348,29 @@ def _tex_tools(tlmgr: str, run, which, exe: str):
             return f"(tlmgr failed: {exc})"
 
     return have, tl
+
+
+def _tex_is_bundle(platform: str, latex_bin: str | None) -> bool:
+    """True when the TeX in use is a TinyTeX tree that tlmgr can manage.
+
+    On Linux the LaTeX packages come from apt, so the doctor leaves them
+    alone. But the one-line installer puts a TinyTeX bundle in the project
+    directory, and that tree needs tlmgr for the packages apt would have
+    provided.
+    """
+    if not latex_bin:
+        return False
+    try:
+        parent = Path(latex_bin).resolve().parent
+    except OSError:  # pragma: no cover - an unreadable path
+        return False
+    for directory in tinytex_bin_dirs(platform):
+        try:
+            if directory.resolve() == parent:
+                return True
+        except OSError:  # pragma: no cover - an unreadable path
+            continue
+    return False
 
 
 def _missing_tex_files(tlmgr: str, run, which, exe: str) -> list[str] | None:
@@ -449,6 +475,9 @@ def fix_dependencies(
     ensure_tex_on_path(platform)  # already installed but not on PATH? just use it
     have_latex = bool(which("latex"))
     latex_missing = not (have_latex and which("dvisvgm"))
+    # A TinyTeX bundle (what the one-line installer unpacks) needs tlmgr for
+    # the packages apt would have provided on Linux.
+    bundle = platform == "linux" and _tex_is_bundle(platform, which("latex"))
     if not have_latex:
         if platform == "win32":
             # 1) the prebuilt Windows bundle (verified against a pinned sha256).
@@ -509,22 +538,23 @@ def fix_dependencies(
             ensure_tex_on_path(platform)
         else:
             _try("install TeX Live", _apt("texlive", "texlive-latex-extra", "dvisvgm"))
-    elif latex_missing and platform == "linux":
+    elif latex_missing and platform == "linux" and not bundle:
         # latex exists but dvisvgm does not (e.g. a bare texlive-base): apt can add just that
         _try("install dvisvgm via apt", _apt("dvisvgm"))
 
-    # TinyTeX needs extra packages (dvisvgm, standalone, ...) via tlmgr. On Linux apt provides them.
+    # TinyTeX needs extra packages (dvisvgm, standalone, ...) via tlmgr. On Linux apt provides them --
+    # unless the TeX in use is a TinyTeX bundle, which only tlmgr can complete.
     # Repair when TeX was just installed/incomplete, OR when TeX is present but kpsewhich shows a file Manim
     # needs is missing (seen on Windows: latex+dvisvgm present, babel-english missing, `doctor --fix` did
     # nothing). A healthy install is left alone: no tlmgr self-update, no network, no surprises.
-    tlmgr = which("tlmgr") if platform != "linux" else None
+    tlmgr = which("tlmgr") if (platform != "linux" or bundle) else None
     needs_repair = latex_missing
     if tlmgr and not latex_missing:
         missing = _missing_tex_files(tlmgr, run, which, ".exe" if platform == "win32" else "")
         needs_repair = bool(missing)
         if missing:
             actions.append("TeX is installed but these files are missing: " + ", ".join(missing))
-    if needs_repair and platform != "linux":
+    if needs_repair and (platform != "linux" or bundle):
         if tlmgr:
             exe = ".exe" if platform == "win32" else ""
             # dvisvgm first and on its own: Manim cannot work without it, and one bad package name

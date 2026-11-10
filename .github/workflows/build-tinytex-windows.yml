@@ -66,7 +66,7 @@ jobs:
           # A fresh TinyTeX is older than its package repository; tlmgr refuses to
           # install anything until it has updated itself.
           & $env:TLMGR update --self
-          & $env:TLMGR install standalone preview babel-english amsmath amsfonts dvisvgm xkeyval
+          & $env:TLMGR install standalone preview babel-english amsmath amsfonts dvisvgm xkeyval varwidth
           if ($LASTEXITCODE -ne 0) { Write-Host "::warning title=tlmgr::tlmgr exited $LASTEXITCODE" }
 
       - name: Check the bundle still compiles an equation

@@ -21,7 +21,7 @@ jobs:
           if [ -z "$TLMGR" ]; then echo "tlmgr not found" >&2; exit 1; fi
           echo "path=$TLMGR" >> "$GITHUB_OUTPUT"
       - name: Install exactly the packages Manim needs
-        run: ${{ steps.tlmgr.outputs.path }} install standalone preview babel-english amsmath amsfonts dvisvgm
+        run: ${{ steps.tlmgr.outputs.path }} install standalone preview babel-english amsmath amsfonts dvisvgm varwidth
       - name: Bake artifact
         run: |
           TEXDIR=$(dirname "$(dirname "$(dirname "${{ steps.tlmgr.outputs.path }}")")")

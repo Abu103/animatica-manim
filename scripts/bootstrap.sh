@@ -294,6 +294,22 @@ if [ "$DO_TEX" = "1" ] && ! have latex; then
     fi
     if [ -d "$TEX_DIR/bin" ]; then
       say "  -> TeX unpacked in $TEX_DIR (animatica finds it automatically)"
+      # The bundle carries most of what Manim needs but not all of it:
+      # standalone.cls loads varwidth for its border box, and without it every
+      # formula fails to compile and the equations degrade to plain text. The
+      # doctor knows the full list; ask its tlmgr for the rest.
+      for tlmgr in "$TEX_DIR"/bin/*/tlmgr; do
+        [ -x "$tlmgr" ] || continue
+        PKGS="$("$PY" -c \
+          'from animatica.doctor import TEX_PACKAGES; print(" ".join(TEX_PACKAGES))' \
+          2>/dev/null || true)"
+        if [ -n "$PKGS" ]; then
+          say "  -> completing the TeX packages (tlmgr install $PKGS)"
+          "$tlmgr" install $PKGS >/dev/null 2>&1 || \
+            say "  -> tlmgr could not install every package; run 'animatica doctor --fix' later"
+        fi
+        break
+      done
     else
       say "  -> skipped; equations will warn. Text and shapes render fine."
       say "     Add it later with: animatica doctor --fix"

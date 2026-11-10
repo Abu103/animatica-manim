@@ -247,6 +247,34 @@ Accept: the video is as long as the beat declares, the hold frame shows all
 
 ---
 
+---
+
+## M1.9 — B4f: the LaTeX packages are complete  [NORMAL; the owner's card, 2026-11-10]
+
+Why: neither TinyTeX bundle carries `varwidth.sty`, and `standalone.cls` loads
+it for its border box. Every formula therefore failed to compile and the
+equations degraded to plain text -- while `animatica doctor` reported LaTeX as
+fine, because the doctor only compiles a formula with `--deep`.
+
+Files: `src/animatica/doctor.py`, `scripts/bootstrap.sh`,
+`.github/workflows/build-tinytex.yml`, `.github/workflows/build-tinytex-windows.yml`,
+`tests/test_doctor_fix.py`.
+
+Steps:
+1. `varwidth` goes into `TEX_PACKAGES` and `NEEDED_TEX_FILES`, so `doctor --fix`
+   installs it and the check can see it.
+2. On Linux the doctor leaves the packages to apt -- but the one-line installer
+   unpacks a TinyTeX bundle, which only tlmgr can complete. The doctor has to
+   recognise that tree.
+3. The installer completes the bundle after unpacking it, with the doctor's own
+   package list.
+4. The bundle workflows install `varwidth` too, so the next bundle is complete.
+
+Accept: the doctor repairs a bundle on Linux, leaves the system TeX Live to
+apt, and the package lists carry varwidth.
+
+---
+
 ## M2 Evidence (this is the portfolio differentiator)
 
 ### T15 Reference prompt set  [trivial]
