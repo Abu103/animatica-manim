@@ -55,7 +55,8 @@ jobs:
             printf '%s\n' '\documentclass[preview]{standalone}' '\usepackage[english]{babel}' \
               '\usepackage{amsmath}' '\begin{document}$x^2$\end{document}' > texprobe.tex
             if latex -interaction=nonstopmode texprobe.tex >/dev/null 2>&1; then
-              echo "$BIN" >> "$GITHUB_ENV"
+              # $GITHUB_ENV takes NAME=VALUE pairs, not a bare path.
+              echo "PATH=$BIN:$PATH" >> "$GITHUB_ENV"
               echo "LaTeX: TinyTeX bundle ready"
               exit 0
             fi
@@ -120,7 +121,8 @@ jobs:
             printf '%s\n' '\documentclass[preview]{standalone}' '\usepackage[english]{babel}' \
               '\usepackage{amsmath}' '\begin{document}$x^2$\end{document}' > texprobe.tex
             if latex -interaction=nonstopmode texprobe.tex >/dev/null 2>&1; then
-              echo "$BIN" >> "$GITHUB_ENV"
+              # $GITHUB_ENV takes NAME=VALUE pairs, not a bare path.
+              echo "PATH=$BIN:$PATH" >> "$GITHUB_ENV"
               echo "LaTeX: TinyTeX bundle ready"
               exit 0
             fi
