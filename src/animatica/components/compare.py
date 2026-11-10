@@ -4,7 +4,7 @@ Duration: 2.2 s + 0.6 s per bullet (both sides combined).
 """
 from __future__ import annotations
 
-from typing import ClassVar
+from typing import Any, ClassVar
 
 from pydantic import BaseModel, Field, model_validator
 
