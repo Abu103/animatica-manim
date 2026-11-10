@@ -7,7 +7,7 @@
         {
           "component": "title_card",
           "params": {"title": "Conformance"},
-          "caption": "A single title card."
+          "caption": "Every explainer names its topic up front."
         }
       ]
     }
