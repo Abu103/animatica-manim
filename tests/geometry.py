@@ -94,12 +94,14 @@ class RecordingScene:
         self.played_run_times: list[float] = []
         self.waited_seconds: list[float] = []
         self.animations: list = []
+        self.plays: list[tuple[list, float]] = []
         self.mobjects: list = [VMobject()]  # non-empty so finish() fades them out
         self.warnings: list[str] = []
 
     def play(self, *anims, run_time: float = 0.0):
         self.played_run_times.append(run_time)
         self.animations.extend(anims)
+        self.plays.append((list(anims), run_time))
 
     def wait(self, seconds: float):
         if seconds > 1e-6:
@@ -121,6 +123,7 @@ class Beat:
     scene: RecordingScene
     mobjects: list = field(default_factory=list)
     texts: list = field(default_factory=list)
+    on_screen: dict = field(default_factory=dict)
     frame_width: float = 0.0
     frame_height: float = 0.0
     duration: float = 0.0
@@ -173,6 +176,50 @@ def _distinct(mobjects: list) -> list:
     return out
 
 
+def _collect_animation(anim, out: list) -> None:
+    """Collect every mobject an animation touches, nested ones included.
+
+    A ``LaggedStart`` holds its own animations and has an empty mobject of
+    its own, so without recursing the bars of a chart would never be
+    looked at.
+    """
+    nested = getattr(anim, "animations", None)
+    if nested:
+        for sub in nested:
+            _collect_animation(sub, out)
+    mob = getattr(anim, "mobject", None)
+    if mob is None:
+        return
+    if isinstance(mob, (list, tuple)):
+        out.extend(mob)
+    else:
+        out.append(mob)
+
+
+def _on_screen(scene: RecordingScene) -> dict:
+    """When each mobject is on screen, as (start, end).
+
+    A mobject is on screen from the animation that shows it until the
+    animation that hides it. A mobject that fades out while another one
+    fades in at the same place is being replaced, not colliding with it.
+    """
+    from manim import FadeOut
+
+    windows: dict[int, list[float]] = {}
+    t = 0.0
+    for anims, run_time in scene.plays:
+        for anim in anims:
+            mob = getattr(anim, "mobject", None)
+            if mob is None:
+                continue
+            if isinstance(anim, FadeOut):
+                windows.setdefault(id(mob), [0.0, t])[1] = t
+            else:
+                windows.setdefault(id(mob), [t, float("inf")])
+        t += run_time
+    return {key: (value[0], value[1]) for key, value in windows.items()}
+
+
 def play_component(
     component,
     params,
@@ -191,19 +238,14 @@ def play_component(
 
         mobjects = []
         for anim in scene.animations:
-            mob = getattr(anim, "mobject", None)
-            if mob is None:
-                continue
-            if isinstance(mob, (list, tuple)):
-                mobjects.extend(mob)
-            else:
-                mobjects.append(mob)
+            _collect_animation(anim, mobjects)
 
         texts = _distinct([t for m in mobjects for t in _texts_of(m)])
         return Beat(
             scene=scene,
             mobjects=mobjects,
             texts=texts,
+            on_screen=_on_screen(scene),
             frame_width=config.frame_width,
             frame_height=config.frame_height,
             duration=component.duration(params),
@@ -242,15 +284,32 @@ def _boxes_intersect(a, b, inflate: float = 0.05) -> bool:
 
 
 def assert_no_text_overlap(beat: Beat, inflate: float = 0.05) -> None:
-    """No two pieces of text may overlap."""
+    """No two pieces of text may be on screen in the same place."""
     texts = beat.texts
     for i in range(len(texts)):
         for j in range(i + 1, len(texts)):
             a, b = texts[i], texts[j]
-            assert not _boxes_intersect(a, b, inflate), (
+            if not _boxes_intersect(a, b, inflate):
+                continue
+            if not _shown_together(beat, a, b):
+                continue
+            assert False, (
                 f"{beat.label}: text overlaps -- "
                 f"{_describe(a)} vs {_describe(b)}"
             )
+
+
+def _shown_together(beat: Beat, a, b) -> bool:
+    """True if both texts are on screen at the same time.
+
+    A text that is faded out while the next one fades in at the same place
+    is being replaced, not colliding with it.
+    """
+    wa = beat.on_screen.get(id(a))
+    wb = beat.on_screen.get(id(b))
+    if wa is None or wb is None:
+        return True
+    return wa[0] < wb[1] and wb[0] < wa[1]
 
 
 def _describe(mob) -> str:
