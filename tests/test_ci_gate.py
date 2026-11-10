@@ -121,37 +121,40 @@ def test_allowlist_entries_need_a_reason(tmp_path):
         load_allowlist(path)
 
 
-def test_the_allowlist_has_an_entry_for_every_tolerated_warning():
-    """The allowlist is the record of what is still wrong; it must not be empty."""
-    from ci_render_gate import load_allowlist
+def test_the_allowlist_is_a_valid_file():
+    """The allowlist is the record of what is still wrong; it must stay readable.
 
+    It may be empty: that means nothing is tolerated and the gate is strict.
+    """
+    from ci_render_gate import ALLOWLIST_PATH, load_allowlist
+
+    assert ALLOWLIST_PATH.is_file(), f"{ALLOWLIST_PATH.name} must exist"
     allowlist = load_allowlist()
 
-    assert allowlist, "the allowlist must record the warnings that are still there"
     for component, kinds in allowlist.items():
         assert kinds, f"{component} has an empty entry in the allowlist"
 
 
 @pytest.mark.render
-@pytest.mark.parametrize("component,kind", _allowlist_entries())
-def test_allowlisted_warning_still_happens(component, kind, tmp_path):
+def test_allowlisted_warning_still_happens(tmp_path):
     """The allowlist may only shrink.
 
     A tolerated warning that no longer happens has to be removed from the
     allowlist; leaving it there hides a regression behind a stale excuse.
     """
-    from ci_render_gate import _render, storyboard_components, storyboard_paths, warning_kind
+    from ci_render_gate import _render, load_allowlist, storyboard_components, storyboard_paths, warning_kind
 
-    found = False
-    for storyboard in storyboard_paths():
-        if component not in storyboard_components(storyboard):
-            continue
-        _code, warnings, _fallbacks = _render(storyboard, tmp_path / storyboard.stem)
-        if any(warning_kind(w) == kind for w in warnings):
-            found = True
-            break
+    for component, kind in _allowlist_entries():
+        found = False
+        for storyboard in storyboard_paths():
+            if component not in storyboard_components(storyboard):
+                continue
+            _code, warnings, _fallbacks = _render(storyboard, tmp_path / storyboard.stem)
+            if any(warning_kind(w) == kind for w in warnings):
+                found = True
+                break
 
-    assert found, (
-        f"the allowlist tolerates {component}/{kind}, but it no longer happens; "
-        "remove it from the allowlist"
+        assert found, (
+            f"the allowlist tolerates {component}/{kind}, but it no longer happens; "
+            "remove it from the allowlist"
     )

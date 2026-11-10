@@ -47,6 +47,13 @@ _FOREGROUND_DOMINANCE_LIMIT = 0.5
 # evidence of clipping; a substantial run of edge pixels is.
 _CLIPPED_EDGE_FRACTION = 0.5
 
+#: Fraction of the frame height the burned-in caption covers at the bottom.
+#: The caption is pinned 5.5% above the bottom edge and is at most two lines
+#: tall, so it reaches a little over 16% up the frame. It is not the
+#: component's content and must not count towards how much of the frame the
+#: content covers.
+CAPTION_STRIP = 0.165
+
 
 @dataclass(frozen=True)
 class FrameLintConfig:
@@ -60,6 +67,7 @@ class FrameLintConfig:
     low_contrast_threshold: float = 3.0  # WCAG contrast-ratio floor
     blank_interval_seconds: float = 0.5  # max blank seconds between content frames
     clipped_edge_fraction: float = _CLIPPED_EDGE_FRACTION  # edge coverage for "clipped"
+    caption_strip: float = CAPTION_STRIP  # fraction of the frame height the caption covers
 
 
 @dataclass(frozen=True)
@@ -161,6 +169,61 @@ def _scene_at(scene_durations: list[float], t: float) -> int | None:
     return len(scene_durations) - 1 if scene_durations else None
 
 
+def _beats(
+    scene_durations: list[float], beat_durations: list[list[float]] | None
+) -> list[tuple[int, float, float]]:
+    """The (scene index, start, end) of every beat, or of every scene.
+
+    The small-content check judges a beat, not a frame: a beat that fades
+    in must not be condemned by its first frame. The storyboard knows how
+    long each beat runs; when it is not available the scene is used, which
+    is the same thing for a storyboard with one beat per scene.
+    """
+    beats: list[tuple[int, float, float]] = []
+    scene_start = 0.0
+    for i, dur in enumerate(scene_durations):
+        declared = beat_durations[i] if beat_durations and i < len(beat_durations) else None
+        if declared:
+            total = sum(declared) or dur
+            t = scene_start
+            for length in declared:
+                # Scale the declared lengths to the time the scene really took.
+                span = dur * (length / total)
+                beats.append((i, t, t + span))
+                t += span
+        else:
+            beats.append((i, scene_start, scene_start + dur))
+        scene_start += dur
+    return beats
+
+
+def _beat_at(beats: list[tuple[int, float, float]], t: float) -> int | None:
+    """Index of the beat a timestamp falls in."""
+    for i, (_scene, start, end) in enumerate(beats):
+        if start <= t < end:
+            return i
+    return len(beats) - 1 if beats else None
+
+
+def _content_coverage(mask: np.ndarray, caption_rows: int, area: int) -> tuple[float, int]:
+    """How much of the frame the content covers, and the size of its bbox.
+
+    The burned-in caption is not content: it sits in the bottom strip of
+    every frame and would otherwise make an empty beat look like it had
+    something on screen.
+    """
+    content = mask
+    if caption_rows > 0:
+        content = mask.copy()
+        content[-caption_rows:, :] = False
+    bbox = _bbox(content)
+    if bbox is None:
+        return 0.0, 0
+    top, left, bottom, right = bbox
+    bbox_area = (bottom - top) * (right - left)
+    return bbox_area / area, bbox_area
+
+
 def _margin_band_mask(mask: np.ndarray, margin_y: int, margin_x: int) -> np.ndarray:
     """Boolean mask of True pixels that fall inside the safe-area margin band."""
     band = np.zeros_like(mask)
@@ -180,14 +243,17 @@ def lint_video(
     scene_durations: list[float],
     config: FrameLintConfig | None = None,
     *,
+    beat_durations: list[list[float]] | None = None,
     decode: Callable = av.open,
 ) -> FrameLintResult:
     """Analyze `video_path` and return findings.
 
     `scene_durations` is the per-scene duration list (seconds) so timestamps
-    can be mapped to scene indices. `decode` is injectable for testing (it
-    must behave like ``av.open(path)`` returning a container with a video
-    stream supporting ``decode()``).
+    can be mapped to scene indices. `beat_durations` is the per-scene list
+    of beat lengths; it tells the lint where one beat ends and the next
+    begins, so a beat can be judged as a whole. `decode` is injectable for
+    testing (it must behave like ``av.open(path)`` returning a container
+    with a video stream supporting ``decode()``).
 
     Frames are *sampled*: only every ``1/sample_fps`` seconds receives full
     per-pixel quality analysis (contrast, safe-area, bbox). Every frame still
@@ -241,6 +307,14 @@ def lint_video(
         margin_x = max(1, int(width * config.safe_area_margin))
         margin_y = max(1, int(height * config.safe_area_margin))
         area = width * height
+
+        # The caption strip, in pixels: the burned-in caption is not content.
+        caption_rows = int(height * config.caption_strip) if config.caption_strip > 0 else 0
+
+        # The beats the small-content check judges, and the largest coverage
+        # each of them ever reached.
+        beats = _beats(list(scene_durations), beat_durations)
+        best_coverage: dict[int, tuple[float, int, float, int]] = {}
 
         # True sampling: analyze only every sample_interval seconds.
         sample_interval = 1.0 / config.sample_fps
@@ -398,24 +472,14 @@ def lint_video(
                     )
 
             # --- 4. Extremely small visible content ---
-            bbox = _bbox(mask)
-            if bbox is not None:
-                top, left, bottom, right = bbox
-                bbox_area = (bottom - top) * (right - left)
-                if bbox_area / area < config.small_content_threshold:
-                    result.findings.append(
-                        FrameFinding(
-                            kind="small_content",
-                            severity="warning",
-                            timestamp=ts,
-                            scene_index=scene_idx,
-                            detail=(
-                                f"content bbox {bbox_area}px ({bbox_area / area:.4%} of frame) "
-                                "is very small"
-                            ),
-                            frame_index=analyzed,
-                        )
-                    )
+            # Judged per beat: a beat that fades in is judged on the most it
+            # ever showed, not on its first frame.
+            coverage, bbox_area = _content_coverage(mask, caption_rows, area)
+            beat = _beat_at(beats, ts)
+            if beat is not None:
+                previous = best_coverage.get(beat)
+                if previous is None or coverage > previous[0]:
+                    best_coverage[beat] = (coverage, bbox_area, ts, scene_idx)
 
             # --- 5. Low contrast between foreground and background ---
             if nonbg_fraction < _FOREGROUND_DOMINANCE_LIMIT:
@@ -442,6 +506,31 @@ def lint_video(
                         )
 
             analyzed += 1
+
+        # A beat that never covered more than the threshold is reported
+        # once, with the most it ever showed.
+        for beat in sorted(best_coverage):
+            coverage, bbox_area, last_ts, scene_idx = best_coverage[beat]
+            if coverage >= config.small_content_threshold:
+                continue
+            if bbox_area:
+                detail = (
+                    f"the beat never covered more than {coverage:.4%} of the frame "
+                    f"(content bbox {bbox_area}px)"
+                )
+            else:
+                detail = "the beat never showed any content outside the caption"
+            result.findings.append(
+                FrameFinding(
+                    kind="small_content",
+                    severity="warning",
+                    timestamp=last_ts,
+                    scene_index=scene_idx,
+                    detail=detail,
+                    frame_index=analyzed,
+                )
+            )
+        result.findings.sort(key=lambda f: f.timestamp)
     except Exception as exc:  # pragma: no cover - defensive
         result.findings.append(
             FrameFinding(

@@ -24,7 +24,7 @@ from animatica.storyboard.models import Storyboard, dump_storyboard, load_storyb
 
 # Frame lint is a non-fatal post-render quality check. Imported here so the
 # pipeline can wire it into ``make_video`` without the CLI knowing about PyAV.
-from animatica.frame_lint import FrameLintConfig, lint_video, lint_result_to_warnings  # noqa: PLC0415
+from animatica.frame_lint import CAPTION_STRIP, FrameLintConfig, lint_video, lint_result_to_warnings  # noqa: PLC0415
 
 
 @dataclass
@@ -48,6 +48,26 @@ def _vtt_timestamp(seconds: float) -> str:
     s = total // 1000
     ms = total % 1000
     return f"{h:02d}:{m:02d}:{s:02d}.{ms:03d}"
+
+
+def _beat_durations(sb: Storyboard, registry) -> list[list[float]]:
+    """How long each beat of each scene runs, in the storyboard's order.
+
+    The frame lint judges a beat as a whole: a beat that fades in must not
+    be condemned by its first frame, and a beat that never showed anything
+    must still be reported.
+    """
+    out: list[list[float]] = []
+    for scene in sb.scenes:
+        durations: list[float] = []
+        for beat in scene.beats:
+            try:
+                comp = registry.get(beat.component)
+                durations.append(comp.duration(comp.Params.model_validate(beat.params)))
+            except Exception:  # pragma: no cover - the storyboard is validated earlier
+                durations.append(0.0)
+        out.append(durations)
+    return out
 
 
 def _write_captions(sb: Storyboard, registry, path: Path) -> None:
@@ -211,11 +231,14 @@ def make_video(
     # ---- frame lint (non-fatal post-render quality check) ----
     if frame_lint:
         progress.advance("lint", "checking frames")
-        lint_config = FrameLintConfig(enabled=True)
+        # With no caption burned in there is no caption strip to leave out of
+        # the coverage measurement.
+        lint_config = FrameLintConfig(enabled=True, caption_strip=CAPTION_STRIP if captions else 0.0)
         lint_result = lint_video(
             str(video),
             render_result.durations,
             lint_config,
+            beat_durations=_beat_durations(sb, registry),
         )
         warnings.extend(lint_result_to_warnings(lint_result))
 
