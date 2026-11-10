@@ -12,7 +12,7 @@ from contextlib import contextmanager
 
 import pytest
 
-from animatica.components._draw import make_caption
+from animatica.components._draw import CAPTION_CONTENT_GAP, caption_band_top, make_caption
 from animatica.components.theme import PALETTES
 
 
@@ -177,6 +177,74 @@ def test_caption_pinned_to_bottom_with_buff():
         assert abs(cap.get_bottom()[1] - expected_bottom) < 0.5, (
             f"caption bottom {cap.get_bottom()[1]:.2f} not near expected {expected_bottom:.2f}"
         )
+
+
+# ---------------------------------------------------------------------------
+# The caption must stay inside the 5% safe-area margin
+# ---------------------------------------------------------------------------
+
+#: frame-lint keeps this fraction of each edge free of content.
+SAFE_AREA_MARGIN = 0.05
+
+
+@pytest.mark.parametrize("fw,fh", [(14.222222222222221, 8.0), (14.222222222222221, 8.0)])
+@pytest.mark.parametrize("label,text", [
+    ("one-line", "Comparing two icy moons"),
+    ("two-line", "Positive charges gather at the cloud's top, negative charges at its "
+                 "base, and the ground below turns positive."),
+])
+def test_caption_bottom_clears_safe_area(fw, fh, label, text):
+    """The caption's bbox bottom must be above the safe-area margin.
+
+    frame-lint flags any non-background pixel inside the outer 5% of the
+    frame. A caption pinned with a 4% buffer puts its descenders inside
+    that band, so every frame of every video warns.
+    """
+    with _frame_dims(fw, fh):
+        cap = make_caption(text, COLORS)
+        bottom = cap.get_bottom()[1]
+
+    limit = -fh / 2 + SAFE_AREA_MARGIN * fh
+    assert bottom > limit, (
+        f"{label} caption bottom {bottom:.4f} is inside the "
+        f"{SAFE_AREA_MARGIN:.0%} safe-area margin (limit {limit:.4f})"
+    )
+
+
+def test_caption_band_top_follows_the_real_caption():
+    """Layout code needs the caption's real top to reserve space for it.
+
+    A one-line caption leaves more room than a two-line one, so the band must
+    be derived from the caption mobject rather than a constant.
+    """
+    with _frame_dims(LANDSCAPE_W, LANDSCAPE_H):
+        one = make_caption("Short", COLORS)
+        two = make_caption(
+            "A much longer caption that wraps onto a second line and so "
+            "reaches higher up the frame than the short one does",
+            COLORS,
+        )
+        band_one = caption_band_top(one)
+        band_two = caption_band_top(two)
+
+    assert band_two > band_one, (
+        f"two-line caption band {band_two:.4f} must sit higher than the "
+        f"one-line band {band_one:.4f}, leaving less room for content"
+    )
+    assert band_one > one.get_top()[1], "band must clear the caption's top"
+
+
+def test_caption_band_top_without_a_caption():
+    """With no caption on screen the band is the safe-area line, plus a gap."""
+    with _frame_dims(LANDSCAPE_W, LANDSCAPE_H):
+        band = caption_band_top()
+
+    limit = (
+        -LANDSCAPE_H / 2
+        + SAFE_AREA_MARGIN * LANDSCAPE_H
+        + CAPTION_CONTENT_GAP
+    )
+    assert band == pytest.approx(limit, abs=1e-6)
 
 
 # ---------------------------------------------------------------------------

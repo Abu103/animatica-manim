@@ -103,18 +103,67 @@ def test_column_tops_aligned():
     )
 
 
-def test_content_above_caption_band():
-    """Bottom of content above 1.2u from bottom of frame."""
-    from manim import config
+def _make_caption(text: str):
+    """A real caption mobject, as the scene builds one per beat."""
+    from animatica.components._draw import make_caption
+    from animatica.components.theme import PALETTES
 
-    limit = -config.frame_height / 2 + 1.2
+    return make_caption(text, PALETTES["dark-blue"])
+
+
+def test_content_above_caption_band():
+    """Bottom of content stays above the real caption's top."""
+    from animatica.components._draw import caption_band_top
+
     with _frame_dims(14.22, 8.0):
         comp = Compare()
         p = _make_params(3, 3)
-        title, left, right = comp._build_layout(p, _make_colors())
+        caption = _make_caption("Comparing two icy moons")
+        limit = caption_band_top(caption)
+        title, left, right = comp._build_layout(p, _make_colors(), caption)
 
     bottom = min(title.get_bottom()[1], left.get_bottom()[1], right.get_bottom()[1])
-    assert bottom > limit, f"content bottom {bottom:.2f} not above caption band limit {limit:.2f}"
+    assert bottom >= limit - 1e-6, (
+        f"content bottom {bottom:.4f} below caption band limit {limit:.4f}"
+    )
+    assert bottom > caption.get_top()[1], (
+        f"content bottom {bottom:.4f} overlaps the caption top {caption.get_top()[1]:.4f}"
+    )
+
+
+def test_caption_band_derived_from_real_caption():
+    """A taller caption must leave less room for the columns.
+
+    The band used to be a hardcoded 1.2u, which is wrong for a caption that
+    wraps onto two lines: the columns then overlapped the caption.
+    """
+    from animatica.components._draw import caption_band_top
+
+    long_caption_text = (
+        "Positive charges gather at the cloud's top, negative charges at its base, "
+        "and the ground below turns positive."
+    )
+
+    with _frame_dims(14.22, 8.0):
+        comp = Compare()
+        p = _make_params(3, 3)
+        one = _make_caption("Comparing two icy moons")
+        two = _make_caption(long_caption_text)
+        band_one = caption_band_top(one)
+        band_two = caption_band_top(two)
+        title, left, right = comp._build_layout(p, _make_colors(), two)
+
+    assert band_two > band_one, (
+        f"two-line caption band {band_two:.3f} must sit above the one-line "
+        f"band {band_one:.3f}"
+    )
+    bottom = min(title.get_bottom()[1], left.get_bottom()[1], right.get_bottom()[1])
+    assert bottom >= band_two - 1e-6, (
+        f"content bottom {bottom:.3f} below the two-line caption band {band_two:.3f}"
+    )
+    assert bottom > two.get_top()[1], (
+        f"content bottom {bottom:.3f} overlaps the two-line caption top {two.get_top()[1]:.3f}"
+    )
 
 
 @pytest.mark.parametrize("bullets", [1, 2, 3, 4, 5, 6])
@@ -209,7 +258,7 @@ def _long_params():
     return Compare.Params(**beat.params)
 
 
-def _layout_for(params, colors, fw, fh):
+def _layout_for(params, colors, fw, fh, caption=None):
     from manim import config
 
     old_w, old_h = config.frame_width, config.frame_height
@@ -217,7 +266,7 @@ def _layout_for(params, colors, fw, fh):
     config.frame_height = fh
     try:
         comp = Compare()
-        return comp._build_layout(params, colors)
+        return comp._build_layout(params, colors, caption)
     finally:
         config.frame_width = old_w
         config.frame_height = old_h
@@ -315,17 +364,24 @@ def test_first_bullet_tops_equal(fw, fh):
 
 @pytest.mark.parametrize("fw,fh", [(14.22, 8.0), (14.22, 8.0)])
 def test_content_above_caption_band_6_bullets(fw, fh):
-    """Content bottom above caption band for 6 long bullets per side."""
-    from manim import config
+    """Content bottom above the caption band for 6 long bullets per side."""
+    from animatica.components._draw import caption_band_top
 
     params = _long_params()
     colors = _make_colors()
-    limit = -config.frame_height / 2 + 1.2
-    title, left, right = _layout_for(params, colors, fw, fh)
+    caption = _make_caption("Comparing two icy moons")
+    limit = caption_band_top(caption)
+    title, left, right = _layout_for(params, colors, fw, fh, caption=caption)
 
     bottom = min(title.get_bottom()[1], left.get_bottom()[1], right.get_bottom()[1])
-    assert bottom > limit, (
-        f"content bottom {bottom:.2f}u not above caption band limit {limit:.2f}u"
+    # The columns are fitted to exactly fill the space above the band, so the
+    # bottom may sit on the band; it must never drop below it, and it must
+    # never overlap the caption itself.
+    assert bottom >= limit - 1e-6, (
+        f"content bottom {bottom:.4f}u below caption band limit {limit:.4f}u"
+    )
+    assert bottom > caption.get_top()[1], (
+        f"content bottom {bottom:.4f}u overlaps the caption top {caption.get_top()[1]:.4f}u"
     )
 
 

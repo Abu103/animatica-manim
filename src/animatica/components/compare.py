@@ -9,6 +9,7 @@ from typing import ClassVar
 from pydantic import BaseModel, Field, model_validator
 
 from animatica.components._draw import MIN_FONT_SIZE, Clock, fit, prepare, wrap
+from animatica.components._draw import caption_band_top as caption_band_top_of
 from animatica.components.base import Component
 from animatica.storyboard.models import MAX_TEXT
 
@@ -44,8 +45,13 @@ class Compare(Component):
         lines += [f"  - {b}" for b in p.right["bullets"]]  # type: ignore[attr-defined]
         return p.title + ":\n" + "\n".join(lines)  # type: ignore[attr-defined]
 
-    def _build_layout(self, p: BaseModel, colors) -> tuple:
-        """Build and position title + left/right columns. No scene calls."""
+    def _build_layout(self, p: BaseModel, colors, caption: Any = None) -> tuple:
+        """Build and position title + left/right columns. No scene calls.
+
+        ``caption`` is the scene's real caption mobject, if there is one. Its
+        height depends on how the caption text wraps, so the band the columns
+        must stay above is derived from it rather than assumed.
+        """
         from manim import DOWN, LEFT, RIGHT, Text, UP, VGroup
         from manim import config
 
@@ -68,9 +74,9 @@ class Compare(Component):
 
         # Create title to compute its height for max_height
         title = Text(wrap(p.title, 45), font_size=MIN_FONT_SIZE + 8, color=colors.accent)
-        # Available height for cols: from just below title to caption band top
+        # Available height for cols: from just below title to the caption band top
         cols_top = config.frame_height / 2 - 0.6 - title.height - 0.5
-        caption_band_top = -config.frame_height / 2 + 1.2
+        caption_band_top = caption_band_top_of(caption)
         max_height = cols_top - caption_band_top
 
         # Fit both columns together as one group (shrink only, about group centre)
@@ -90,7 +96,11 @@ class Compare(Component):
 
         prepare(scene, colors)
 
-        title, left, right = self._build_layout(p, colors)
+        # The scene builds the caption before the beat plays and keeps it on
+        # scene.caption_mobject; pass it so the columns can be sized against
+        # the caption's real height instead of a guessed band.
+        caption = getattr(scene, "caption_mobject", None)
+        title, left, right = self._build_layout(p, colors, caption)
         clock = Clock(scene, self.duration(p))
         clock.play(FadeIn(title), run_time=0.6)
         left_items = [left[0], *left[1]]
