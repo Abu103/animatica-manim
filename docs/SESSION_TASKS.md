@@ -1,10 +1,21 @@
 # Animatica session log (live, edit as you go)
-Updated: 2026-11-08. Newest status on top. Any Claude session can resume from here.
+Updated: 2026-11-10. Newest status on top. Any Claude session can resume from here.
 
 ## Context
 - Repo: https://github.com/Abu103/animatica-manim (released v0.1.1 with tinytex-manim.zip asset, sha256 83fde080..., download verified + LaTeX compile verified from sandbox 2026-11-04)
 - User runs on Windows, provider nim, model nvidia/nemotron-3.5-super-vl-120b-a12b
 - Goal: stable demo to show others; then features that weak/free models (nemotron 120b, "3 super 550b") can drive reliably
+## Status (2026-11-10, Hermes session, card B4c "make the tests fast")
+- Branch: `hermes/b4-conformance-clean` (B4 + B4b + B4c), 19 commits on `main` (`0c0b444`). **Not pushed.**
+- Changed (B4c, 7 commits): `src/animatica/backends/scheduler.py`, new `src/animatica/render_cache.py`, `src/animatica/conformance.py`, `scripts/ci_render_gate.py`, `scripts/ci_tests.py`, `tests/conftest.py`, `tests/test_conformance.py`, `tests/test_ci_gate.py`, new `tests/test_render_pool.py`, new `tests/test_render_cache.py`, new `tests/test_text_cache.py`, `.github/workflows/ci.yml`, `pyproject.toml`, `docs/HERMES_PLAYBOOK.md`, `docs/TASKS_FOR_HERMES_V02.md`.
+- Measured on the owner's machine (i5-1135G7, 4 cores / 8 threads, 7.7 GB RAM, 20 GB free disk): full suite **369 s -> 156 s**; render gate **145 s -> 68 s cold / 1.9 s warm**; corpus renders per CI run **35 -> 18**.
+- Root cause of the flaky geometry tests under `-n 4`: Manim caches every rendered text as an SVG under `<media_dir>/texts`, keyed by the text and the style but **not by the process**. Two workers that render the same string write the same file and one can read it half written. Proof: 8 processes rendering one string into one media directory -> `xml.etree.ElementTree.ParseError: no element found`. Fix: every process gets its own `media_dir` (`tests/conftest.py`).
+- The conformance corpus is rendered **once** per CI run now, by the render gate, which also checks the scene count and the duration `expected.json` promises. The suite stopped rendering it (88 s of the 369 s for the same evidence).
+- The render cache is keyed by the storyboard, the quality, the interpreter, the Manim version and a fingerprint of every source file in the package, so a changed component is never served from the cache. `ANIMATICA_NO_RENDER_CACHE=1` forces a real render.
+- Verified: `python scripts/ci_tests.py` -> 934 passed, 4 failed, 0 skipped (the 4 are the pre-existing environment failures: `test_bootstrap_script.py` x3, `test_tex_path.py` x1). `python scripts/ci_render_gate.py` -> exit 0, `CLEAN: 18 storyboard(s) rendered within the allowlist`, twice (67.7 s cold, 1.9 s warm). The workflow YAML parses; every bash block in it passes `bash -n`.
+- NOT verified: nothing is pushed and no CI has run on this branch. The CI LaTeX change (the 45 MB TinyTeX bundle instead of the 10m47s apt step) is **UNVERIFIED until the Linux job is green**: the bundle carries no `varwidth`, which `standalone.cls` requires, so the step installs it with `tlmgr` and then compiles a probe document; if the probe fails the step falls back to apt, so the job is never weaker than before. `tlmgr` is a symlink to `tlmgr.pl` and needs perl, which the ubuntu runner has.
+- OPEN ITEM (found, not fixed): neither the Linux nor the Windows TinyTeX bundle carries `varwidth.sty`, and `doctor.py`'s `NEEDED_TEX_FILES` does not list it -- so `animatica doctor` reports LaTeX as OK while the equations silently degrade to plain text. The bundles are built by `.github/workflows/build-tinytex.yml` and `build-tinytex-windows.yml`.
+
 ## Status (2026-11-08, Hermes session, task cards T10 + T11 + T12 + T13)
 
 ## Status (2026-11-08, Hermes docs-lookup-skill session)
