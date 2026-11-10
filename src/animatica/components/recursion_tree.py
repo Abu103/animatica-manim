@@ -9,12 +9,17 @@ from typing import ClassVar
 
 from pydantic import BaseModel, Field, field_validator
 
-from animatica.components._draw import MIN_FONT_SIZE, Clock, fit, prepare, wrap
+from animatica.components._draw import FADE_OUT, MIN_FONT_SIZE, Clock, fit, prepare, wrap
 from animatica.components.base import Component
 from animatica.storyboard.models import MAX_TEXT
 
 MAX_NODES = 31
 SUPPORTED_FNS = ("fib",)
+
+#: Time a node and an edge take when the tree is drawn at full speed. The
+#: beat's budget is shared out between them, so a bigger tree draws faster.
+NODE_TIME = 0.15
+EDGE_TIME = 0.1
 
 
 def tree_layout(fn: str, n: int) -> dict[int, tuple[tuple, float, float]]:
@@ -125,9 +130,19 @@ class RecursionTree(Component):
         group = VGroup(title, vg_nodes, vg_edges)
         fit(group)
         clock = Clock(scene, self.duration(p))
-        clock.play(FadeIn(title), run_time=0.5)
+        # The beat has a fixed budget, so the time the nodes and the edges
+        # take is shared out of it instead of being fixed per item. Before,
+        # a tree with 15 nodes and 25 edges ran 0.35s past its duration and
+        # the captions drifted out of sync.
+        title_time = 0.5
+        raw = NODE_TIME * len(vg_nodes) + EDGE_TIME * len(vg_edges)
+        budget = self.duration(p) - FADE_OUT - title_time
+        scale = budget / raw if raw > 0 else 1.0
+        node_time = NODE_TIME * scale
+        edge_time = EDGE_TIME * scale
+        clock.play(FadeIn(title), run_time=title_time)
         for node in vg_nodes:
-            clock.play(FadeIn(node), run_time=0.15)
+            clock.play(FadeIn(node), run_time=node_time)
         for edge in vg_edges:
-            clock.play(FadeIn(edge), run_time=0.1)
+            clock.play(FadeIn(edge), run_time=edge_time)
         clock.finish()

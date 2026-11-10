@@ -2,6 +2,11 @@ import pytest
 
 from animatica.components.recursion_tree import RecursionTree, tree_layout
 from animatica.components.registry import default_registry
+from geometry import (
+    RESOLUTIONS,
+    assert_beat_timing,
+    play_component,
+)
 
 
 def test_registered():
@@ -38,3 +43,26 @@ def test_rejects_bad_params(bad):
 def test_fallback_text():
     p = RecursionTree.Params(title="Fib calls", fn="fib", n=4)
     assert "fib" in RecursionTree().fallback_text(p).lower()
+
+
+# ---------------------------------------------------------------------------
+# B4: the recursion tree has to fit the clock it declared
+# ---------------------------------------------------------------------------
+
+
+def _conformance_params() -> RecursionTree.Params:
+    """The parameters of the conformance storyboard, tests/conformance/recursion_tree.json."""
+    return RecursionTree.Params(title="Fibonacci call tree", fn="fib", n=5)
+
+
+@pytest.mark.parametrize("width,height", RESOLUTIONS)
+def test_recursion_tree_beat_fits_its_declared_duration(width, height):
+    """The animations must fit inside the duration the component declared.
+
+    Every node and every edge had a fixed fade time, so a tree with 15
+    nodes and 25 edges ran for 5.55s in a beat declared as 5.2s and the
+    captions drifted out of sync.
+    """
+    beat = play_component(RecursionTree(), _conformance_params(), width, height)
+
+    assert_beat_timing(beat)
