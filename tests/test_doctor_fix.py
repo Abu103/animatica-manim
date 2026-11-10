@@ -23,6 +23,68 @@ def test_tex_packages_include_the_ones_that_bit_us():
         assert pkg in TEX_PACKAGES
 
 
+def test_varwidth_is_in_the_package_lists():
+    """standalone.cls loads varwidth; without it every formula fails.
+
+    Neither TinyTeX bundle carries it, so the equations degraded to plain
+    text while the doctor reported LaTeX as fine.
+    """
+    from animatica.doctor import NEEDED_TEX_FILES
+
+    assert "varwidth" in TEX_PACKAGES
+    assert NEEDED_TEX_FILES["varwidth.sty"] == "varwidth"
+
+
+def test_a_tex_bundle_on_linux_is_repaired_with_tlmgr(monkeypatch, tmp_path):
+    """The one-line installer unpacks a TinyTeX bundle on Linux.
+
+    That tree needs tlmgr for the packages apt would have provided, so the
+    doctor has to use tlmgr there instead of leaving the bundle incomplete.
+    """
+    from animatica import doctor
+
+    bundle = tmp_path / ".tex" / "bin" / "x86_64-linux"
+    bundle.mkdir(parents=True)
+    latex = bundle / "latex"
+    latex.write_text("", encoding="utf-8")
+    tlmgr = bundle / "tlmgr"
+    tlmgr.write_text("", encoding="utf-8")
+
+    monkeypatch.setattr(doctor, "tinytex_bin_dirs", lambda platform, env=None: [bundle])
+
+    run = FakeRun()
+    which = lambda name: str(latex if name == "latex" else tlmgr if name == "tlmgr" else name)
+    actions = doctor.fix_dependencies(
+        run=run,
+        which=which,
+        platform="linux",
+        bundled_ffmpeg=lambda: "/bundled/ffmpeg",
+        sleep=lambda _: None,
+    )
+
+    assert any("tlmgr" in c and "install" in c for c in run.commands), run.commands
+    assert any("varwidth" in c for c in run.commands), run.commands
+
+
+def test_the_system_texlive_on_linux_is_left_to_apt(monkeypatch):
+    """The system's TeX Live comes from apt; tlmgr must not touch it."""
+    from animatica import doctor
+
+    monkeypatch.setattr(doctor, "tinytex_bin_dirs", lambda platform, env=None: [])
+
+    run = FakeRun()
+    which = lambda name: "/usr/bin/" + name if name in {"latex", "tlmgr"} else None
+    doctor.fix_dependencies(
+        run=run,
+        which=which,
+        platform="linux",
+        bundled_ffmpeg=lambda: "/bundled/ffmpeg",
+        sleep=lambda _: None,
+    )
+
+    assert not any("tlmgr" in c for c in run.commands), run.commands
+
+
 def test_fix_installs_tinytex_and_packages_on_windows(monkeypatch):
     run = FakeRun()
     which = lambda name: "/bin/tlmgr" if name == "tlmgr" else None

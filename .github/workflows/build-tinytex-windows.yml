@@ -66,7 +66,7 @@ jobs:
           # A fresh TinyTeX is older than its package repository; tlmgr refuses to
           # install anything until it has updated itself.
           & $env:TLMGR update --self
-          & $env:TLMGR install standalone preview babel-english amsmath amsfonts dvisvgm xkeyval
+          & $env:TLMGR install standalone preview babel-english amsmath amsfonts dvisvgm xkeyval varwidth
           if ($LASTEXITCODE -ne 0) { Write-Host "::warning title=tlmgr::tlmgr exited $LASTEXITCODE" }
 
       - name: Check the bundle still compiles an equation
@@ -158,20 +158,26 @@ jobs:
           & $py -c @"
           import sys
           from pathlib import Path
-          from animatica.tex_bundle import install_windows_bundle
-          ok, message = install_windows_bundle(Path.cwd())
+          from animatica.tex_bundle import bundle_bin_dirs, install_windows_bundle, user_data_tex_dir
+          root = Path.cwd()
+          ok, message = install_windows_bundle(root)
           print('bundle install ok:', ok)
           print('message:', message)
           if not ok:
               sys.exit(1)
-          bin_dir = Path('.tex') / 'bin' / 'windows'
-          if not (bin_dir / 'latex.exe').is_file():
-              print('latex.exe missing from', bin_dir)
+          # The installer prefers the per-user data dir and falls back to
+          # <root>/.tex, so look in both: with the product's own helper, the
+          # check follows the product instead of guessing where it went.
+          dirs = bundle_bin_dirs(root, user_dir=user_data_tex_dir())
+          found = None
+          for candidate in dirs:
+              if (candidate / 'latex.exe').is_file() and (candidate / 'dvisvgm.exe').is_file():
+                  found = candidate
+                  break
+          if found is None:
+              print('latex.exe/dvisvgm.exe missing from', [str(d) for d in dirs])
               sys.exit(1)
-          if not (bin_dir / 'dvisvgm.exe').is_file():
-              print('dvisvgm.exe missing from', bin_dir)
-              sys.exit(1)
-          print('bundle verified: latex.exe and dvisvgm.exe are present')
+          print('bundle verified: latex.exe and dvisvgm.exe are present in', found)
           "@
           if ($LASTEXITCODE -ne 0) { throw "the bundle did not install correctly" }
 
