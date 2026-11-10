@@ -135,12 +135,8 @@ def test_array_viz_beat_fits_its_declared_duration(width, height):
 
 
 # ---------------------------------------------------------------------------
-# B4b: the value boxes fill the stage, the title keeps its place
+# B4b: the value boxes fill the stage
 # ---------------------------------------------------------------------------
-
-#: The title's bounding box, captured before the boxes were scaled up. The
-#: boxes grow; the title does not move and does not change size.
-TITLE_BBOX = (-1.961, 1.961, 0.162, 0.700)
 
 
 def _array_title(beat):
@@ -183,22 +179,36 @@ def test_array_viz_boxes_fill_the_stage(width, height):
     )
 
 
+# ---------------------------------------------------------------------------
+# B4e: the title is at the top of the frame, centred, above the boxes
+# ---------------------------------------------------------------------------
+
+
 @pytest.mark.parametrize("width,height", RESOLUTIONS)
-def test_array_viz_title_keeps_its_place(width, height):
-    """Scaling the boxes must not move or resize the title."""
+def test_array_viz_title_is_centred_above_the_boxes(width, height):
+    """The title sits at the top of the frame, centred, above the boxes.
+
+    It used to keep the place the layout gave it, which left it in the
+    middle of the frame with the boxes hanging below it and the whole top
+    of the frame empty.
+    """
     beat = play_component(ArrayViz(), _array_params(), width, height)
     title = _array_title(beat)
-    left, right, bottom, top = TITLE_BBOX
+    boxes = _array_boxes(beat)
+    half_height = beat.frame_height / 2
 
-    assert title.get_left()[0] == pytest.approx(left, abs=1e-3), (
-        f"the title moved to x={title.get_left()[0]:.3f}, it was {left}"
+    assert title.get_center()[0] == pytest.approx(0.0, abs=1e-3), (
+        f"the title is centred at x={title.get_center()[0]:.3f}, it should be "
+        "centred in the frame"
     )
-    assert title.get_right()[0] == pytest.approx(right, abs=1e-3), (
-        f"the title moved to x={title.get_right()[0]:.3f}, it was {right}"
+    assert title.get_top()[1] == pytest.approx(half_height - 0.6, abs=1e-3), (
+        f"the title's top is at y={title.get_top()[1]:.3f}, it should sit "
+        f"{0.6:.1f} below the top edge (y={half_height - 0.6:.3f})"
     )
-    assert title.get_bottom()[1] == pytest.approx(bottom, abs=1e-3), (
-        f"the title moved to y={title.get_bottom()[1]:.3f}, it was {bottom}"
+    assert title.get_bottom()[1] > boxes.get_top()[1], (
+        f"the title's bottom is at y={title.get_bottom()[1]:.3f} and the "
+        f"boxes' top at y={boxes.get_top()[1]:.3f}: the title must be above "
+        "the boxes"
     )
-    assert title.get_top()[1] == pytest.approx(top, abs=1e-3), (
-        f"the title moved to y={title.get_top()[1]:.3f}, it was {top}"
-    )
+    assert_inside_safe_area(beat)
+    assert_no_text_overlap(beat)
