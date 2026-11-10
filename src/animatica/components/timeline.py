@@ -35,7 +35,7 @@ class Timeline(Component):
         return p.title + ":\n" + "\n".join(lines)  # type: ignore[attr-defined]
 
     def play(self, scene, p, colors) -> None:
-        from manim import DOWN, FadeIn, Line, Text, VGroup
+        from manim import DOWN, UP, FadeIn, Line, Text, VGroup
 
         prepare(scene, colors)
         n = len(p.events)  # type: ignore[attr-defined]
