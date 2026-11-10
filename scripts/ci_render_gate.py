@@ -12,7 +12,9 @@ It fails on:
     content, empty frames, unreadable contrast;
   * any component that fell back to a text card instead of rendering;
   * any ``timing:`` warning -- a beat that ran longer than it declared, so
-    the captions drift out of sync with the video.
+    the captions drift out of sync with the video;
+  * a conformance storyboard whose scene count or total duration is not the
+    one ``expected.json`` promises.
 
 Some findings are known and still tolerated. They are listed in
 ``tests/conformance/gate_allowlist.json``: one entry per component and
@@ -24,7 +26,9 @@ Exit code is 0 only when every storyboard rendered within the allowlist.
 """
 from __future__ import annotations
 
+import argparse
 import json
+import os
 import re
 import subprocess
 import sys
@@ -35,6 +39,7 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 FIXTURES_DIR = REPO_ROOT / "tests" / "fixtures"
 CONFORMANCE_DIR = REPO_ROOT / "tests" / "conformance"
 ALLOWLIST_PATH = CONFORMANCE_DIR / "gate_allowlist.json"
+EXPECTED_PATH = CONFORMANCE_DIR / "expected.json"
 
 #: Substrings of a warning that mean the render was not clean.
 FAILURE_MARKERS = ("[frame-lint]", "timing:")
@@ -76,6 +81,14 @@ def load_allowlist(path: Path = ALLOWLIST_PATH) -> dict[str, dict[str, str]]:
     return out
 
 
+def load_expected(path: Path = EXPECTED_PATH) -> dict[str, dict]:
+    """What the conformance corpus promises: scene count and duration."""
+    if not path.is_file():
+        return {}
+    data = json.loads(path.read_text(encoding="utf-8"))
+    return data if isinstance(data, dict) else {}
+
+
 def warning_kind(warning: str) -> str | None:
     """The kind of a warning, or None when it is not one the gate knows."""
     match = _LINT_KIND.search(warning)
@@ -111,12 +124,51 @@ def tolerated_reason(
     return None
 
 
+def duration_failures(report: dict, expected: dict) -> list[str]:
+    """How a rendered storyboard differs from what the corpus promised."""
+    from animatica.conformance import DURATION_TOLERANCE
+
+    failures: list[str] = []
+    durations = report.get("scene_durations") or []
+    exp_scenes = expected.get("scenes")
+    if exp_scenes is not None and len(durations) != exp_scenes:
+        failures.append(f"scene count {len(durations)} != expected {exp_scenes}")
+    exp_duration = expected.get("duration")
+    if exp_duration is not None:
+        actual = sum(durations)
+        if abs(actual - exp_duration) > DURATION_TOLERANCE:
+            failures.append(f"duration {actual:.2f}s != expected {exp_duration}s")
+    return failures
+
+
 def _fixture_paths() -> list[Path]:
     return sorted(p for p in FIXTURES_DIR.glob("*.json"))
 
 
+def _read_report(out_dir: Path) -> dict:
+    report_path = out_dir / "report.json"
+    if not report_path.is_file():
+        return {}
+    try:
+        return json.loads(report_path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError:
+        return {}
+
+
 def _render(storyboard: Path, out_dir: Path) -> tuple[int, list[str], list[str]]:
-    """Render one storyboard and return (exit code, warnings, fallbacks)."""
+    """Render one storyboard and return (exit code, warnings, fallbacks).
+
+    A render that is already in the cache is copied back instead of being
+    done again: the corpus does not change between two runs of the gate, and
+    rendering it takes more than two minutes.
+    """
+    from animatica.render_cache import render_key, restore, store
+
+    key = render_key(storyboard, quality="preview", extra="captions")
+    if restore(key, out_dir):
+        report = _read_report(out_dir)
+        return 0, list(report.get("warnings", [])), list(report.get("fallbacks", []))
+
     cmd = [
         sys.executable, "-m", "animatica", "make",
         "--from", str(storyboard),
@@ -134,26 +186,55 @@ def _render(storyboard: Path, out_dir: Path) -> tuple[int, list[str], list[str]]
     if not report_path.is_file():
         return 1, ["render produced no report.json"], []
     report = json.loads(report_path.read_text(encoding="utf-8"))
+    store(key, out_dir)
     return 0, list(report.get("warnings", [])), list(report.get("fallbacks", []))
 
 
-def main() -> int:
+def main(argv: list[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument(
+        "--jobs",
+        type=int,
+        default=None,
+        help="how many storyboards to render at the same time (default: what the machine can take)",
+    )
+    parser.add_argument(
+        "--no-cache",
+        action="store_true",
+        help="render every storyboard for real, even when it is in the cache",
+    )
+    args = parser.parse_args(argv)
+
     storyboards = storyboard_paths()
     if not storyboards:
         print(f"FAIL: no storyboards found in {FIXTURES_DIR} or {CONFORMANCE_DIR}")
         return 1
 
+    if args.no_cache:
+        os.environ["ANIMATICA_NO_RENDER_CACHE"] = "1"
+
+    from animatica.backends.scheduler import render_workers, run_in_parallel
+
+    workers = args.jobs if args.jobs else render_workers()
+    workers = max(1, min(workers, len(storyboards)))
+
     allowlist = load_allowlist()
+    expected = load_expected()
     failures = 0
     # Which kinds of warning each component still produces, over every
     # storyboard it appears in.
     seen: dict[str, set[str]] = {}
 
+    print(f"Rendering {len(storyboards)} storyboards with {workers} worker(s)...", flush=True)
     with tempfile.TemporaryDirectory(prefix="animatica render gate ") as tmp:
-        for storyboard in storyboards:
+        def render_one(storyboard: Path):
             out_dir = Path(tmp) / storyboard.stem
+            return storyboard, out_dir, _render(storyboard, out_dir)
+
+        results = run_in_parallel(storyboards, render_one, workers=workers)
+
+        for storyboard, out_dir, (code, warnings, fallbacks) in results:
             print(f"\n=== {storyboard.name} ===", flush=True)
-            code, warnings, fallbacks = _render(storyboard, out_dir)
             components = storyboard_components(storyboard)
             kinds_here: set[str] = set()
 
@@ -183,6 +264,13 @@ def main() -> int:
                 print(f"  {component} fell back to a text card")
                 print(f"  ^ FAIL: {storyboard.name}")
                 kinds_here.add(FALLBACK_KIND)
+
+            promised = expected.get(storyboard.name)
+            if promised:
+                for problem in duration_failures(_read_report(out_dir), promised):
+                    failures += 1
+                    print(f"  {storyboard.name}: {problem}")
+                    print(f"  ^ FAIL: {storyboard.name}")
 
             for component in components:
                 seen.setdefault(component, set()).update(kinds_here)

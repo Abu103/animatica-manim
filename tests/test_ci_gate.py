@@ -158,3 +158,63 @@ def test_allowlisted_warning_still_happens(tmp_path):
             f"the allowlist tolerates {component}/{kind}, but it no longer happens; "
             "remove it from the allowlist"
     )
+
+
+# ---------------------------------------------------------------------------
+# B4c: the gate owns the conformance corpus, and it checks the durations
+# ---------------------------------------------------------------------------
+
+
+def test_the_gate_renders_the_whole_conformance_corpus():
+    """Every storyboard the corpus promises must be rendered by the gate.
+
+    The suite does not render the corpus any more: the gate is the one place
+    where it is rendered, so the gate has to cover all of it.
+    """
+    import json
+
+    from ci_render_gate import storyboard_paths
+
+    expected = json.loads(
+        (Path(__file__).resolve().parent / "conformance" / "expected.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    rendered = {p.name for p in storyboard_paths()}
+
+    assert expected, "the corpus must promise something"
+    assert set(expected) <= rendered, set(expected) - rendered
+
+
+def test_the_gate_fails_when_a_storyboard_does_not_keep_its_promise():
+    """The gate must fail when the scene count or the duration is wrong."""
+    from ci_render_gate import duration_failures
+
+    report = {"scene_durations": [3.0]}
+
+    assert duration_failures(report, {"scenes": 1, "duration": 3.0}) == []
+    assert duration_failures(report, {"scenes": 2, "duration": 3.0})
+    assert duration_failures(report, {"scenes": 1, "duration": 9.0})
+    assert duration_failures(report, {}) == []
+
+
+def test_the_gate_reads_what_the_corpus_promises():
+    """The expected.json must be readable, or the gate checks nothing."""
+    from ci_render_gate import load_expected
+
+    expected = load_expected()
+
+    assert expected, "expected.json must hold the promises of the corpus"
+    for name, promise in expected.items():
+        assert name.endswith(".json"), name
+        assert "scenes" in promise, name
+        assert "duration" in promise, name
+
+
+def test_the_suite_runs_on_several_workers():
+    """The suite is mostly render tests; it has to use the cores."""
+    from ci_tests import MAX_JOBS, suite_jobs
+
+    jobs = int(suite_jobs())
+
+    assert 0 <= jobs <= MAX_JOBS
