@@ -5,6 +5,13 @@ from pydantic import ValidationError
 from animatica.components.equation import Equation
 from animatica.components.steps_list import StepsList
 from animatica.components.title_card import TitleCard
+from geometry import (
+    RESOLUTIONS,
+    assert_beat_timing,
+    assert_inside_safe_area,
+    assert_no_text_overlap,
+    play_component,
+)
 
 
 def test_durations_follow_formulas():
@@ -136,3 +143,40 @@ def test_equation_no_side_safe_area_warnings(tmp_path):
         f"inside the left/right 5% side safe-area margin"
     )
 
+
+# ---------------------------------------------------------------------------
+# B4: the title card has to fit the frame, keep its text apart and fit its clock
+# ---------------------------------------------------------------------------
+
+
+def _title_card_params() -> TitleCard.Params:
+    """The parameters of the conformance storyboard, tests/conformance/title_card.json."""
+    return TitleCard.Params(title="Conformance")
+
+
+@pytest.mark.parametrize("width,height", RESOLUTIONS)
+def test_title_card_content_stays_inside_the_safe_area(width, height):
+    """The title must stay inside the safe-area margin.
+
+    It was scaled up to fill the frame, which stretched it over the edges
+    of the frame and into the margin frame-lint keeps free.
+    """
+    beat = play_component(TitleCard(), _title_card_params(), width, height)
+
+    assert_inside_safe_area(beat)
+
+
+@pytest.mark.parametrize("width,height", RESOLUTIONS)
+def test_title_card_text_does_not_overlap(width, height):
+    """The title and the subtitle must not land on each other."""
+    beat = play_component(TitleCard(), _title_card_params(), width, height)
+
+    assert_no_text_overlap(beat)
+
+
+@pytest.mark.parametrize("width,height", RESOLUTIONS)
+def test_title_card_beat_fits_its_declared_duration(width, height):
+    """The animations must fit inside the duration the component declared."""
+    beat = play_component(TitleCard(), _title_card_params(), width, height)
+
+    assert_beat_timing(beat)

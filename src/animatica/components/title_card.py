@@ -24,14 +24,14 @@ class TitleCard(Component):
         return p.title  # type: ignore[attr-defined]
 
     def play(self, scene, p, colors) -> None:
-        from manim import DOWN, FadeIn, Text, VGroup
+        from manim import DOWN, FadeIn, Text, VGroup, config
         prepare(scene, colors)
         title = Text(wrap(p.title, 30), font_size=MIN_FONT_SIZE + 24, color=colors.text, weight="BOLD")
         group = VGroup(title)
         if p.subtitle:
             group.add(Text(wrap(p.subtitle, 50), font_size=MIN_FONT_SIZE, color=colors.muted))
         group.arrange(DOWN, buff=0.5)
-        fit(group)
+        fit(group, max_width=config.frame_width - 2.0, scale_up=False)
         clock = Clock(scene, self.duration(p))
         clock.play(FadeIn(group, shift=0.3 * DOWN), run_time=1.0)
         clock.finish()
