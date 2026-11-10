@@ -5,6 +5,8 @@ from animatica.components.registry import default_registry
 from geometry import (
     RESOLUTIONS,
     assert_beat_timing,
+    assert_inside_safe_area,
+    assert_no_text_overlap,
     play_component,
 )
 
@@ -66,3 +68,24 @@ def test_recursion_tree_beat_fits_its_declared_duration(width, height):
     beat = play_component(RecursionTree(), _conformance_params(), width, height)
 
     assert_beat_timing(beat)
+
+
+@pytest.mark.parametrize("width,height", RESOLUTIONS)
+def test_recursion_tree_content_stays_inside_the_safe_area(width, height):
+    """No part of the tree may reach into the safe-area margin.
+
+    The tree was scaled up to fill the frame, which pushed the outer
+    leaves past the margin frame-lint keeps free and the bottom of the
+    tree into the caption.
+    """
+    beat = play_component(RecursionTree(), _conformance_params(), width, height)
+
+    assert_inside_safe_area(beat)
+
+
+@pytest.mark.parametrize("width,height", RESOLUTIONS)
+def test_recursion_tree_text_does_not_overlap(width, height):
+    """The title must not sit on top of the first row of nodes."""
+    beat = play_component(RecursionTree(), _conformance_params(), width, height)
+
+    assert_no_text_overlap(beat)

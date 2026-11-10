@@ -10,6 +10,7 @@ from typing import ClassVar
 from pydantic import BaseModel, Field, field_validator
 
 from animatica.components._draw import FADE_OUT, MIN_FONT_SIZE, Clock, fit, prepare, wrap
+from animatica.components._draw import caption_band_top as caption_band_top_of
 from animatica.components.base import Component
 from animatica.storyboard.models import MAX_TEXT
 
@@ -91,7 +92,7 @@ class RecursionTree(Component):
         return f"{p.title}: call tree of {p.fn}({p.n})"  # type: ignore[attr-defined]
 
     def play(self, scene, p, colors) -> None:
-        from manim import FadeIn, Line, Text, VGroup
+        from manim import UP, FadeIn, Line, Text, VGroup, config
 
         prepare(scene, colors)
         title = Text(wrap(p.title, 45), font_size=MIN_FONT_SIZE + 8, color=colors.accent)
@@ -127,8 +128,19 @@ class RecursionTree(Component):
                     ccall, cx, cy = nodes[cid]
                     if ccall[1] in (call[1] - 1, call[1] - 2):  # type: ignore[operator]
                         vg_edges.add(Line([x, y + 1.0, 0], [cx, cy + 1.4, 0], color=colors.muted))
-        group = VGroup(title, vg_nodes, vg_edges)
-        fit(group)
+        # The tree is drawn first and the title goes above it. The title used
+        # to sit in the middle of the tree, on top of the first row of nodes.
+        tree = VGroup(vg_nodes, vg_edges)
+        caption = getattr(scene, "caption_mobject", None)
+        band = caption_band_top_of(caption)
+        # Shrink only: scaling the tree up to fill the frame pushed the outer
+        # leaves past the safe-area margin frame-lint keeps free, and the
+        # bottom of the tree into the caption.
+        fit(tree, max_width=config.frame_width - 2.0,
+            max_height=config.frame_height / 2 - 0.6 - title.height - 0.4 - band,
+            scale_up=False)
+        tree.shift(UP * (band - tree.get_bottom()[1]))
+        title.next_to(tree, UP, buff=0.4)
         clock = Clock(scene, self.duration(p))
         # The beat has a fixed budget, so the time the nodes and the edges
         # take is shared out of it instead of being fixed per item. Before,
