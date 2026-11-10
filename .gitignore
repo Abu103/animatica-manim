@@ -53,3 +53,6 @@ experiments/hyperframes-3sat-pilot/run-windows.ps1
 
 # bootstrap-installed native bundle (wheels + shared libs)
 native/
+
+# apt downloads cached by the CI (the hyperframes job)
+.apt-cache/

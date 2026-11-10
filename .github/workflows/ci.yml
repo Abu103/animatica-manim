@@ -256,10 +256,36 @@ jobs:
           python-version: "3.13"
           cache: pip
           cache-dependency-path: pyproject.toml
+      # The Ubuntu archive mirror is fast most of the time and throttled now
+      # and then: the same 71 MB took 16 s in one run and more than four
+      # minutes in the next, with apt ignoring and retrying three packages on
+      # the way. Caching the downloads keeps the bad days short -- apt takes
+      # the .deb files it finds in the cache and only fetches what is missing.
+      - name: A cache key that rotates every week
+        run: echo "APT_WEEK=$(date -u +%G%V)" >> "$GITHUB_ENV"
+      - name: Cache the apt downloads
+        uses: actions/cache@v4
+        with:
+          # A directory of .deb files the runner user owns. apt's own cache
+          # belongs to root, and the cache action runs as the runner user:
+          # it can neither read the lock and partial/ inside it nor write the
+          # files back into it ("Permission denied").
+          path: .apt-cache
+          key: apt-archives-v2-${{ runner.os }}-noble-ffmpeg-${{ env.APT_WEEK }}
       - name: System libs (cairo/pango for the manim import path, ffmpeg for the CLI)
         run: |
           sudo apt-get -o Acquire::Retries=3 update
-          sudo apt-get -o Acquire::Retries=3 install -y --no-install-recommends libcairo2-dev pkg-config libpango1.0-dev ffmpeg
+          # The .deb files of an earlier run first: apt takes what it finds
+          # and only downloads what is missing.
+          mkdir -p .apt-cache
+          if compgen -G ".apt-cache/*.deb" > /dev/null; then
+            sudo cp -n .apt-cache/*.deb /var/cache/apt/archives/
+          fi
+          sudo apt-get -o Acquire::Retries=3 -o APT::Keep-Downloaded-Packages=true \
+            install -y --no-install-recommends libcairo2-dev pkg-config libpango1.0-dev ffmpeg
+          # Keep them for the next run.
+          sudo cp -n /var/cache/apt/archives/*.deb .apt-cache/ 2>/dev/null || true
+          sudo chown -R "$(id -u):$(id -g)" .apt-cache
       - run: pip install -e ".[dev]"
       - name: The pinned HyperFrames CLI
         run: |
