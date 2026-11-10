@@ -187,6 +187,36 @@ clean; the numbers in the table above.
 
 ---
 
+---
+
+## M1.7 — B4d: the recursion tree drew the wrong edges  [NORMAL; the owner's card, 2026-11-10]
+
+Why: the frame `b4_recursion_tree.png` showed a call tree that was not one.
+The left fib(3) had four edges instead of two, and they reached into the
+branches of other parents. The gate and the tests reported nothing.
+
+Files: `src/animatica/components/recursion_tree.py`, `tests/geometry.py`,
+`tests/test_recursion_tree.py`.
+
+Steps:
+1. First the "before" evidence: render `tests/conformance/recursion_tree.json`
+   on origin/main (before B4) and save the frames at the beat's end. Report
+   whether the edges were already wrong there.
+2. RED with real mobjects at 1280x720 and 1920x1080 for fib(5): for every
+   edge, its start lies on/near the parent node's bbox (inflate 0.2u) and its
+   end near the child node's bbox, and no edge touches any node that is not
+   its parent or child.
+3. Root cause: which commit introduced the mismatch, and why.
+4. Fix at the root; the timing and safe-area tests keep passing.
+5. Frames at 0.5 s, mid-beat and the final frame of the beat.
+6. The same check as a generic helper in `tests/geometry.py`, so the other
+   tree-like components can reuse it.
+
+Accept: the frames show a call tree whose edges only ever run from a node to
+its own child; the suite and the gate are clean.
+
+---
+
 ## M2 Evidence (this is the portfolio differentiator)
 
 ### T15 Reference prompt set  [trivial]

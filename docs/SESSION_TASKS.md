@@ -5,6 +5,18 @@ Updated: 2026-11-10. Newest status on top. Any Claude session can resume from he
 - Repo: https://github.com/Abu103/animatica-manim (released v0.1.1 with tinytex-manim.zip asset, sha256 83fde080..., download verified + LaTeX compile verified from sandbox 2026-11-04)
 - User runs on Windows, provider nim, model nvidia/nemotron-3.5-super-vl-120b-a12b
 - Goal: stable demo to show others; then features that weak/free models (nemotron 120b, "3 super 550b") can drive reliably
+## Status (2026-11-10, Hermes session, card B4d "recursion_tree edges connect the wrong nodes")
+- Branch: `hermes/b4-conformance-clean` (B4 + B4b + B4c + B4d). **Not pushed.**
+- Changed: `src/animatica/components/recursion_tree.py`, `tests/geometry.py`, `tests/test_recursion_tree.py`.
+- Step 0 (the "before" evidence): rendered `tests/conformance/recursion_tree.json` on **origin/main** (`0c0b444`, before B4) and saved the frames `b4d_recursion_tree_main_4.6.png`, `_5.png`, `_5.1.png`. **The edges were already wrong there**: 24 edges drawn for the 14 relations of fib(5), 10 of them to a node that is not the child.
+- Root cause: `tree_layout()` computed the real parent -> child relation and threw it away, so `play()` guessed the children from the depth row and the child's argument value -- every node was connected to every matching node in the next row. The guess came in with the component in **cb6dbd4** (2026-11-09, the PR #10 squash that added the file); the B4 budget and fit commits (`92bf01e`, `cb71a54`) never touched it. The edge set is identical on origin/main and on the branch before the fix.
+- Fix: `tree_layout()` now returns `({node_id: (call, x, y)}, [(parent_id, child_id), ...])` and the component draws those. 14 edges for the 14 relations, none to a foreign node.
+- The reusable check is `assert_edges_connect_parent_and_child()` in `tests/geometry.py`: every edge starts on a node and ends on a node, the two are a parent and a child, no edge touches a third node, and every relation is drawn exactly once.
+- RED: `an edge connects 'fib(3)' at x[-4.02,-3.05] to 'fib(1)' at x[-1.27,-0.30], and that is not a parent and its child` (1280x720 and 1920x1080).
+- Frames after the fix: `b4d_recursion_tree_0.5.png`, `_2.9.png`, `_5.1.png`.
+- Verified: `python scripts/ci_tests.py` -> **937 passed, 4 failed, 0 skipped, 0 errors, 0 warnings** (143.56 s; the 4 are the pre-existing environment failures). `python scripts/ci_render_gate.py` -> exit 0, `CLEAN: 18 storyboard(s) rendered within the allowlist` (71.4 s; the recursion_tree render was re-done because the source fingerprint changed, which is the cache doing its job).
+- OPEN ITEM (found, not fixed): the nodes are still drawn leaves-first, because the layout hands them out in the order it placed them (a parent is placed after its children) while the node ids run from the root down. The tree therefore fills in bottom-up and the root drops in last. Cosmetic, not a bug; it was the same before this card.
+
 ## Status (2026-11-10, Hermes session, card B4c "make the tests fast")
 - Branch: `hermes/b4-conformance-clean` (B4 + B4b + B4c), 19 commits on `main` (`0c0b444`). **Not pushed.**
 - Changed (B4c, 7 commits): `src/animatica/backends/scheduler.py`, new `src/animatica/render_cache.py`, `src/animatica/conformance.py`, `scripts/ci_render_gate.py`, `scripts/ci_tests.py`, `tests/conftest.py`, `tests/test_conformance.py`, `tests/test_ci_gate.py`, new `tests/test_render_pool.py`, new `tests/test_render_cache.py`, new `tests/test_text_cache.py`, `.github/workflows/ci.yml`, `pyproject.toml`, `docs/HERMES_PLAYBOOK.md`, `docs/TASKS_FOR_HERMES_V02.md`.
