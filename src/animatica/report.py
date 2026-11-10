@@ -26,7 +26,7 @@ class StageTimer:
         return sum(self.stages.values())
 
 
-def write_report(path: Path, stage_times: dict[str, float], warnings: list[str], backend: dict[str, str] | None = None, scene_durations: list[float] | None = None) -> None:
+def write_report(path: Path, stage_times: dict[str, float], warnings: list[str], backend: dict[str, str] | None = None, scene_durations: list[float] | None = None, fallbacks: list[str] | None = None) -> None:
     """Write `report.json` with `stages`, `warnings`, `scene_durations`, and `backend` keys.
 
     `scene_durations` maps scene index to the cumulative duration of that scene in
@@ -40,5 +40,7 @@ def write_report(path: Path, stage_times: dict[str, float], warnings: list[str],
     report = {"stages": dict(stage_times), "warnings": list(warnings), "scene_durations": list(scene_durations or [])}
     if backend is not None:
         report["backend"] = dict(backend)
+    if fallbacks:
+        report["fallbacks"] = list(fallbacks)
     Path(path).write_text(json.dumps(report, indent=2) + "\n", encoding="utf-8")
 

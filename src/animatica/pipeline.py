@@ -1,7 +1,7 @@
 """``animatica make`` pipeline: prompt -> storyboard -> render -> captions -> report."""
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 
 from animatica.ai.router import get_provider
@@ -36,6 +36,7 @@ class MakeResult:
     warnings: list[str]
     provider_used: str = ""
     encoder_used: str = ""
+    fallbacks: list[str] = field(default_factory=list)
 
 
 def _vtt_timestamp(seconds: float) -> str:
@@ -99,7 +100,7 @@ def make_video(
     captions: bool = True,
     two_stage: bool = False,
     jobs: int = 1,
-    frame_lint: bool = False,
+    frame_lint: bool = True,
     vertical: bool = False,
     theme: str | None = None,
     on_progress: ProgressFn | None = None,
@@ -221,12 +222,27 @@ def make_video(
     # ---- captions + report (single writer) ----
     progress.advance("captions", "writing captions and report")
     _write_captions(sb, registry, out_dir / "captions.vtt")
+
+    # Component fallbacks: warnings from scene.py are formatted as
+    # "{component}: {ExceptionType}: {message}" when play() raises and the
+    # beat degrades to a text card. Extract the component names so they can
+    # be recorded in report.json.
+    registered = set(default_registry().names())
+    fallbacks: list[str] = []
+    seen_fallbacks: set[str] = set()
+    for w in render_result.warnings:
+        parts = w.split(": ", 1)
+        if len(parts) == 2 and parts[0] in registered and parts[0] not in seen_fallbacks:
+            fallbacks.append(parts[0])
+            seen_fallbacks.add(parts[0])
+
     write_report(
         out_dir / "report.json",
         render_result.stage_times,
         warnings,
         backend={"name": render_backend.name, "version": getattr(render_backend, "version", "unknown")},
         scene_durations=render_result.durations,
+        fallbacks=fallbacks,
     )
 
     progress.finish(f"done: {video.name}")
@@ -239,6 +255,7 @@ def make_video(
         warnings=warnings,
         provider_used=provider_used,
         encoder_used=encoder_used,
+        fallbacks=fallbacks,
     )
 
 
