@@ -23,20 +23,33 @@ NODE_TIME = 0.15
 EDGE_TIME = 0.1
 
 
-def tree_layout(fn: str, n: int) -> dict[int, tuple[tuple, float, float]]:
-    """Return {node_id: (call, x, y)} for the call tree of fn(n).
+def tree_layout(fn: str, n: int) -> tuple[dict[int, tuple[tuple, float, float]], list[tuple[int, int]]]:
+    """Return ({node_id: (call, x, y)}, [(parent_id, child_id), ...]).
 
     Every call occurrence is its own node (repeats included). Leaves get distinct
     evenly-spaced x positions; parents are centered over their children. Capped at
     MAX_NODES nodes (deepest/rightmost dropped first).
+
+    The edge list is the real parent -> child relation, and it has to travel
+    with the layout: a caller that has to guess the children from the depth
+    and from the argument value connects a node to every matching node in the
+    next row, not only to its own children.
+
+    The positions come back in the order the layout placed the nodes, which is
+    the order of the tree from the leaves up (a parent is placed after its
+    children). The node ids are the order the calls were created in, from the
+    root down.
     """
     nodes: list[tuple] = []  # (id, call, depth, parent_id)
+    edges: list[tuple[int, int]] = []  # (parent id, child id)
 
     def build(call: tuple, depth: int, parent: int | None) -> int:
         if len(nodes) >= MAX_NODES:
             return -1
         nid = len(nodes)
         nodes.append((nid, call, depth, parent))
+        if parent is not None:
+            edges.append((parent, nid))
         if fn == "fib" and call[1] > 1:
             build((call[0], call[1] - 1), depth + 1, nid)
             build((call[0], call[1] - 2), depth + 1, nid)
@@ -67,7 +80,10 @@ def tree_layout(fn: str, n: int) -> dict[int, tuple[tuple, float, float]]:
     xs = [v[1] for v in pos.values()]
     lo, hi = min(xs), (max(xs) or 1.0)
     span = (hi - lo) or 1.0
-    return {nid: (call, -5.5 + (x - lo) / span * 11.0, y) for nid, (call, x, y) in pos.items()}
+    positions = {
+        nid: (call, -5.5 + (x - lo) / span * 11.0, y) for nid, (call, x, y) in pos.items()
+    }
+    return positions, edges
 
 
 class RecursionTree(Component):
@@ -96,7 +112,7 @@ class RecursionTree(Component):
 
         prepare(scene, colors)
         title = Text(wrap(p.title, 45), font_size=MIN_FONT_SIZE + 8, color=colors.accent)
-        nodes = tree_layout(p.fn, p.n)  # type: ignore[arg-type]
+        nodes, relations = tree_layout(p.fn, p.n)  # type: ignore[arg-type]
         counts: dict[tuple, int] = {}
         for _nid, (call, _x, _y) in nodes.items():
             counts[call] = counts.get(call, 0) + 1
@@ -111,23 +127,15 @@ class RecursionTree(Component):
             node = Text(label, font_size=MIN_FONT_SIZE, color=color)
             node.move_to([x, y + 1.2, 0])
             vg_nodes.add(node)
-        for nid, (call, x, y) in nodes.items():
-            if p.fn == "fib" and call[1] > 1:  # type: ignore[operator]
-                for _c_nid, (ccall, cx, cy) in nodes.items():
-                    if ccall[1] == call[1] - 1 or ccall[1] == call[1] - 2:  # type: ignore[operator]
-                        # edge to direct children only: check depth difference
-                        pass
-        # simpler: edges from parent to its two fib children by depth
-        by_depth: dict[int, list[int]] = {}
-        for nid, (call, _x, y) in nodes.items():
-            by_depth.setdefault(round(-y / 1.1), []).append(nid)
-        for nid, (call, x, y) in nodes.items():
-            d = round(-y / 1.1)
-            if p.fn == "fib" and call[1] > 1:  # type: ignore[operator]
-                for cid in by_depth.get(d + 1, []):
-                    ccall, cx, cy = nodes[cid]
-                    if ccall[1] in (call[1] - 1, call[1] - 2):  # type: ignore[operator]
-                        vg_edges.add(Line([x, y + 1.0, 0], [cx, cy + 1.4, 0], color=colors.muted))
+        # The edges are the real parent -> child relations. Guessing the
+        # children from the depth and from the argument value connected every
+        # node to every matching node in the next row: a fib(3) had four
+        # edges instead of two, and they reached into the branches of other
+        # parents.
+        for parent_id, child_id in relations:
+            _pcall, px, py = nodes[parent_id]
+            _ccall, cx, cy = nodes[child_id]
+            vg_edges.add(Line([px, py + 1.0, 0], [cx, cy + 1.4, 0], color=colors.muted))
         # The tree is drawn first and the title goes above it. The title used
         # to sit in the middle of the tree, on top of the first row of nodes.
         tree = VGroup(vg_nodes, vg_edges)

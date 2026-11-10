@@ -344,3 +344,116 @@ def assert_beat_timing(beat: Beat) -> None:
         f"(animations {animations:.3f}s + holds {holds:.3f}s) but declares "
         f"{beat.duration:.3f}s"
     )
+
+
+# ---------------------------------------------------------------------------
+# Edges
+# ---------------------------------------------------------------------------
+
+
+def _point_near(point, mobject, inflate: float) -> bool:
+    """True when the point is inside the mobject's box, grown by `inflate`."""
+    left = mobject.get_left()[0] - inflate
+    right = mobject.get_right()[0] + inflate
+    bottom = mobject.get_bottom()[1] - inflate
+    top = mobject.get_top()[1] + inflate
+    return left <= point[0] <= right and bottom <= point[1] <= top
+
+
+def _edges_of(beat: Beat) -> list:
+    """The lines a beat drew."""
+    from manim import Line
+
+    return [m for m in beat.mobjects if isinstance(m, Line)]
+
+
+def _label(mobject) -> str:
+    try:
+        content = mobject.text
+    except Exception:
+        content = mobject.__class__.__name__
+    return f"{content!r} at x[{mobject.get_left()[0]:.2f},{mobject.get_right()[0]:.2f}]"
+
+
+def assert_edges_connect_parent_and_child(
+    beat: Beat,
+    pairs: list[tuple],
+    edges: list | None = None,
+    nodes: list | None = None,
+    inflate: float = 0.2,
+) -> None:
+    """Every edge must run from its parent to its child, and touch no other node.
+
+    ``pairs`` is the list of relations the component is supposed to draw, as
+    (parent, child) pairs of mobjects. A component that draws a tree or a
+    graph has to build its edges from the real relation; one that guesses the
+    children from the depth or from the label draws edges into another
+    branch, and the frames look plausible while the picture is wrong.
+
+    Three things have to hold:
+
+    * every edge starts on a node and ends on a node;
+    * the node it starts on and the node it ends on are a parent and a child;
+    * every relation is drawn once and only once -- an extra edge that runs
+      to a node of another branch is a bug even when all the right edges are
+      there as well.
+    """
+    if edges is None:
+        edges = _edges_of(beat)
+    if nodes is None:
+        nodes = []
+        for parent, child in pairs:
+            for mob in (parent, child):
+                if not any(mob is known for known in nodes):
+                    nodes.append(mob)
+
+    expected = {(id(parent), id(child)) for parent, child in pairs}
+    assert edges, f"{beat.label}: the component drew no edges at all"
+
+    drawn: set[tuple[int, int]] = set()
+    for edge in edges:
+        start = edge.get_start()
+        end = edge.get_end()
+        starts = [n for n in nodes if _point_near(start, n, inflate)]
+        ends = [n for n in nodes if _point_near(end, n, inflate)]
+
+        assert starts, (
+            f"{beat.label}: an edge starts at ({start[0]:.2f},{start[1]:.2f}), "
+            "which is not on any node"
+        )
+        assert ends, (
+            f"{beat.label}: an edge ends at ({end[0]:.2f},{end[1]:.2f}), "
+            "which is not on any node"
+        )
+
+        matched = [
+            (s, e) for s in starts for e in ends if (id(s), id(e)) in expected
+        ]
+        assert matched, (
+            f"{beat.label}: an edge connects {_label(starts[0])} to "
+            f"{_label(ends[0])}, and that is not a parent and its child"
+        )
+
+        parent, child = matched[0]
+        foreign = [
+            n
+            for n in nodes
+            if n is not parent
+            and n is not child
+            and (_point_near(start, n, inflate) or _point_near(end, n, inflate))
+        ]
+        assert not foreign, (
+            f"{beat.label}: an edge from {_label(parent)} to {_label(child)} "
+            f"also touches {_label(foreign[0])}, which is neither"
+        )
+        drawn.add((id(parent), id(child)))
+
+    missing = expected - drawn
+    assert not missing, (
+        f"{beat.label}: {len(missing)} relation(s) are not drawn at all"
+    )
+    assert len(drawn) == len(edges), (
+        f"{beat.label}: {len(edges)} edges for {len(expected)} relations: "
+        "an edge is drawn twice or to a node that is not its child"
+    )
+
