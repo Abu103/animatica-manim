@@ -89,6 +89,56 @@ def test_a_beat_that_fades_in_is_not_small_content(tmp_path, name):
 
 
 # ---------------------------------------------------------------------------
+# B4e: the caption strip is measured, not guessed
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.render
+def test_a_three_line_caption_is_still_not_content(tmp_path):
+    """A caption that needs three lines must not count as content either.
+
+    The strip the lint leaves out was a constant, so a caption taller than
+    it leaked into the coverage measurement and a beat that showed nothing
+    but a caption looked as if it had content.
+    """
+    from animatica.pipeline import make_video
+
+    caption = (
+        "This caption is long enough that it has to be wrapped over three "
+        "lines in the band at the bottom of the frame, which makes it much "
+        "taller than the strip the lint used to leave out."
+    )
+    sb = _write_storyboard(
+        tmp_path / "sb.json",
+        [{"component": "title_card", "params": {"title": " "}, "caption": caption}],
+    )
+    result = make_video(None, storyboard_path=sb, out_dir=tmp_path / "out", preview=True)
+
+    assert any("small_content" in w for w in result.warnings), result.warnings
+
+
+def test_a_beat_shorter_than_the_sampling_interval_does_not_crash():
+    """A beat that is sampled zero times must not break the lint.
+
+    The lint samples one frame per second. A beat shorter than that is
+    never sampled, and judging it must not divide by a frame that is not
+    there.
+    """
+    frames = [(_solid_frame([40, 40, 40], 160, 120), 0.0)]
+    cfg = FrameLintConfig(enabled=True, sample_fps=1.0, small_content_threshold=0.01)
+
+    result = lint_video(
+        "fake.mp4",
+        [0.3],
+        cfg,
+        beat_durations=[[0.3]],
+        decode=lambda p: _make_container(frames, 160, 120, 0.3),
+    )
+
+    assert not any(f.kind == "analysis" for f in result.findings), result.findings
+
+
+# ---------------------------------------------------------------------------
 # Helper: build a synthetic video container for lint_video
 # ---------------------------------------------------------------------------
 

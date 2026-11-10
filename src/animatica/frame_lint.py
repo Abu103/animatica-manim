@@ -47,12 +47,11 @@ _FOREGROUND_DOMINANCE_LIMIT = 0.5
 # evidence of clipping; a substantial run of edge pixels is.
 _CLIPPED_EDGE_FRACTION = 0.5
 
-#: Fraction of the frame height the burned-in caption covers at the bottom.
-#: The caption is pinned 5.5% above the bottom edge and is at most two lines
-#: tall, so it reaches a little over 16% up the frame. It is not the
-#: component's content and must not count towards how much of the frame the
-#: content covers.
-CAPTION_STRIP = 0.165
+#: The fraction of the frame height the burned-in caption covers is not a
+#: constant: the caption's height depends on how its text wraps. The caller
+#: measures it with the caption the renderer burns in (see
+#: ``animatica.components._draw.caption_strip_fraction``) and passes it in
+#: as ``FrameLintConfig.caption_strip``.
 
 
 @dataclass(frozen=True)
@@ -67,7 +66,7 @@ class FrameLintConfig:
     low_contrast_threshold: float = 3.0  # WCAG contrast-ratio floor
     blank_interval_seconds: float = 0.5  # max blank seconds between content frames
     clipped_edge_fraction: float = _CLIPPED_EDGE_FRACTION  # edge coverage for "clipped"
-    caption_strip: float = CAPTION_STRIP  # fraction of the frame height the caption covers
+    caption_strip: float = 0.0  # fraction of the frame height the caption covers
 
 
 @dataclass(frozen=True)

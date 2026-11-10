@@ -24,7 +24,7 @@ from animatica.storyboard.models import Storyboard, dump_storyboard, load_storyb
 
 # Frame lint is a non-fatal post-render quality check. Imported here so the
 # pipeline can wire it into ``make_video`` without the CLI knowing about PyAV.
-from animatica.frame_lint import CAPTION_STRIP, FrameLintConfig, lint_video, lint_result_to_warnings  # noqa: PLC0415
+from animatica.frame_lint import FrameLintConfig, lint_video, lint_result_to_warnings  # noqa: PLC0415
 
 
 @dataclass
@@ -68,6 +68,46 @@ def _beat_durations(sb: Storyboard, registry) -> list[list[float]]:
                 durations.append(0.0)
         out.append(durations)
     return out
+
+
+def _caption_strip(sb: Storyboard, vertical: bool) -> float:
+    """The fraction of the frame the burned-in captions cover at the bottom.
+
+    The caption is not content: it sits in the bottom strip of every frame
+    and would otherwise make an empty beat look like it had something on
+    screen. How tall that strip is depends on how the caption's text wraps,
+    so it is measured with the caption the renderer will burn in rather than
+    guessed with a constant.
+    """
+    from manim import config
+
+    from animatica.components._draw import caption_strip_fraction, make_caption, pick_font
+    from animatica.components.theme import get_colors
+
+    colors = get_colors(sb.theme)
+    font = pick_font()
+    if font:
+        from manim import MarkupText, Text
+
+        Text.set_default(font=font)
+        MarkupText.set_default(font=font)
+
+    old_width = config.frame_width
+    try:
+        # A vertical render is a narrow frame: the caption wraps differently.
+        if vertical:
+            config.frame_width = 8.0 * 9 / 16
+        widest = 0.0
+        for scene in sb.scenes:
+            for beat in scene.beats:
+                text = (beat.caption or "").strip()
+                if not text:
+                    continue
+                caption = make_caption(text, colors)
+                widest = max(widest, caption_strip_fraction(caption, config.frame_height))
+        return widest
+    finally:
+        config.frame_width = old_width
 
 
 def _write_captions(sb: Storyboard, registry, path: Path) -> None:
@@ -231,9 +271,12 @@ def make_video(
     # ---- frame lint (non-fatal post-render quality check) ----
     if frame_lint:
         progress.advance("lint", "checking frames")
-        # With no caption burned in there is no caption strip to leave out of
-        # the coverage measurement.
-        lint_config = FrameLintConfig(enabled=True, caption_strip=CAPTION_STRIP if captions else 0.0)
+        # The burned-in caption is not content. Its height depends on how the
+        # text wraps, so it is measured, not guessed.
+        lint_config = FrameLintConfig(
+            enabled=True,
+            caption_strip=_caption_strip(sb, vertical) if captions else 0.0,
+        )
         lint_result = lint_video(
             str(video),
             render_result.durations,
