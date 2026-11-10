@@ -19,8 +19,38 @@ from pathlib import Path
 #: Anything below this means tests silently stopped being collected.
 MIN_PASSED = int(os.environ.get("ANIMATICA_MIN_PASSED", "600"))
 
+#: The most workers the suite may use. The render tests dominate the run time
+#: and each one is a subprocess, so the suite scales with the cores -- but a
+#: worker is a whole python process with its own Manim, so the memory runs
+#: out long before the cores do.
+MAX_JOBS = 4
+
 _COUNTS = re.compile(r"(\d+) (passed|failed|skipped|error|errors|warning|warnings)\b")
 _NORMALISE = {"error": "errors", "errors": "errors", "warning": "warnings", "warnings": "warnings"}
+
+
+def _xdist_available() -> bool:
+    """Whether pytest-xdist is installed."""
+    try:
+        import xdist  # noqa: F401
+    except ImportError:
+        return False
+    return True
+
+
+def suite_jobs() -> str:
+    """How many workers to run the suite with.
+
+    ``ANIMATICA_TEST_JOBS=0`` turns the parallelism off; a number sets it.
+    """
+    override = os.environ.get("ANIMATICA_TEST_JOBS")
+    if override is not None:
+        try:
+            wanted = int(override)
+        except ValueError:
+            wanted = MAX_JOBS
+        return str(max(0, wanted))
+    return str(max(1, min(MAX_JOBS, os.cpu_count() or 1)))
 
 
 def parse_summary(text: str) -> dict[str, int]:
@@ -95,7 +125,11 @@ def annotate(text: str, issues: list[str]) -> None:
 
 
 def main(argv: list[str]) -> int:
-    cmd = [sys.executable, "-m", "pytest", "-q", "-rs", "--strict-markers", *argv]
+    cmd = [sys.executable, "-m", "pytest", "-q", "-rs", "--strict-markers"]
+    jobs = suite_jobs()
+    if jobs != "0" and _xdist_available():
+        cmd += ["-n", jobs]
+    cmd += argv
     print(f"$ {' '.join(cmd)}", flush=True)
     proc = subprocess.run(cmd, capture_output=True, text=True)
     print(proc.stdout, end="")

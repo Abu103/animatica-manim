@@ -25,7 +25,9 @@ dependencies = [
 
 [project.optional-dependencies]
 tui = ["textual>=0.86.0"]
-dev = ["pytest>=8", "pytest-asyncio>=1.0"]
+# pytest-xdist runs the suite on several cores: the render tests dominate the
+# run time and each one is a subprocess, so they scale well.
+dev = ["pytest>=8", "pytest-asyncio>=1.0", "pytest-xdist>=3.6"]
 
 [project.scripts]
 animatica = "animatica.cli:app"
