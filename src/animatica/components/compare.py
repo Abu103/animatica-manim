@@ -8,16 +8,24 @@ from typing import ClassVar
 
 from pydantic import BaseModel, Field, model_validator
 
-from animatica.components._draw import MIN_FONT_SIZE, Clock, fit, prepare, wrap
+from animatica.components._draw import MIN_FONT_SIZE, Clock, fit, prepare, warn, wrap
 from animatica.components._draw import caption_band_top as caption_band_top_of
 from animatica.components.base import Component
 from animatica.storyboard.models import MAX_TEXT
 
 MAX_BULLETS = 6
 
+#: Tolerance when comparing font sizes. Manim's scaling maths leaves the
+#: computed size a hair under the floor even when nothing was scaled, so an
+#: exact comparison would report a false warning.
+_FONT_SIZE_EPSILON = 0.5
+
 
 class Compare(Component):
     name: ClassVar[str] = "compare"
+
+    #: Bullet font size that survived fitting, set by _build_layout().
+    last_effective_font: float = MIN_FONT_SIZE
 
     class Params(BaseModel):
         title: str = Field(max_length=MAX_TEXT)
@@ -51,6 +59,9 @@ class Compare(Component):
         ``caption`` is the scene's real caption mobject, if there is one. Its
         height depends on how the caption text wraps, so the band the columns
         must stay above is derived from it rather than assumed.
+
+        Returns ``(title, left, right)``. ``self.last_effective_font`` holds
+        the bullet font size that survived fitting, for the caller to report.
         """
         from manim import DOWN, LEFT, RIGHT, Text, UP, VGroup
         from manim import config
@@ -81,7 +92,14 @@ class Compare(Component):
 
         # Fit both columns together as one group (shrink only, about group centre)
         cols = VGroup(left, right)
+        natural_width = cols.width
         fit(cols, max_width=config.frame_width - 1.5, max_height=max_height, scale_up=False)
+
+        # The bullet text is what the viewer reads, so record the size it ended
+        # up at: fitting shrinks the whole group, and a group shrunk below the
+        # minimum font size means the bullets are now too small to read.
+        scale = cols.width / natural_width if natural_width else 1.0
+        self.last_effective_font = MIN_FONT_SIZE * scale
 
         # Position title at x=0 above columns
         title.to_edge(UP, buff=0.6).set_x(0)
@@ -101,6 +119,16 @@ class Compare(Component):
         # the caption's real height instead of a guessed band.
         caption = getattr(scene, "caption_mobject", None)
         title, left, right = self._build_layout(p, colors, caption)
+
+        # Fitting the columns into the space above the caption can shrink the
+        # bullets below the minimum readable size. Say so: the video renders,
+        # but the text is too small, and only the report says why.
+        effective = self.last_effective_font
+        if effective < MIN_FONT_SIZE - _FONT_SIZE_EPSILON:
+            warn(
+                scene,
+                f"compare: text scaled to {effective:.0f} px (floor {MIN_FONT_SIZE})",
+            )
         clock = Clock(scene, self.duration(p))
         clock.play(FadeIn(title), run_time=0.6)
         left_items = [left[0], *left[1]]

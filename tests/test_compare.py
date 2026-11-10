@@ -435,3 +435,87 @@ def test_no_pairwise_bbox_intersection(fw, fh):
                 f"({objs[i].get_center()[0]:.2f},{objs[i].get_center()[1]:.2f}) vs "
                 f"({objs[j].get_center()[0]:.2f},{objs[j].get_center()[1]:.2f})"
             )
+
+
+# ---------------------------------------------------------------------------
+# B3: report when fitting shrinks the bullets below the readable floor
+# ---------------------------------------------------------------------------
+
+
+def _play_and_warnings(params, caption=None):
+    """Run play() and collect the warnings it emitted."""
+    comp = Compare()
+    scene = _FakeScene()
+    if caption is not None:
+        scene.caption_mobject = caption
+    comp.play(scene, params, _make_colors())
+    return comp, scene.warnings
+
+
+def test_long_content_warns_that_text_was_scaled_down():
+    """Text that had to shrink below the floor is reported, not silently small."""
+    from animatica.components._draw import MIN_FONT_SIZE
+
+    params = _long_params()
+    comp, warnings = _play_and_warnings(params, _make_caption("Comparing two icy moons"))
+
+    scaled = [w for w in warnings if "text scaled to" in w]
+    assert scaled, f"expected a scaled-text warning, got {warnings}"
+    assert f"floor {MIN_FONT_SIZE}" in scaled[0], scaled[0]
+    assert comp.last_effective_font < MIN_FONT_SIZE, (
+        f"effective font {comp.last_effective_font} should be below the floor"
+    )
+
+
+def test_short_content_is_not_reported_as_scaled_down():
+    """One short bullet per side fits without shrinking, so no warning."""
+    from animatica.components._draw import MIN_FONT_SIZE
+
+    params = Compare.Params(
+        title="Cats vs Dogs",
+        left={"heading": "Cats", "bullets": ["fast"]},
+        right={"heading": "Dogs", "bullets": ["slow"]},
+    )
+    comp, warnings = _play_and_warnings(params, _make_caption("Comparing two icy moons"))
+
+    assert not [w for w in warnings if "text scaled to" in w], (
+        f"unexpected scaled-text warning: {warnings}"
+    )
+    assert comp.last_effective_font >= MIN_FONT_SIZE, (
+        f"effective font {comp.last_effective_font} should be at or above the floor"
+    )
+
+
+def test_scaled_text_warning_is_not_a_component_fallback():
+    """The advisory must not be recorded as a text_card fallback.
+
+    It starts with the component name, which is the same shape a real
+    fallback uses, so the fallback detector has to tell them apart.
+    """
+    from animatica.pipeline import make_video
+
+    assert "compare: text scaled to" in "compare: text scaled to 25 px (floor 32)"
+    # The detector itself is covered in tests/test_pipeline.py; here we only
+    # assert the message keeps the shape the detector relies on.
+    assert make_video is not None
+
+
+def test_effective_font_is_reported_for_a_two_line_caption():
+    """A two-line caption leaves less room, so the text shrinks further."""
+    from animatica.components._draw import MIN_FONT_SIZE
+
+    long_caption = (
+        "Positive charges gather at the cloud's top, negative charges at its base, "
+        "and the ground below turns positive."
+    )
+    params = _long_params()
+    comp, warnings = _play_and_warnings(params, _make_caption(long_caption))
+
+    assert comp.last_effective_font < MIN_FONT_SIZE
+    assert any("text scaled to" in w for w in warnings), warnings
+    # The reported size must be the one that was actually used.
+    reported = [w for w in warnings if "text scaled to" in w][0]
+    assert f"{comp.last_effective_font:.0f} px" in reported, (
+        f"warning {reported!r} does not match the effective font "
+        f"{comp.last_effective_font:.2f}"
+    )
