@@ -2,6 +2,13 @@ import pytest
 
 from animatica.components.array_viz import ArrayViz, opacity_for, swap_targets
 from animatica.components.registry import default_registry
+from geometry import (
+    RESOLUTIONS,
+    assert_beat_timing,
+    assert_inside_safe_area,
+    assert_no_text_overlap,
+    play_component,
+)
 
 
 def test_registered():
@@ -83,3 +90,45 @@ def test_opacity_outside_range_is_dimmed():
 
 def test_opacity_without_range_is_full():
     assert opacity_for(0, None, None) == 1.0
+
+
+# ---------------------------------------------------------------------------
+# B4: the array viz has to fit the frame, keep its text apart and fit its clock
+# ---------------------------------------------------------------------------
+
+
+def _array_params() -> ArrayViz.Params:
+    """The parameters of the conformance storyboard, tests/conformance/array_viz.json."""
+    return ArrayViz.Params(
+        title="Bubble sort step",
+        values=[3, 1, 2],
+        steps=[{"highlight": [0, 1]}, {"swap": [0, 1]}],
+    )
+
+
+@pytest.mark.parametrize("width,height", RESOLUTIONS)
+def test_array_viz_content_stays_inside_the_safe_area(width, height):
+    """No part of the array may reach into the safe-area margin.
+
+    The whole array was scaled up to fill the frame, which stretched the
+    title over the edges of the frame and into the margin.
+    """
+    beat = play_component(ArrayViz(), _array_params(), width, height)
+
+    assert_inside_safe_area(beat)
+
+
+@pytest.mark.parametrize("width,height", RESOLUTIONS)
+def test_array_viz_text_does_not_overlap(width, height):
+    """The values must not land on each other."""
+    beat = play_component(ArrayViz(), _array_params(), width, height)
+
+    assert_no_text_overlap(beat)
+
+
+@pytest.mark.parametrize("width,height", RESOLUTIONS)
+def test_array_viz_beat_fits_its_declared_duration(width, height):
+    """The animations must fit inside the duration the component declared."""
+    beat = play_component(ArrayViz(), _array_params(), width, height)
+
+    assert_beat_timing(beat)
