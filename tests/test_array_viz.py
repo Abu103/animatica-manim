@@ -132,3 +132,73 @@ def test_array_viz_beat_fits_its_declared_duration(width, height):
     beat = play_component(ArrayViz(), _array_params(), width, height)
 
     assert_beat_timing(beat)
+
+
+# ---------------------------------------------------------------------------
+# B4b: the value boxes fill the stage, the title keeps its place
+# ---------------------------------------------------------------------------
+
+#: The title's bounding box, captured before the boxes were scaled up. The
+#: boxes grow; the title does not move and does not change size.
+TITLE_BBOX = (-1.961, 1.961, 0.162, 0.700)
+
+
+def _array_title(beat):
+    """The array viz's title."""
+    from manim import Text
+
+    titles = [m for m in beat.mobjects if isinstance(m, Text)]
+    assert titles, "the array viz did not animate a title"
+    return titles[0]
+
+
+def _array_boxes(beat):
+    """The array viz's row of value boxes."""
+    from manim import VGroup
+
+    groups = [m for m in beat.mobjects if isinstance(m, VGroup)]
+    assert groups, "the array viz did not animate a group of boxes"
+    return groups[0]
+
+
+@pytest.mark.parametrize("width,height", RESOLUTIONS)
+def test_array_viz_boxes_fill_the_stage(width, height):
+    """The value boxes must fill a good part of the frame.
+
+    They were left at their natural size, so a three-element array was a
+    small patch in the middle of an empty frame. The cap keeps them inside
+    the safe area: at most 70% of the frame width.
+    """
+    beat = play_component(ArrayViz(), _array_params(), width, height)
+    boxes = _array_boxes(beat)
+    share = boxes.width / beat.frame_width
+
+    assert share >= 0.4, (
+        f"the value boxes fill {share:.1%} of the frame, they should fill "
+        "at least 40%"
+    )
+    assert share <= 0.7 + 1e-6, (
+        f"the value boxes fill {share:.1%} of the frame, they should fill "
+        "at most 70%"
+    )
+
+
+@pytest.mark.parametrize("width,height", RESOLUTIONS)
+def test_array_viz_title_keeps_its_place(width, height):
+    """Scaling the boxes must not move or resize the title."""
+    beat = play_component(ArrayViz(), _array_params(), width, height)
+    title = _array_title(beat)
+    left, right, bottom, top = TITLE_BBOX
+
+    assert title.get_left()[0] == pytest.approx(left, abs=1e-3), (
+        f"the title moved to x={title.get_left()[0]:.3f}, it was {left}"
+    )
+    assert title.get_right()[0] == pytest.approx(right, abs=1e-3), (
+        f"the title moved to x={title.get_right()[0]:.3f}, it was {right}"
+    )
+    assert title.get_bottom()[1] == pytest.approx(bottom, abs=1e-3), (
+        f"the title moved to y={title.get_bottom()[1]:.3f}, it was {bottom}"
+    )
+    assert title.get_top()[1] == pytest.approx(top, abs=1e-3), (
+        f"the title moved to y={title.get_top()[1]:.3f}, it was {top}"
+    )
