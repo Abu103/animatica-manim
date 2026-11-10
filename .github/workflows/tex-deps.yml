@@ -32,7 +32,7 @@ jobs:
         run: |
           TLMGR=$(find "$HOME" -name tlmgr -path "*/bin/*" | head -1)
           echo "tlmgr: $TLMGR"
-          "$TLMGR" install standalone preview xkeyval babel-english amsmath amsfonts dvisvgm lm geometry xcolor
+          "$TLMGR" install standalone preview xkeyval babel-english amsmath amsfonts dvisvgm lm geometry xcolor varwidth
           echo "--- probe ---"
           TEXBIN=$(dirname "$TLMGR")
           echo "$TEXBIN" >> "$GITHUB_PATH"
