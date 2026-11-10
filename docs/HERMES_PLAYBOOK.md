@@ -69,7 +69,7 @@ Rules that follow from it:
 
 - **Run the full suite once before the PR, not before every commit.** A commit is verified by the tests of the files it touched; the full suite is the gate at the end.
 - The render gate caches its renders under `.animatica_cache/renders/`, keyed by the storyboard *and* a fingerprint of every source file. A changed component is never served from the cache, so a stale render cannot hide a regression. `ANIMATICA_NO_RENDER_CACHE=1` forces a real render.
-- `ANIMATICA_RENDER_JOBS=N` sets how many storyboards the gate renders at once; `ANIMATICA_TEST_JOBS=N` sets how many workers the suite uses.
+- `ANIMATICA_RENDER_JOBS=N` sets how many storyboards the gate renders at once; `ANIMATICA_TEST_JOBS=N` sets how many workers the suite uses. Measured on the owner's four-core laptop: the suite takes 369 s serial, 183 s with two workers, 155 s with three, 155 s with four and 138 s with six. Four is the default; six is a little faster and uses more memory.
 - The conformance corpus is rendered **once** per CI run, by the render gate. The suite does not render it any more: that was two renders of the same seventeen storyboards for the same evidence.
 
 
