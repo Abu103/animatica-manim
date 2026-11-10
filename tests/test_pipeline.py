@@ -455,3 +455,74 @@ def test_make_video_records_component_fallbacks(tmp_path, monkeypatch):
     result = make_video("make a title card about Hello", out_dir=tmp_path, preview=True, backend="fake")
 
     assert result.fallbacks == ["compare"]
+
+
+# ---------------------------------------------------------------------------
+# B3: an advisory warning must not be mistaken for a text_card fallback
+# ---------------------------------------------------------------------------
+
+
+def _make_video_with_warning(tmp_path, monkeypatch, warning: str):
+    """Run make_video over a fake backend that emits exactly `warning`."""
+    import pathlib
+    import animatica.pipeline as pipeline
+    from animatica.backends.base import RenderResult
+
+    class FakeBackend:
+        name = "fake"
+        version = "9.9"
+        supported_capabilities: ClassVar[list[str]] = ["latex", "ffmpeg", "manim"]
+
+        def capabilities(self):
+            return list(self.supported_capabilities)
+
+        def render(self, sb, out_dir, opts):
+            out_dir = pathlib.Path(out_dir)
+            out_dir.mkdir(parents=True, exist_ok=True)
+            (out_dir / "video.mp4").write_bytes(b"fake-video")
+            return RenderResult(
+                video=out_dir / "video.mp4",
+                durations=[1.0],
+                warnings=[warning],
+                stage_times={"total": 1.0},
+            )
+
+    monkeypatch.setattr("animatica.pipeline.default_backends", lambda: {"fake": FakeBackend()})
+    monkeypatch.setattr(pipeline, "ManimBackend", lambda: (_ for _ in ()).throw(AssertionError("ManimBackend must not be instantiated")))
+
+    return make_video("make a title card about Hello", out_dir=tmp_path, preview=True, backend="fake")
+
+
+def test_advisory_warning_is_not_a_fallback(tmp_path, monkeypatch):
+    """A component advisory is not a text_card fallback.
+
+    "compare: text scaled to 25 px (floor 32)" starts with a registered
+    component name, but compare did not fall back to a text card. Only a
+    real fallback ("{component}: {ExcType}: {message}") counts.
+    """
+    result = _make_video_with_warning(
+        tmp_path, monkeypatch, "compare: text scaled to 25 px (floor 32)"
+    )
+
+    assert result.fallbacks == [], (
+        f"advisory warning wrongly recorded as a fallback: {result.fallbacks}"
+    )
+    assert any("text scaled to 25 px" in w for w in result.warnings), (
+        f"the advisory must still be reported: {result.warnings}"
+    )
+
+
+def test_real_fallback_is_still_detected(tmp_path, monkeypatch):
+    """The genuine fallback shape keeps populating the fallbacks list."""
+    result = _make_video_with_warning(tmp_path, monkeypatch, "compare: ValueError: boom")
+
+    assert result.fallbacks == ["compare"]
+
+
+def test_non_component_warning_is_not_a_fallback(tmp_path, monkeypatch):
+    """Warnings not from a registered component are never fallbacks."""
+    result = _make_video_with_warning(
+        tmp_path, monkeypatch, "timing: a beat ran 0.3s longer than its declared 2.0s"
+    )
+
+    assert result.fallbacks == []
