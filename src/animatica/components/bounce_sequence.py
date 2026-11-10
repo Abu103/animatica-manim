@@ -66,7 +66,7 @@ class BounceSequence(Component):
 
     def play(self, scene, p, colors) -> None:
         from manim import (DOWN, LEFT, UP, Dot, FadeIn, FadeOut, GrowFromEdge, Line, Rectangle, Text,
-                           UpdateFromAlphaFunc)
+                           UpdateFromAlphaFunc, config)
         prepare(scene, colors)
         values = list(p.values)
         n = len(values)
@@ -80,8 +80,8 @@ class BounceSequence(Component):
         tops = [BASELINE_Y + h for h in heights]
         radius = 0.2
 
-        title = Text(p.title, font_size=40, color=colors.text).to_edge(UP, buff=0.4)
-        fit(title)
+        title = Text(p.title, font_size=40, color=colors.text).to_edge(UP, buff=0.55)
+        fit(title, max_width=config.frame_width - 2.0, scale_up=False)
         base = Line([-X_SPAN / 2 - 0.2, BASELINE_Y, 0], [X_SPAN / 2 + 0.2, BASELINE_Y, 0],
                     color=colors.muted, stroke_width=3)
         label_size = 30 if n <= 8 else 26 if n <= 14 else 22
@@ -140,7 +140,7 @@ class BounceSequence(Component):
             landing = [GrowFromEdge(pads[i], DOWN), FadeIn(vals[i])]
             if sum_rule_holds(values, i):
                 new_sum = Text(f"{values[i - 2]:g} + {values[i - 1]:g} = {values[i]:g}",
-                               font_size=44, color=colors.accent2).move_to([0, 2.55, 0])
+                               font_size=44, color=colors.accent2).move_to([0, 2.4, 0])
                 if sum_text is not None:
                     landing.append(FadeOut(sum_text))
                 landing.append(FadeIn(new_sum))

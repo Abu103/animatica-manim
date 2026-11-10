@@ -9,28 +9,50 @@ from typing import ClassVar
 
 from pydantic import BaseModel, Field, field_validator
 
-from animatica.components._draw import MIN_FONT_SIZE, Clock, fit, prepare, wrap
+from animatica.components._draw import FADE_OUT, MIN_FONT_SIZE, Clock, fit, prepare, wrap
+from animatica.components._draw import caption_band_top as caption_band_top_of
 from animatica.components.base import Component
 from animatica.storyboard.models import MAX_TEXT
 
 MAX_NODES = 31
 SUPPORTED_FNS = ("fib",)
 
+#: Time a node and an edge take when the tree is drawn at full speed. The
+#: beat's budget is shared out between them, so a bigger tree draws faster.
+NODE_TIME = 0.15
+EDGE_TIME = 0.1
 
-def tree_layout(fn: str, n: int) -> dict[int, tuple[tuple, float, float]]:
-    """Return {node_id: (call, x, y)} for the call tree of fn(n).
+#: Time the title takes before the tree starts.
+TITLE_TIME = 0.5
+
+
+def tree_layout(fn: str, n: int) -> tuple[dict[int, tuple[tuple, float, float]], list[tuple[int, int]]]:
+    """Return ({node_id: (call, x, y)}, [(parent_id, child_id), ...]).
 
     Every call occurrence is its own node (repeats included). Leaves get distinct
     evenly-spaced x positions; parents are centered over their children. Capped at
     MAX_NODES nodes (deepest/rightmost dropped first).
+
+    The edge list is the real parent -> child relation, and it has to travel
+    with the layout: a caller that has to guess the children from the depth
+    and from the argument value connects a node to every matching node in the
+    next row, not only to its own children.
+
+    The positions come back in the order the layout placed the nodes, which is
+    the order of the tree from the leaves up (a parent is placed after its
+    children). The node ids are the order the calls were created in, from the
+    root down.
     """
     nodes: list[tuple] = []  # (id, call, depth, parent_id)
+    edges: list[tuple[int, int]] = []  # (parent id, child id)
 
     def build(call: tuple, depth: int, parent: int | None) -> int:
         if len(nodes) >= MAX_NODES:
             return -1
         nid = len(nodes)
         nodes.append((nid, call, depth, parent))
+        if parent is not None:
+            edges.append((parent, nid))
         if fn == "fib" and call[1] > 1:
             build((call[0], call[1] - 1), depth + 1, nid)
             build((call[0], call[1] - 2), depth + 1, nid)
@@ -61,7 +83,27 @@ def tree_layout(fn: str, n: int) -> dict[int, tuple[tuple, float, float]]:
     xs = [v[1] for v in pos.values()]
     lo, hi = min(xs), (max(xs) or 1.0)
     span = (hi - lo) or 1.0
-    return {nid: (call, -5.5 + (x - lo) / span * 11.0, y) for nid, (call, x, y) in pos.items()}
+    positions = {
+        nid: (call, -5.5 + (x - lo) / span * 11.0, y) for nid, (call, x, y) in pos.items()
+    }
+    return positions, edges
+
+
+def drawing_order(nodes: dict[int, tuple[tuple, float, float]]) -> list[int]:
+    """The node ids in the order the tree is drawn.
+
+    The root first, then level by level from the top down, left to right,
+    and every child with the edge that leads to it. A call tree that grows
+    from the root reads as a call tree; one that grows from the leaves reads
+    as a pile of numbers that happens to be connected.
+    """
+    levels: dict[int, list[int]] = {}
+    for nid, (_call, _x, y) in nodes.items():
+        levels.setdefault(round(-y / 1.1), []).append(nid)
+    order: list[int] = []
+    for depth in sorted(levels):
+        order.extend(sorted(levels[depth], key=lambda nid: nodes[nid][1]))
+    return order
 
 
 class RecursionTree(Component):
@@ -86,17 +128,18 @@ class RecursionTree(Component):
         return f"{p.title}: call tree of {p.fn}({p.n})"  # type: ignore[attr-defined]
 
     def play(self, scene, p, colors) -> None:
-        from manim import FadeIn, Line, Text, VGroup
+        from manim import UP, FadeIn, Line, Text, VGroup, config
 
         prepare(scene, colors)
         title = Text(wrap(p.title, 45), font_size=MIN_FONT_SIZE + 8, color=colors.accent)
-        nodes = tree_layout(p.fn, p.n)  # type: ignore[arg-type]
+        nodes, relations = tree_layout(p.fn, p.n)  # type: ignore[arg-type]
         counts: dict[tuple, int] = {}
         for _nid, (call, _x, _y) in nodes.items():
             counts[call] = counts.get(call, 0) + 1
         seen: set[tuple] = set()
         vg_nodes = VGroup()
         vg_edges = VGroup()
+        node_of: dict[int, object] = {}
         for nid, (call, x, y) in nodes.items():
             label = f"{call[0]}({call[1]})"
             repeated = counts[call] > 1 and call in seen
@@ -105,29 +148,46 @@ class RecursionTree(Component):
             node = Text(label, font_size=MIN_FONT_SIZE, color=color)
             node.move_to([x, y + 1.2, 0])
             vg_nodes.add(node)
-        for nid, (call, x, y) in nodes.items():
-            if p.fn == "fib" and call[1] > 1:  # type: ignore[operator]
-                for _c_nid, (ccall, cx, cy) in nodes.items():
-                    if ccall[1] == call[1] - 1 or ccall[1] == call[1] - 2:  # type: ignore[operator]
-                        # edge to direct children only: check depth difference
-                        pass
-        # simpler: edges from parent to its two fib children by depth
-        by_depth: dict[int, list[int]] = {}
-        for nid, (call, _x, y) in nodes.items():
-            by_depth.setdefault(round(-y / 1.1), []).append(nid)
-        for nid, (call, x, y) in nodes.items():
-            d = round(-y / 1.1)
-            if p.fn == "fib" and call[1] > 1:  # type: ignore[operator]
-                for cid in by_depth.get(d + 1, []):
-                    ccall, cx, cy = nodes[cid]
-                    if ccall[1] in (call[1] - 1, call[1] - 2):  # type: ignore[operator]
-                        vg_edges.add(Line([x, y + 1.0, 0], [cx, cy + 1.4, 0], color=colors.muted))
-        group = VGroup(title, vg_nodes, vg_edges)
-        fit(group)
+            node_of[nid] = node
+        # The edges are the real parent -> child relations. Guessing the
+        # children from the depth and from the argument value connected every
+        # node to every matching node in the next row: a fib(3) had four
+        # edges instead of two, and they reached into the branches of other
+        # parents.
+        edge_of: dict[tuple[int, int], object] = {}
+        for parent_id, child_id in relations:
+            _pcall, px, py = nodes[parent_id]
+            _ccall, cx, cy = nodes[child_id]
+            edge = Line([px, py + 1.0, 0], [cx, cy + 1.4, 0], color=colors.muted)
+            vg_edges.add(edge)
+            edge_of[(parent_id, child_id)] = edge
+        # The tree is drawn first and the title goes above it. The title used
+        # to sit in the middle of the tree, on top of the first row of nodes.
+        tree = VGroup(vg_nodes, vg_edges)
+        caption = getattr(scene, "caption_mobject", None)
+        band = caption_band_top_of(caption)
+        # Shrink only: scaling the tree up to fill the frame pushed the outer
+        # leaves past the safe-area margin frame-lint keeps free, and the
+        # bottom of the tree into the caption.
+        fit(tree, max_width=config.frame_width - 2.0,
+            max_height=config.frame_height / 2 - 0.6 - title.height - 0.4 - band,
+            scale_up=False)
+        tree.shift(UP * (band - tree.get_bottom()[1]))
+        title.next_to(tree, UP, buff=0.4)
         clock = Clock(scene, self.duration(p))
-        clock.play(FadeIn(title), run_time=0.5)
-        for node in vg_nodes:
-            clock.play(FadeIn(node), run_time=0.15)
-        for edge in vg_edges:
-            clock.play(FadeIn(edge), run_time=0.1)
+        # The budget is counted in whole video frames. Manim rounds every
+        # animation up to the next frame, and with 29 small animations that
+        # rounding added up to 0.6s: the video was longer than the beat
+        # declared, the captions drifted, and the last edges were still
+        # fading in when the beat was supposed to be over. What is left of
+        # the budget holds the finished tree, so it can be read.
+        node_time = clock.seconds(clock.frames(NODE_TIME))
+        edge_time = clock.seconds(clock.frames(EDGE_TIME))
+        clock.play(FadeIn(title), run_time=clock.seconds(clock.frames(TITLE_TIME)))
+        parent_of = {child: parent for parent, child in relations}
+        for nid in drawing_order(nodes):
+            parent = parent_of.get(nid)
+            if parent is not None:
+                clock.play(FadeIn(edge_of[(parent, nid)]), run_time=edge_time)
+            clock.play(FadeIn(node_of[nid]), run_time=node_time)
         clock.finish()

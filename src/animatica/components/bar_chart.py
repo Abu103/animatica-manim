@@ -42,7 +42,7 @@ class BarChart(Component):
         return "\n".join([p.title] + [f"{a}: {b:g}" for a, b in zip(p.labels, p.values)])  # type: ignore[attr-defined]
 
     def play(self, scene, p, colors) -> None:
-        from manim import DOWN, DR, UP, FadeIn, GrowFromEdge, LaggedStart, Line, Rectangle, Text, VGroup
+        from manim import DOWN, DR, UP, FadeIn, GrowFromEdge, LaggedStart, Line, Rectangle, Text, VGroup, config
         prepare(scene, colors)
         n = len(p.values)
         total = self.duration(p)
@@ -64,12 +64,12 @@ class BarChart(Component):
                 cat.rotate(0.6)
                 cat.next_to([xs[i], BASELINE_Y, 0], DOWN, buff=0.1)
             bars.append(bar), vals.append(val), cats.append(cat)
-        title = Text(p.title, font_size=MIN_FONT_SIZE + 8, color=colors.text).to_edge(UP, buff=0.4)
+        title = Text(p.title, font_size=MIN_FONT_SIZE + 8, color=colors.text).to_edge(UP, buff=0.55)
         base = Line([-5.6, BASELINE_Y, 0], [5.6, BASELINE_Y, 0], color=colors.muted, stroke_width=3)
-        fit(title)
+        fit(title, max_width=config.frame_width - 2.0, scale_up=False)
         extra = []
         if used_scale in NOTES:
-            extra = [Text(f"({NOTES[used_scale]})", font_size=22, color=colors.muted).to_corner(DR, buff=0.3).shift(UP * 0.55)]
+            extra = [Text(f"({NOTES[used_scale]})", font_size=22, color=colors.muted).to_corner(DR, buff=0.75).shift(UP * 0.55)]
         clock = Clock(scene, total)
         clock.play(FadeIn(title), FadeIn(base), *[FadeIn(e) for e in extra], *[FadeIn(c) for c in cats], run_time=0.6)
         clock.play(LaggedStart(*[GrowFromEdge(b, DOWN) for b in bars], lag_ratio=0.25),

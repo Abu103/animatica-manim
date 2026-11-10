@@ -9,6 +9,13 @@ from animatica.components.graph import Graph, looks_like_math, make_label
 from animatica.components.registry import default_registry
 from animatica.components.theme import PALETTES
 from animatica.storyboard.safety import UnsafeInput
+from geometry import (
+    RESOLUTIONS,
+    assert_beat_timing,
+    assert_inside_safe_area,
+    assert_no_text_overlap,
+    play_component,
+)
 from manim import Text
 
 G = dict(fn="sin(x)", x_range=(-6.28, 6.28), y_range=(-1.5, 1.5), label="sine")
@@ -190,4 +197,58 @@ def test_make_label_falls_back_to_plain_text_when_latex_raises(monkeypatch):
     assert isinstance(label, Text)
     assert label.text == latex_to_plain("x^3/6")
     assert len(scene.warnings) == 1
+
+
+# ---------------------------------------------------------------------------
+# B4: the bar chart has to fit the frame, keep its text apart and fit its clock
+# ---------------------------------------------------------------------------
+
+
+def _bar_chart_params() -> BarChart.Params:
+    """The parameters of the conformance storyboard, tests/conformance/bar_chart.json."""
+    return BarChart.Params(title="Conformance", labels=["A", "B", "C", "D"], values=[3, 5, 2, 7])
+
+
+@pytest.mark.parametrize("width,height", RESOLUTIONS)
+def test_bar_chart_content_stays_inside_the_safe_area(width, height):
+    """No part of the chart may reach into the safe-area margin.
+
+    The title was scaled up to fill the frame, which pushed it over the
+    top edge of the frame and into the margin frame-lint keeps free.
+    """
+    beat = play_component(BarChart(), _bar_chart_params(), width, height)
+
+    assert_inside_safe_area(beat)
+
+
+@pytest.mark.parametrize("width,height", RESOLUTIONS)
+def test_bar_chart_text_does_not_overlap(width, height):
+    """The value labels and the category labels must not land on each other."""
+    beat = play_component(BarChart(), _bar_chart_params(), width, height)
+
+    assert_no_text_overlap(beat)
+
+
+@pytest.mark.parametrize("width,height", RESOLUTIONS)
+def test_bar_chart_beat_fits_its_declared_duration(width, height):
+    """The animations must fit inside the duration the component declared."""
+    beat = play_component(BarChart(), _bar_chart_params(), width, height)
+
+    assert_beat_timing(beat)
+
+
+@pytest.mark.parametrize("width,height", RESOLUTIONS)
+def test_bar_chart_scale_note_stays_inside_the_safe_area(width, height):
+    """The note that says the heights are not linear must stay in the margin.
+
+    A wide spread of values makes the chart use a square-root or a log
+    scale, and the note it adds used to sit in the margin frame-lint keeps
+    free of content.
+    """
+    params = BarChart.Params(
+        title="Fibonacci", labels=list("ABCDE"), values=[1, 1, 2, 3, 610]
+    )
+    beat = play_component(BarChart(), params, width, height)
+
+    assert_inside_safe_area(beat)
 

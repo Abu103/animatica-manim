@@ -46,7 +46,7 @@ class NumberLine(Component):
         return f"{p.title}: {p.start} to {p.end}" + (f"; jumps: {jumps}" if jumps else "")  # type: ignore[attr-defined]
 
     def play(self, scene, p, colors) -> None:
-        from manim import DOWN, FadeIn, FadeOut, Line, Text, VGroup
+        from manim import DOWN, UP, FadeIn, FadeOut, Line, Text, VGroup, config
 
         prepare(scene, colors)
         span = p.end - p.start  # type: ignore[operator]
@@ -56,6 +56,7 @@ class NumberLine(Component):
             return x0 + (v - p.start) / span * (x1 - x0)  # type: ignore[operator]
 
         title = Text(wrap(p.title, 45), font_size=MIN_FONT_SIZE + 8, color=colors.accent)
+        title.to_edge(UP, buff=0.55)
         line = Line([x0, 0, 0], [x1, 0, 0], color=colors.muted)
         marks = VGroup(line)
         for m in sorted({p.start, p.end, *p.marks}):  # type: ignore[attr-defined]
@@ -64,7 +65,7 @@ class NumberLine(Component):
             label.move_to([x_of(m), -0.55, 0])
             marks.add(tick, label)
         group = VGroup(title, marks)
-        fit(group)
+        fit(group, max_width=config.frame_width - 2.0, scale_up=False)
         group.shift(DOWN * 0.4)
         clock = Clock(scene, self.duration(p))
         clock.play(FadeIn(title), run_time=0.6)

@@ -1,8 +1,11 @@
 import pytest
-from contextlib import contextmanager
 
 from animatica.components.compare import Compare
 from animatica.components.registry import default_registry
+from geometry import RecordingScene as _FakeScene
+from geometry import _boxes_intersect
+from geometry import frame_units as _frame_dims
+from geometry import make_colors as _make_colors
 
 
 def test_registered():
@@ -35,32 +38,12 @@ def test_fallback_text_has_both_headings():
 # ---------------------------------------------------------------------------
 
 
-def _make_colors():
-    from animatica.components.theme import PALETTES
-    return PALETTES["dark-blue"]
-
-
 def _make_params(left_bullets: int, right_bullets: int):
     return Compare.Params(
         title="Cats vs Dogs",
         left={"heading": "Cats", "bullets": [f"cat bullet {i}" for i in range(left_bullets)]},
         right={"heading": "Dogs", "bullets": [f"dog bullet {i}" for i in range(right_bullets)]},
     )
-
-
-@contextmanager
-def _frame_dims(frame_width: float, frame_height: float):
-    from manim import config
-
-    old_w = config.frame_width
-    old_h = config.frame_height
-    config.frame_width = frame_width
-    config.frame_height = frame_height
-    try:
-        yield
-    finally:
-        config.frame_width = old_w
-        config.frame_height = old_h
 
 
 def test_title_above_both_columns():
@@ -185,25 +168,6 @@ def test_duration_covers_animation(bullets):
 # ---------------------------------------------------------------------------
 # B2b: compare.play() must not crash on real Windows (manim.config import)
 # ---------------------------------------------------------------------------
-
-
-class _FakeScene:
-    """Minimal stand-in for a Manim Scene used by component.play()."""
-
-    def __init__(self):
-        from manim import VMobject
-        self.camera = _FakeCamera()
-        self.played_run_times: list[float] = []
-        self.waited_seconds: list[float] = []
-        self.mobjects: list = [VMobject()]  # non-empty so finish() fades them out
-        self.warnings: list[str] = []
-
-    def play(self, *anims, run_time: float = 0.0):
-        self.played_run_times.append(run_time)
-
-    def wait(self, seconds: float):
-        if seconds > 1e-6:
-            self.waited_seconds.append(seconds)
 
 
 class _FakeCamera:
@@ -395,15 +359,6 @@ def _all_mobjects(title, left, right):
     objs.extend(left[1])  # left bullets
     objs.extend(right[1])  # right bullets
     return objs
-
-
-def _boxes_intersect(a, b, inflate=0.05):
-    """True if two bboxes intersect when each is inflated by `inflate` units."""
-    ax1, ay1 = a.get_left()[0] - inflate, a.get_bottom()[1] - inflate
-    ax2, ay2 = a.get_right()[0] + inflate, a.get_top()[1] + inflate
-    bx1, by1 = b.get_left()[0] - inflate, b.get_bottom()[1] - inflate
-    bx2, by2 = b.get_right()[0] + inflate, b.get_top()[1] + inflate
-    return not (ax2 <= bx1 or bx2 <= ax1 or ay2 <= by1 or by2 <= ay1)
 
 
 @pytest.mark.parametrize("fw,fh", [(14.22, 8.0), (14.22, 8.0)])

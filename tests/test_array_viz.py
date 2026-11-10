@@ -2,6 +2,13 @@ import pytest
 
 from animatica.components.array_viz import ArrayViz, opacity_for, swap_targets
 from animatica.components.registry import default_registry
+from geometry import (
+    RESOLUTIONS,
+    assert_beat_timing,
+    assert_inside_safe_area,
+    assert_no_text_overlap,
+    play_component,
+)
 
 
 def test_registered():
@@ -83,3 +90,125 @@ def test_opacity_outside_range_is_dimmed():
 
 def test_opacity_without_range_is_full():
     assert opacity_for(0, None, None) == 1.0
+
+
+# ---------------------------------------------------------------------------
+# B4: the array viz has to fit the frame, keep its text apart and fit its clock
+# ---------------------------------------------------------------------------
+
+
+def _array_params() -> ArrayViz.Params:
+    """The parameters of the conformance storyboard, tests/conformance/array_viz.json."""
+    return ArrayViz.Params(
+        title="Bubble sort step",
+        values=[3, 1, 2],
+        steps=[{"highlight": [0, 1]}, {"swap": [0, 1]}],
+    )
+
+
+@pytest.mark.parametrize("width,height", RESOLUTIONS)
+def test_array_viz_content_stays_inside_the_safe_area(width, height):
+    """No part of the array may reach into the safe-area margin.
+
+    The whole array was scaled up to fill the frame, which stretched the
+    title over the edges of the frame and into the margin.
+    """
+    beat = play_component(ArrayViz(), _array_params(), width, height)
+
+    assert_inside_safe_area(beat)
+
+
+@pytest.mark.parametrize("width,height", RESOLUTIONS)
+def test_array_viz_text_does_not_overlap(width, height):
+    """The values must not land on each other."""
+    beat = play_component(ArrayViz(), _array_params(), width, height)
+
+    assert_no_text_overlap(beat)
+
+
+@pytest.mark.parametrize("width,height", RESOLUTIONS)
+def test_array_viz_beat_fits_its_declared_duration(width, height):
+    """The animations must fit inside the duration the component declared."""
+    beat = play_component(ArrayViz(), _array_params(), width, height)
+
+    assert_beat_timing(beat)
+
+
+# ---------------------------------------------------------------------------
+# B4b: the value boxes fill the stage
+# ---------------------------------------------------------------------------
+
+
+def _array_title(beat):
+    """The array viz's title."""
+    from manim import Text
+
+    titles = [m for m in beat.mobjects if isinstance(m, Text)]
+    assert titles, "the array viz did not animate a title"
+    return titles[0]
+
+
+def _array_boxes(beat):
+    """The array viz's row of value boxes."""
+    from manim import VGroup
+
+    groups = [m for m in beat.mobjects if isinstance(m, VGroup)]
+    assert groups, "the array viz did not animate a group of boxes"
+    return groups[0]
+
+
+@pytest.mark.parametrize("width,height", RESOLUTIONS)
+def test_array_viz_boxes_fill_the_stage(width, height):
+    """The value boxes must fill a good part of the frame.
+
+    They were left at their natural size, so a three-element array was a
+    small patch in the middle of an empty frame. The cap keeps them inside
+    the safe area: at most 70% of the frame width.
+    """
+    beat = play_component(ArrayViz(), _array_params(), width, height)
+    boxes = _array_boxes(beat)
+    share = boxes.width / beat.frame_width
+
+    assert share >= 0.4, (
+        f"the value boxes fill {share:.1%} of the frame, they should fill "
+        "at least 40%"
+    )
+    assert share <= 0.7 + 1e-6, (
+        f"the value boxes fill {share:.1%} of the frame, they should fill "
+        "at most 70%"
+    )
+
+
+# ---------------------------------------------------------------------------
+# B4e: the title is at the top of the frame, centred, above the boxes
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize("width,height", RESOLUTIONS)
+def test_array_viz_title_is_centred_above_the_boxes(width, height):
+    """The title sits at the top of the frame, centred, above the boxes.
+
+    It used to keep the place the layout gave it, which left it in the
+    middle of the frame with the boxes hanging below it and the whole top
+    of the frame empty.
+    """
+    beat = play_component(ArrayViz(), _array_params(), width, height)
+    title = _array_title(beat)
+    boxes = _array_boxes(beat)
+    half_height = beat.frame_height / 2
+
+    assert title.get_center()[0] == pytest.approx(0.0, abs=1e-3), (
+        f"the title is centred at x={title.get_center()[0]:.3f}, it should be "
+        "centred in the frame"
+    )
+    assert title.get_top()[1] == pytest.approx(half_height - 0.6, abs=1e-3), (
+        f"the title's top is at y={title.get_top()[1]:.3f}, it should sit "
+        f"{0.6:.1f} below the top edge (y={half_height - 0.6:.3f})"
+    )
+    assert title.get_bottom()[1] > boxes.get_top()[1], (
+        f"the title's bottom is at y={title.get_bottom()[1]:.3f} and the "
+        f"boxes' top at y={boxes.get_top()[1]:.3f}: the title must be above "
+        "the boxes"
+    )
+    assert_inside_safe_area(beat)
+    assert_no_text_overlap(beat)

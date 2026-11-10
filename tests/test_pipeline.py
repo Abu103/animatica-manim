@@ -136,7 +136,7 @@ def test_make_video_lints_by_default(tmp_path, monkeypatch):
     monkeypatch.setattr("animatica.pipeline.default_backends", lambda: {"fake": FakeBackend()})
     monkeypatch.setattr(pipeline, "ManimBackend", lambda: (_ for _ in ()).throw(AssertionError("ManimBackend must not be instantiated")))
 
-    def fake_lint_video(video_path, durations, config):
+    def fake_lint_video(video_path, durations, config, **kwargs):
         return FrameLintResult(findings=[
             FrameFinding(
                 kind="safe_area",

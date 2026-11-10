@@ -2,6 +2,13 @@ import pytest
 
 from animatica.components.bounce_sequence import BounceSequence, parabola_point, sum_rule_holds
 from animatica.components.registry import default_registry
+from geometry import (
+    RESOLUTIONS,
+    assert_beat_timing,
+    assert_inside_safe_area,
+    assert_no_text_overlap,
+    play_component,
+)
 
 FIB = [0, 1, 1, 2, 3, 5, 8, 13, 21, 34, 55]
 
@@ -56,3 +63,40 @@ def test_two_terms_still_works(run_component):
     s, warnings = run_component(BounceSequence(), BounceSequence.Params(title="Tiny", values=[3, 7]))
     assert warnings == []
 
+
+# ---------------------------------------------------------------------------
+# B4: the bounce sequence has to fit the frame, keep its text apart and fit its clock
+# ---------------------------------------------------------------------------
+
+
+def _bounce_params() -> BounceSequence.Params:
+    """The parameters of the conformance storyboard, tests/conformance/bounce_sequence.json."""
+    return BounceSequence.Params(title="Fibonacci", values=[0, 1, 1, 2, 3])
+
+
+@pytest.mark.parametrize("width,height", RESOLUTIONS)
+def test_bounce_sequence_content_stays_inside_the_safe_area(width, height):
+    """No part of the sequence may reach into the safe-area margin.
+
+    The title was scaled up to fill the frame, which pushed it over the top
+    edge of the frame and into the margin frame-lint keeps free.
+    """
+    beat = play_component(BounceSequence(), _bounce_params(), width, height)
+
+    assert_inside_safe_area(beat)
+
+
+@pytest.mark.parametrize("width,height", RESOLUTIONS)
+def test_bounce_sequence_text_does_not_overlap(width, height):
+    """The title and the running sum must not land on each other."""
+    beat = play_component(BounceSequence(), _bounce_params(), width, height)
+
+    assert_no_text_overlap(beat)
+
+
+@pytest.mark.parametrize("width,height", RESOLUTIONS)
+def test_bounce_sequence_beat_fits_its_declared_duration(width, height):
+    """The animations must fit inside the duration the component declared."""
+    beat = play_component(BounceSequence(), _bounce_params(), width, height)
+
+    assert_beat_timing(beat)

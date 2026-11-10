@@ -6,7 +6,9 @@ video rendering or system packages are required.
 
 from __future__ import annotations
 
+import json
 import math
+from pathlib import Path
 from unittest.mock import MagicMock
 
 import av
@@ -28,6 +30,112 @@ from animatica.frame_lint import (
     lint_result_to_warnings,
     lint_video,
 )
+
+
+# ---------------------------------------------------------------------------
+# B4b: small content is judged per beat, and the caption is not content
+# ---------------------------------------------------------------------------
+
+CONFORMANCE_DIR = Path(__file__).resolve().parent / "conformance"
+
+
+def _write_storyboard(path: Path, beats: list[dict]) -> Path:
+    """Write a one-scene storyboard with the given beats."""
+    path.write_text(
+        json.dumps({"version": "1", "title": "T", "scenes": [{"beats": beats}]}),
+        encoding="utf-8",
+    )
+    return path
+
+
+@pytest.mark.render
+def test_a_beat_that_shows_nothing_is_still_small_content(tmp_path):
+    """A storyboard whose component shows nothing must still be reported.
+
+    The burned-in caption is not content: a beat that only ever shows the
+    caption is a beat that shows nothing.
+    """
+    from animatica.pipeline import make_video
+
+    sb = _write_storyboard(
+        tmp_path / "sb.json",
+        [{"component": "title_card", "params": {"title": " "}, "caption": "Only a caption."}],
+    )
+    result = make_video(None, storyboard_path=sb, out_dir=tmp_path / "out", preview=True)
+
+    assert not any(w.startswith("title_card:") for w in result.warnings), result.warnings
+    assert any("small_content" in w for w in result.warnings), result.warnings
+
+
+@pytest.mark.render
+@pytest.mark.parametrize("name", ["compare", "timeline", "two_scene"])
+def test_a_beat_that_fades_in_is_not_small_content(tmp_path, name):
+    """A beat is judged on what it showed, not on its first frame.
+
+    In the first frame of a beat only the caption is on screen; the
+    content fades in after it. Judging the beat on that frame reported
+    every storyboard as having almost no content.
+    """
+    from animatica.pipeline import make_video
+
+    result = make_video(
+        None,
+        storyboard_path=CONFORMANCE_DIR / f"{name}.json",
+        out_dir=tmp_path / name,
+        preview=True,
+    )
+
+    assert not any("small_content" in w for w in result.warnings), result.warnings
+
+
+# ---------------------------------------------------------------------------
+# B4e: the caption strip is measured, not guessed
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.render
+def test_a_three_line_caption_is_still_not_content(tmp_path):
+    """A caption that needs three lines must not count as content either.
+
+    The strip the lint leaves out was a constant, so a caption taller than
+    it leaked into the coverage measurement and a beat that showed nothing
+    but a caption looked as if it had content.
+    """
+    from animatica.pipeline import make_video
+
+    caption = (
+        "This caption is long enough that it has to be wrapped over three "
+        "lines in the band at the bottom of the frame, which makes it much "
+        "taller than the strip the lint used to leave out."
+    )
+    sb = _write_storyboard(
+        tmp_path / "sb.json",
+        [{"component": "title_card", "params": {"title": " "}, "caption": caption}],
+    )
+    result = make_video(None, storyboard_path=sb, out_dir=tmp_path / "out", preview=True)
+
+    assert any("small_content" in w for w in result.warnings), result.warnings
+
+
+def test_a_beat_shorter_than_the_sampling_interval_does_not_crash():
+    """A beat that is sampled zero times must not break the lint.
+
+    The lint samples one frame per second. A beat shorter than that is
+    never sampled, and judging it must not divide by a frame that is not
+    there.
+    """
+    frames = [(_solid_frame([40, 40, 40], 160, 120), 0.0)]
+    cfg = FrameLintConfig(enabled=True, sample_fps=1.0, small_content_threshold=0.01)
+
+    result = lint_video(
+        "fake.mp4",
+        [0.3],
+        cfg,
+        beat_durations=[[0.3]],
+        decode=lambda p: _make_container(frames, 160, 120, 0.3),
+    )
+
+    assert not any(f.kind == "analysis" for f in result.findings), result.findings
 
 
 # ---------------------------------------------------------------------------

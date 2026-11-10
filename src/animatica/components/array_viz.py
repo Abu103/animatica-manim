@@ -9,6 +9,7 @@ from typing import ClassVar
 from pydantic import BaseModel, Field, model_validator
 
 from animatica.components._draw import MIN_FONT_SIZE, Clock, fit, prepare, wrap
+from animatica.components._draw import caption_band_top as caption_band_top_of
 from animatica.components.base import Component
 from animatica.storyboard.models import MAX_TEXT
 
@@ -78,15 +79,24 @@ class ArrayViz(Component):
         return f"{p.title}: [{', '.join(f'{v:g}' for v in p.values)}]"  # type: ignore[attr-defined]
 
     def play(self, scene, p, colors) -> None:
-        from manim import DOWN, FadeIn, Text, VGroup
+        from manim import DOWN, UP, FadeIn, Text, VGroup, config
 
         prepare(scene, colors)
         title = Text(wrap(p.title, 45), font_size=MIN_FONT_SIZE + 8, color=colors.accent)
+        # The title sits at the top of the frame, centred. It used to keep
+        # the place the layout gave it, which left the whole top of the
+        # frame empty.
+        title.to_edge(UP, buff=0.6).set_x(0)
         boxes = VGroup(*[
             Text(f"{v:g}", font_size=MIN_FONT_SIZE + 4, color=colors.text) for v in p.values  # type: ignore[attr-defined]
         ]).arrange_in_grid(1, len(p.values), buff=0.9)  # type: ignore[attr-defined]
-        group = VGroup(title, boxes).arrange(DOWN, buff=0.5)
-        fit(group)
+        # The boxes fill the stage. The cap keeps them inside the safe area:
+        # at most 70% of the frame width.
+        fit(boxes, max_width=config.frame_width * 0.7, max_height=config.frame_height - 2.4, scale_up=True)
+        # The boxes are centred in the space below the title, above the
+        # caption.
+        band = caption_band_top_of(getattr(scene, "caption_mobject", None))
+        boxes.move_to([0.0, (title.get_bottom()[1] - 0.5 + band) / 2, 0.0])
         clock = Clock(scene, self.duration(p))
         clock.play(FadeIn(title), run_time=0.6)
         clock.play(FadeIn(boxes), run_time=0.9)

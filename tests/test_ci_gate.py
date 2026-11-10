@@ -4,6 +4,8 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
+import pytest
+
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "scripts"))
 
 from ci_tests import _excerpt, parse_summary, problems  # noqa: E402
@@ -56,3 +58,163 @@ def test_failure_excerpt_prioritizes_test_names_over_traceback_lines():
 
     assert excerpt[0] == summary
     assert len(excerpt) == 3
+
+
+# ---------------------------------------------------------------------------
+# B4: the render gate covers the conformance corpus and its allowlist
+# ---------------------------------------------------------------------------
+
+
+def _allowlist_entries() -> list[tuple[str, str]]:
+    """Every (component, warning kind) the allowlist still tolerates."""
+    from ci_render_gate import load_allowlist
+
+    return [
+        (component, kind)
+        for component, kinds in load_allowlist().items()
+        for kind in kinds
+    ]
+
+
+def test_gate_renders_the_conformance_corpus():
+    """The gate must cover the conformance corpus, not only the fixtures."""
+    from ci_render_gate import storyboard_paths
+
+    paths = storyboard_paths()
+    names = {p.name for p in paths}
+
+    assert "compare_long.json" in names, "the fixtures must stay in the gate"
+    assert "timeline.json" in names, "the conformance corpus must be in the gate"
+    assert "expected.json" not in names, "expected.json is not a storyboard"
+
+
+def test_warning_kind_reads_the_lint_kind():
+    from ci_render_gate import warning_kind
+
+    assert warning_kind("[frame-lint] [warning] safe_area at 0.0s (scene 0): 1 px") == "safe_area"
+    assert warning_kind("[frame-lint] [error] clipped at 1.0s (scene 0): 50% of an edge") == "clipped"
+    assert warning_kind("timing: a beat ran 2.0s longer than its declared 3.6s") == "timing"
+    assert warning_kind("compare: text scaled to 25 px (floor 32)") is None
+
+
+def test_a_tolerated_warning_is_not_a_failure():
+    """An allowlisted kind does not fail the gate."""
+    from ci_render_gate import tolerated_reason
+
+    allowlist = {"compare": {"small_content": "only the caption is on screen"}}
+
+    assert tolerated_reason(["compare"], "small_content", allowlist)
+    assert tolerated_reason(["compare"], "safe_area", allowlist) is None
+    assert tolerated_reason(["timeline"], "small_content", allowlist) is None
+
+
+def test_allowlist_entries_need_a_reason(tmp_path):
+    """An allowlist entry without a reason is not accepted."""
+    import json
+
+    from ci_render_gate import load_allowlist
+
+    path = tmp_path / "gate_allowlist.json"
+    path.write_text(json.dumps({"compare": {"small_content": ""}}), encoding="utf-8")
+
+    with pytest.raises(ValueError):
+        load_allowlist(path)
+
+
+def test_the_allowlist_is_a_valid_file():
+    """The allowlist is the record of what is still wrong; it must stay readable.
+
+    It may be empty: that means nothing is tolerated and the gate is strict.
+    """
+    from ci_render_gate import ALLOWLIST_PATH, load_allowlist
+
+    assert ALLOWLIST_PATH.is_file(), f"{ALLOWLIST_PATH.name} must exist"
+    allowlist = load_allowlist()
+
+    for component, kinds in allowlist.items():
+        assert kinds, f"{component} has an empty entry in the allowlist"
+
+
+@pytest.mark.render
+def test_allowlisted_warning_still_happens(tmp_path):
+    """The allowlist may only shrink.
+
+    A tolerated warning that no longer happens has to be removed from the
+    allowlist; leaving it there hides a regression behind a stale excuse.
+    """
+    from ci_render_gate import _render, load_allowlist, storyboard_components, storyboard_paths, warning_kind
+
+    for component, kind in _allowlist_entries():
+        found = False
+        for storyboard in storyboard_paths():
+            if component not in storyboard_components(storyboard):
+                continue
+            _code, warnings, _fallbacks = _render(storyboard, tmp_path / storyboard.stem)
+            if any(warning_kind(w) == kind for w in warnings):
+                found = True
+                break
+
+        assert found, (
+            f"the allowlist tolerates {component}/{kind}, but it no longer happens; "
+            "remove it from the allowlist"
+    )
+
+
+# ---------------------------------------------------------------------------
+# B4c: the gate owns the conformance corpus, and it checks the durations
+# ---------------------------------------------------------------------------
+
+
+def test_the_gate_renders_the_whole_conformance_corpus():
+    """Every storyboard the corpus promises must be rendered by the gate.
+
+    The suite does not render the corpus any more: the gate is the one place
+    where it is rendered, so the gate has to cover all of it.
+    """
+    import json
+
+    from ci_render_gate import storyboard_paths
+
+    expected = json.loads(
+        (Path(__file__).resolve().parent / "conformance" / "expected.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    rendered = {p.name for p in storyboard_paths()}
+
+    assert expected, "the corpus must promise something"
+    assert set(expected) <= rendered, set(expected) - rendered
+
+
+def test_the_gate_fails_when_a_storyboard_does_not_keep_its_promise():
+    """The gate must fail when the scene count or the duration is wrong."""
+    from ci_render_gate import duration_failures
+
+    report = {"scene_durations": [3.0]}
+
+    assert duration_failures(report, {"scenes": 1, "duration": 3.0}) == []
+    assert duration_failures(report, {"scenes": 2, "duration": 3.0})
+    assert duration_failures(report, {"scenes": 1, "duration": 9.0})
+    assert duration_failures(report, {}) == []
+
+
+def test_the_gate_reads_what_the_corpus_promises():
+    """The expected.json must be readable, or the gate checks nothing."""
+    from ci_render_gate import load_expected
+
+    expected = load_expected()
+
+    assert expected, "expected.json must hold the promises of the corpus"
+    for name, promise in expected.items():
+        assert name.endswith(".json"), name
+        assert "scenes" in promise, name
+        assert "duration" in promise, name
+
+
+def test_the_suite_runs_on_several_workers():
+    """The suite is mostly render tests; it has to use the cores."""
+    from ci_tests import MAX_JOBS, suite_jobs
+
+    jobs = int(suite_jobs())
+
+    assert 0 <= jobs <= MAX_JOBS

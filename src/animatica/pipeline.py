@@ -50,6 +50,66 @@ def _vtt_timestamp(seconds: float) -> str:
     return f"{h:02d}:{m:02d}:{s:02d}.{ms:03d}"
 
 
+def _beat_durations(sb: Storyboard, registry) -> list[list[float]]:
+    """How long each beat of each scene runs, in the storyboard's order.
+
+    The frame lint judges a beat as a whole: a beat that fades in must not
+    be condemned by its first frame, and a beat that never showed anything
+    must still be reported.
+    """
+    out: list[list[float]] = []
+    for scene in sb.scenes:
+        durations: list[float] = []
+        for beat in scene.beats:
+            try:
+                comp = registry.get(beat.component)
+                durations.append(comp.duration(comp.Params.model_validate(beat.params)))
+            except Exception:  # pragma: no cover - the storyboard is validated earlier
+                durations.append(0.0)
+        out.append(durations)
+    return out
+
+
+def _caption_strip(sb: Storyboard, vertical: bool) -> float:
+    """The fraction of the frame the burned-in captions cover at the bottom.
+
+    The caption is not content: it sits in the bottom strip of every frame
+    and would otherwise make an empty beat look like it had something on
+    screen. How tall that strip is depends on how the caption's text wraps,
+    so it is measured with the caption the renderer will burn in rather than
+    guessed with a constant.
+    """
+    from manim import config
+
+    from animatica.components._draw import caption_strip_fraction, make_caption, pick_font
+    from animatica.components.theme import get_colors
+
+    colors = get_colors(sb.theme)
+    font = pick_font()
+    if font:
+        from manim import MarkupText, Text
+
+        Text.set_default(font=font)
+        MarkupText.set_default(font=font)
+
+    old_width = config.frame_width
+    try:
+        # A vertical render is a narrow frame: the caption wraps differently.
+        if vertical:
+            config.frame_width = 8.0 * 9 / 16
+        widest = 0.0
+        for scene in sb.scenes:
+            for beat in scene.beats:
+                text = (beat.caption or "").strip()
+                if not text:
+                    continue
+                caption = make_caption(text, colors)
+                widest = max(widest, caption_strip_fraction(caption, config.frame_height))
+        return widest
+    finally:
+        config.frame_width = old_width
+
+
 def _write_captions(sb: Storyboard, registry, path: Path) -> None:
     lines = ["WEBVTT", ""]
     t = 0.0
@@ -211,11 +271,17 @@ def make_video(
     # ---- frame lint (non-fatal post-render quality check) ----
     if frame_lint:
         progress.advance("lint", "checking frames")
-        lint_config = FrameLintConfig(enabled=True)
+        # The burned-in caption is not content. Its height depends on how the
+        # text wraps, so it is measured, not guessed.
+        lint_config = FrameLintConfig(
+            enabled=True,
+            caption_strip=_caption_strip(sb, vertical) if captions else 0.0,
+        )
         lint_result = lint_video(
             str(video),
             render_result.durations,
             lint_config,
+            beat_durations=_beat_durations(sb, registry),
         )
         warnings.extend(lint_result_to_warnings(lint_result))
 
