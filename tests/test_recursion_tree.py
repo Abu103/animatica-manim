@@ -1,3 +1,5 @@
+import math
+
 import pytest
 
 from animatica.components.recursion_tree import RecursionTree, tree_layout
@@ -146,26 +148,39 @@ def _fib_call_tree(n: int) -> tuple[list[int], list[tuple[int, int]]]:
     return arguments, edges
 
 
+def _drawing_order(layout) -> list[int]:
+    """The node ids in the order the tree is drawn: the root first, then
+    level by level from the top down, left to right."""
+    levels: dict[int, list[int]] = {}
+    for nid, (_call, _x, y) in layout.items():
+        levels.setdefault(round(-y / 1.1), []).append(nid)
+    order: list[int] = []
+    for depth in sorted(levels):
+        order.extend(sorted(levels[depth], key=lambda nid: layout[nid][1]))
+    return order
+
+
 def _node_mobjects(beat, layout):
     """The node texts of a recursion tree, matched to the layout's node ids.
 
     The component plays the title first and the nodes after it, in the order
-    the layout hands them out. Both are checked: the labels have to match the
-    layout's order, and the layout's node ids have to be the call tree's own
-    ids. A change in either fails the test instead of quietly matching the
-    wrong nodes.
+    it draws them. Both are checked: the labels have to match the drawing
+    order, and the layout's node ids have to be the call tree's own ids. A
+    change in either fails the test instead of quietly matching the wrong
+    nodes.
     """
     from manim import Text
 
     texts = [m for m in beat.mobjects if isinstance(m, Text)]
     node_texts = texts[1:]
+    order = _drawing_order(layout)
 
     assert len(node_texts) == len(layout), (
         f"the tree drew {len(node_texts)} nodes, the layout has {len(layout)}"
     )
     assert [t.text for t in node_texts] == [
-        f"{call[0]}({call[1]})" for call, _x, _y in layout.values()
-    ], "the nodes are not drawn in the layout's order"
+        f"{layout[nid][0][0]}({layout[nid][0][1]})" for nid in order
+    ], "the nodes are not drawn in the layout's drawing order"
 
     arguments, _relations = _fib_call_tree(5)
     for nid, argument in enumerate(arguments):
@@ -173,7 +188,7 @@ def _node_mobjects(beat, layout):
             f"node {nid} is {layout[nid][0]}, the call tree says fib({argument})"
         )
 
-    return {nid: node_texts[i] for i, nid in enumerate(layout)}
+    return {nid: node_texts[i] for i, nid in enumerate(order)}
 
 
 @pytest.mark.parametrize("width,height", RESOLUTIONS)
@@ -186,12 +201,144 @@ def test_recursion_tree_edges_run_from_a_parent_to_its_own_child(width, height):
     parents.
     """
     beat = play_component(RecursionTree(), _conformance_params(), width, height)
-    layout, _relations = tree_layout("fib", 5)
+    layout, _layout_edges = tree_layout("fib", 5)
     by_id = _node_mobjects(beat, layout)
     _arguments, relations = _fib_call_tree(5)
 
     pairs = [(by_id[parent], by_id[child]) for parent, child in relations]
 
     assert_edges_connect_parent_and_child(beat, pairs)
+
+
+# ---------------------------------------------------------------------------
+# B4e: the beat must end with the whole tree on screen, and it must be drawn
+# from the root down
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize("fps", [15, 30, 60])
+def test_the_beat_does_not_overrun_its_declared_duration_in_the_video(fps):
+    """The video must not be longer than the beat declared.
+
+    Manim rounds every animation up to a whole frame, so a run time that is
+    not a whole number of frames makes the video longer than the beat. The
+    tree has 29 animations, and the rounding added up to 0.6s: the video was
+    5.8s for a 5.2s beat, the captions drifted, and the last two edges were
+    still fading in when the beat was over.
+    """
+    from manim import tempconfig
+
+    with tempconfig({"frame_rate": fps}):
+        beat = play_component(RecursionTree(), _conformance_params(), 1280, 720)
+
+    frames = sum(math.ceil(rt * fps - 1e-9) for rt in beat.scene.played_run_times)
+    frames += sum(math.ceil(w * fps - 1e-9) for w in beat.scene.waited_seconds)
+    allowed = math.ceil(beat.duration * fps) + 1
+
+    assert frames <= allowed, (
+        f"at {fps} fps the video is {frames / fps:.3f}s long "
+        f"({frames} frames) but the beat declares {beat.duration}s "
+        f"({allowed} frames allowed)"
+    )
+
+
+@pytest.mark.render
+def test_the_whole_tree_is_on_screen_before_the_fade_out():
+    """Every node and every edge is on screen, at full opacity, when the
+    drawing is done -- and nothing is removed before the final fade-out."""
+    from manim import Line, Scene, Text, tempconfig
+
+    from animatica.components.recursion_tree import RecursionTree
+    from animatica.components.theme import PALETTES
+
+    snapshots: list[tuple[int, int, float]] = []
+    original_play = Scene.play
+
+    def spy(self, *anims, **kwargs):
+        original_play(self, *anims, **kwargs)
+        texts = [m for m in self.mobjects if isinstance(m, Text)]
+        edges = [m for m in self.mobjects if isinstance(m, Line)]
+        opacities = [
+            m.opacity for m in texts + edges if getattr(m, "opacity", None) is not None
+        ]
+        opacity = min(opacities, default=1.0)
+        snapshots.append((len(texts), len(edges), opacity))
+
+    class S(Scene):
+        def construct(self):
+            RecursionTree().play(
+                self,
+                RecursionTree.Params(title="Fibonacci call tree", fn="fib", n=5),
+                PALETTES["dark-blue"],
+            )
+
+    Scene.play = spy
+    try:
+        with tempconfig({"quality": "low_quality", "frame_rate": 15, "write_to_movie": False,
+                         "dry_run": True, "disable_caching": True, "verbosity": "ERROR",
+                         "progress_bar": "none"}):
+            scene = S()
+            scene.render()
+    finally:
+        Scene.play = original_play
+
+    # The title and the 15 nodes are texts; the 14 edges are lines.
+    drawn = [s for s in snapshots if s[1] or s[0] > 1]
+    assert drawn, "the tree drew nothing"
+    assert drawn[-1] == (16, 14, 1.0), (
+        f"the drawing ended with {drawn[-1][0]} texts, {drawn[-1][1]} edges "
+        f"at opacity {drawn[-1][2]}, not 15 nodes and 14 edges at full opacity"
+    )
+    # The fade-out is the last thing that happens.
+    assert snapshots[-1] == (0, 0, 1.0), (
+        f"the last animation left {snapshots[-1]} on the scene"
+    )
+
+
+def test_the_tree_is_drawn_from_the_root_down():
+    """The nodes appear in order of depth, and every edge appears between its
+    parent and its child.
+
+    The tree used to be drawn from the leaves up, because the layout hands
+    the positions out in the order it placed them: a parent is placed after
+    its children. The root dropped in last, after the whole forest of
+    numbers was already on screen.
+    """
+    from manim import Line
+
+    beat = play_component(RecursionTree(), _conformance_params(), 1280, 720)
+    layout, _layout_edges = tree_layout("fib", 5)
+    order = _drawing_order(layout)
+    by_id = _node_mobjects(beat, layout)
+
+    appeared: list = []
+    for anims, _run_time in beat.scene.plays:
+        for anim in anims:
+            mobject = getattr(anim, "mobject", None)
+            if mobject is not None:
+                appeared.append(mobject)
+    index_of = {id(mobject): i for i, mobject in enumerate(appeared)}
+
+    edges = [m for m in beat.mobjects if isinstance(m, Line)]
+    assert len(edges) == len(order) - 1, (
+        f"{len(edges)} edges for {len(order) - 1} children"
+    )
+    # The edge to a node is drawn right before the node.
+    edge_of = {nid: edges[i] for i, nid in enumerate(order[1:])}
+
+    depths = [round(-layout[nid][2] / 1.1) for nid in order]
+    assert depths == sorted(depths), (
+        f"the nodes do not appear in order of depth: {depths}"
+    )
+
+    _arguments, relations = _fib_call_tree(5)
+    for parent, child in relations:
+        parent_at = index_of[id(by_id[parent])]
+        edge_at = index_of[id(edge_of[child])]
+        child_at = index_of[id(by_id[child])]
+        assert parent_at < edge_at <= child_at, (
+            f"the edge from node {parent} to node {child} appears at {edge_at}, "
+            f"its parent at {parent_at} and its child at {child_at}"
+        )
 
 

@@ -16,6 +16,16 @@ def warn(scene: Any, message: str) -> None:
         sink.append(message)
 
 
+def frame_rate() -> float:
+    """The frame rate of the video being written (30 when Manim is absent)."""
+    try:
+        from manim import config
+
+        return float(config.frame_rate)
+    except Exception:  # pragma: no cover - manim is not installed
+        return 30.0
+
+
 _FONT_CANDIDATES = ("Segoe UI", "Inter", "Helvetica Neue", "Arial", "DejaVu Sans", "Liberation Sans", "Noto Sans")
 _FONT_CACHE: list[str | None] = []
 
@@ -91,10 +101,31 @@ def fit(
 
 
 class Clock:
-    """Tracks time spent so a beat takes exactly its declared duration."""
+    """Tracks time spent so a beat takes exactly its declared duration.
 
-    def __init__(self, scene: Any, total: float) -> None:
+    The video is written in whole frames: Manim rounds every animation up to
+    the next frame, so a run time that is not a whole number of frames makes
+    the video longer than the beat declared. A beat with many small
+    animations accumulates that rounding -- the recursion tree had 29 of them
+    and its video was 0.6s longer than its 5.2s beat. A component that
+    budgets in frames (``frames()`` / ``seconds()``) cannot drift.
+    """
+
+    def __init__(self, scene: Any, total: float, fps: float | None = None) -> None:
         self.scene, self.total, self.used = scene, total, 0.0
+        self.fps = float(fps) if fps else frame_rate()
+
+    def frames(self, seconds: float) -> int:
+        """How many whole video frames `seconds` is worth."""
+        return max(0, int(round(seconds * self.fps)))
+
+    def seconds(self, frames: int) -> float:
+        """`frames` whole video frames, in seconds."""
+        return frames / self.fps
+
+    def whole(self, seconds: float) -> float:
+        """`seconds`, rounded to the nearest whole video frame."""
+        return self.seconds(self.frames(seconds))
 
     def play(self, *animations: Any, run_time: float) -> None:
         self.scene.play(*animations, run_time=run_time)
@@ -196,6 +227,28 @@ def caption_band_top(caption: Any = None) -> float:
         + SAFE_AREA_MARGIN * config.frame_height
         + CAPTION_CONTENT_GAP
     )
+
+
+def caption_strip_fraction(caption: Any = None, frame_height: float = 8.0) -> float:
+    """The fraction of the frame height the burned-in caption covers.
+
+    Derived from the caption band instead of guessed: the caption is pinned
+    CAPTION_BOTTOM_BUFF above the bottom edge and the band says where the
+    content has to stop, so everything between the bottom edge and the
+    caption's top is caption rather than content. How tall that is depends
+    on how the caption's text wraps -- a three-line caption needs a bigger
+    strip than a one-line one -- which is why it cannot be a constant.
+
+    Without a caption there is nothing to leave out: the strip is zero.
+    """
+    if caption is None:
+        return 0.0
+    caption_top = caption_band_top(caption) - CAPTION_CONTENT_GAP
+    frame_bottom = -frame_height / 2
+    # The strip is measured from the bottom edge, because that is how the
+    # lint leaves it out: the caption is pinned above the bottom edge, so the
+    # strip covers the caption and the empty space under it.
+    return max(0.0, (caption_top - frame_bottom) / frame_height)
 
 
 def clear_stage(scene: Any) -> None:
