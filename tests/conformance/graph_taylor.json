@@ -1,0 +1,44 @@
+{
+  "version": "1",
+  "title": "Conformance Graph Taylor",
+  "scenes": [
+    {
+      "beats": [
+        {
+          "component": "graph",
+          "params": {
+            "fn": "exp(x)",
+            "approx_fn": "1 + x",
+            "x_range": [-2, 2],
+            "y_range": [-1.5, 8],
+            "label": "e^x",
+            "approx_label": "1st-order Taylor"
+          },
+          "caption": "The linear approximation touches e^x at zero."
+        },
+        {
+          "component": "graph",
+          "params": {
+            "fn": "exp(x)",
+            "approx_fn": "1 + x + x**2/2",
+            "x_range": [-2, 2],
+            "y_range": [-1.5, 8],
+            "label": "e^x",
+            "approx_label": "2nd-order Taylor"
+          },
+          "caption": "Adding the quadratic term brings the curve much closer to e^x across a wider range of x values."
+        },
+        {
+          "component": "graph",
+          "params": {
+            "fn": "exp(x)",
+            "approx_fn": "1 + x + x**2/2 + x**3/6 + x**4/24",
+            "x_range": [-2, 2],
+            "y_range": [-1.5, 8]
+          },
+          "caption": "Four terms agree with e^x almost everywhere in this range, so the curves are visibly the same, and the legend is the only thing that tells them apart."
+        }
+      ]
+    }
+  ]
+}

@@ -11,7 +11,7 @@ sync with the code: the test suite compares this document against
 | `title_card` | `title`, `subtitle` | 3.0 s |
 | `equation` | `mode` (reveal/transform), `latex[]` (1-6) | 2.0 s + 2.0 s per extra step |
 | `steps_list` | `items[]` (1-8) | 1.5 s per item + 1.0 s |
-| `graph` | `fn`, `x_range`, `y_range`, `label` | 4.0 s |
+| `graph` | `fn`, `x_range`, `y_range`, optional `approx_fn` (a second curve), optional `label`, optional `approx_label` | 4.0 s |
 | `bar_chart` | `title`, `labels[]`, `values[]` (1-12) | 2.0 s + 0.3 s per bar |
 | `shape_morph` | `from_shape`, `to_shape`, `from_color`, `to_color` | 3.0 s |
 | `diagram` | `nodes[]` (2-10), `edges[]` | 1.0 s + 0.6 s per edge |
