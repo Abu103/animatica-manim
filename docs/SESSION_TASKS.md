@@ -1,10 +1,20 @@
 # Animatica session log (live, edit as you go)
-Updated: 2026-11-10. Newest status on top. Any Claude session can resume from here.
+Updated: 2026-11-11. Newest status on top. Any Claude session can resume from here.
 
 ## Context
 - Repo: https://github.com/Abu103/animatica-manim (released v0.1.1 with tinytex-manim.zip asset, sha256 83fde080..., download verified + LaTeX compile verified from sandbox 2026-11-04)
 - User runs on Windows, provider nim, model nvidia/nemotron-3.5-super-vl-120b-a12b
 - Goal: stable demo to show others; then features that weak/free models (nemotron 120b, "3 super 550b") can drive reliably
+## Status (2026-11-11, Hermes session, the LaTeX bundles were rebuilt and republished)
+- Branches: `ci/fix-tex-packages` -> **PR #22 (merged, `a8e7146`)**, `ci/tex-bundle-varwidth` -> **PR #23 (merged, `6728df2`)**, `ci/seed-windows-bundle` -> **PR #24 (merged, `2772040`)**.
+- Why it was needed: the B4f fix made the installer repair an incomplete bundle, but the *published* bundles still lacked `varwidth.sty`. They are what users download on the first `curl | sh`, so they had to be rebuilt.
+- **Linux** `animatica-tex.tar.xz` is built by `tex-deps.yml`, not by `build-tinytex.yml` -- the package list in that file had no `varwidth` (that was the gap PR #22 left). One line; the workflow triggers on its own file, so the PR's run rebuilt the bundle, committed it to the `artifacts` branch and `--clobber`ed the `native-deps-v1` release asset. Verified by downloading it: `./texmf-dist/tex/latex/varwidth/varwidth.sty`, 45 MB, updated 2026-11-10T16:32Z. The `artifacts` branch copy has it too.
+- **Windows** `tinytex-manim-win.zip` cannot be refreshed in place: the workflow refuses to replace a published asset, deliberately, because the bundle is not reproducible (it bakes whatever TinyTeX upstream serves that day) and the design is *tag + sha256 as one pair*. So a new release `tex-deps-v2-windows` was published; its `release (published)` event built, verified and uploaded `tinytex-manim-win.zip` (`sha256:0160245663bae6c032538c19536e777c2d49dc5196a7975fbd2e793e9897993c`), its `.sha256`, and the Linux fallback `tinytex-manim.zip` -- all three carry `varwidth.sty`. `src/animatica/tex_bundle.py` is pinned to that pair, and the pinned URL serves exactly the pinned hash (downloaded and compared).
+- `gh release edit native-deps-v1 --latest`: a new release makes *itself* the "latest", which would have moved the Linux installer's first URL (`releases/latest/download/...`) to the Windows release. Put back.
+- Also: `session-*.json` is in `.gitignore` -- `opencode session export` writes a multi-megabyte transcript into the working directory.
+- Handoff for a cold start: `docs/handoffs/2026-11-11-b4-state.md` (the whole B4 effort, its two hidden bugs, the numbers, how to work here).
+- NOT verified: a real first-install on a clean Windows box using the new bundle (only the hash and the zip contents were checked).
+
 ## Status (2026-11-10, Hermes session, card B4f "the LaTeX packages are complete")
 - Branch: `ci/fix-tex-packages` (from `main` = `1bc7ded`). **PR #21 (the apt cache) is still open.**
 - Changed: `src/animatica/doctor.py`, `scripts/bootstrap.sh`, `.github/workflows/build-tinytex.yml`, `.github/workflows/build-tinytex-windows.yml`, `tests/test_doctor_fix.py`.
