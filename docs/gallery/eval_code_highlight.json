@@ -1,0 +1,26 @@
+{
+  "version": "1",
+  "title": "Main Function",
+  "theme": {
+    "palette": "dark-blue",
+    "font": "default"
+  },
+  "scenes": [
+    {
+      "beats": [
+        {
+          "component": "code_highlight",
+          "params": {
+            "code": "def main():\n    print(\"Hello, world!\")\n\nif __name__ == \"__main__\":\n    main()",
+            "language": "python",
+            "lines": [
+              1,
+              5
+            ]
+          },
+          "caption": "The main function runs the program when the script starts."
+        }
+      ]
+    }
+  ]
+}

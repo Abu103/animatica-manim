@@ -1,31 +1,21 @@
-make a title card about hello world
+make a title card about renewable energy
 explain the pythagorean theorem a^2 + b^2 = c^2
-graph of sin(x)
-bar chart of sales by quarter
 steps to bake a cake
+explain taylor series
+bar chart of sales by quarter
 morph a circle into a square
-flow diagram from a to b
-walk through this python code
-definition of inertia
-compare option A and option B
-title card welcome to animatica
-explain the formula e = mc squared
-graph of x^2 over negative 5 to 5
-bar chart of population by city
-steps to boil an egg
-morph a square into a circle
-diagram with nodes A B C and edges
-code walkthrough of a function
-definition of gravity
-compare the two proposals
-title card chapter one introduction
-explain the quadratic formula
-graph of cos(x) from 0 to 2 pi
-bar chart of monthly revenue
-steps to tie your shoes
-morph a triangle into a star
-flow diagram login to dashboard
+diagram with nodes A B C and edges from A to B and B to C
+flow diagram from water to steam to turbine
 code highlight the main function
-definition of velocity
-compare before and after
-
+explain this python function line by line
+compare mitosis and meiosis side by side
+timeline of the history of computers
+array visualization of the values 5 3 8 1 with a binary search for 8
+show the recursion call tree of fib(5)
+table of planets with diameter and mass
+number line from 0 to 20 with jumps at 0 7 15
+matrix of the 3x3 identity matrix
+stat callout that 42 percent of students borrowed a book
+derive the quadratic formula step by step
+parametric graph of a circle with x equals cos of t and y equals sin of t
+show the fibonacci series with a ball bouncing on terms 0 to 10

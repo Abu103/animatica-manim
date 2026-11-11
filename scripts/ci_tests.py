@@ -16,14 +16,15 @@ import subprocess
 import sys
 from pathlib import Path
 
+from animatica.backends.scheduler import pick_workers, system_info
+
 #: Anything below this means tests silently stopped being collected.
 MIN_PASSED = int(os.environ.get("ANIMATICA_MIN_PASSED", "600"))
 
-#: The most workers the suite may use. The render tests dominate the run time
-#: and each one is a subprocess, so the suite scales with the cores -- but a
-#: worker is a whole python process with its own Manim, so the memory runs
-#: out long before the cores do.
-MAX_JOBS = 4
+#: The most workers the suite may use. Matches the scheduler's cap; a worker
+#: is a whole python process with its own Manim, so the memory runs out long
+#: before the cores do.
+MAX_JOBS = 12
 
 _COUNTS = re.compile(r"(\d+) (passed|failed|skipped|error|errors|warning|warnings)\b")
 _NORMALISE = {"error": "errors", "errors": "errors", "warning": "warnings", "warnings": "warnings"}
@@ -38,19 +39,42 @@ def _xdist_available() -> bool:
     return True
 
 
-def suite_jobs() -> str:
-    """How many workers to run the suite with.
+def suite_workers() -> tuple[int, str, int, float | None]:
+    """How many workers to run the suite with, and what limited the answer.
 
     ``ANIMATICA_TEST_JOBS=0`` turns the parallelism off; a number sets it.
+    An invalid value is ignored with a printed warning. Otherwise the count
+    comes from :func:`pick_workers` (cores vs memory, capped at twelve).
+
+    Returns ``(workers, limit, cpus, mem_gb)``.
     """
+    cpus, mem = system_info()
     override = os.environ.get("ANIMATICA_TEST_JOBS")
-    if override is not None:
+    if override is not None and override.strip():
         try:
-            wanted = int(override)
+            wanted = int(override.strip())
         except ValueError:
-            wanted = MAX_JOBS
-        return str(max(0, wanted))
-    return str(max(1, min(MAX_JOBS, os.cpu_count() or 1)))
+            print(
+                f"warning: ignoring ANIMATICA_TEST_JOBS={override!r}: not a whole number",
+                file=sys.stderr,
+            )
+            wanted = None
+        if wanted is not None:
+            if wanted == 0:
+                return 0, "env", cpus, mem
+            return wanted, "env", cpus, mem
+    workers, limit = pick_workers("test", cpus=cpus, mem_gb=mem)
+    return workers, limit, cpus, mem
+
+
+def suite_jobs() -> str:
+    """How many workers to run the suite with (as a pytest -n string).
+
+    Kept for callers that only need the number; :func:`suite_workers` also
+    returns the limit and the machine figures behind it.
+    """
+    workers, _limit, _cpus, _mem = suite_workers()
+    return str(max(0, workers))
 
 
 def parse_summary(text: str) -> dict[str, int]:
@@ -126,7 +150,13 @@ def annotate(text: str, issues: list[str]) -> None:
 
 def main(argv: list[str]) -> int:
     cmd = [sys.executable, "-m", "pytest", "-q", "-rs", "--strict-markers"]
-    jobs = suite_jobs()
+    workers, limit, cpus, mem = suite_workers()
+    mem_str = f"{mem:.1f}" if mem is not None else "?"
+    print(
+        f"workers: {workers} (cpus={cpus}, mem={mem_str}GB, limit={limit})",
+        flush=True,
+    )
+    jobs = str(workers)
     if jobs != "0" and _xdist_available():
         cmd += ["-n", jobs]
     cmd += argv

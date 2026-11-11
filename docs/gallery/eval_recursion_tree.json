@@ -1,0 +1,22 @@
+{
+  "version": "1",
+  "title": "Fibonacci Recursion Tree for fib(5)",
+  "theme": {
+    "palette": "dark-blue",
+    "font": "default"
+  },
+  "scenes": [
+    {
+      "beats": [
+        {
+          "component": "recursion_tree",
+          "params": {
+            "title": "fib(5) Call Tree",
+            "n": 5
+          },
+          "caption": "The tree shows how fib(5) branches into smaller Fibonacci calls down to the base cases fib(0) and fib(1)."
+        }
+      ]
+    }
+  ]
+}

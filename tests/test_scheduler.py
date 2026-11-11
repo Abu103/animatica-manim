@@ -5,7 +5,13 @@ from typing import Callable
 
 import pytest
 
-from animatica.backends.scheduler import concat_videos, render_scenes_parallel
+from animatica.backends.scheduler import (
+    concat_videos,
+    parse_cgroup_quota,
+    pick_workers,
+    render_scenes_parallel,
+    system_info,
+)
 
 
 def _slow_first_render_one(i: int) -> Path:
@@ -167,4 +173,152 @@ def test_parallel_accepts_unpicklable_closure(tmp_path):
         return tmp_path / f"{i}.mp4"
 
     assert render_scenes_parallel(render_one, 3, jobs=2) == [tmp_path / f"{i}.mp4" for i in range(3)]
+
+
+# ---------------------------------------------------------------------------
+# pick_workers: pure rule, injected cores and memory -- no machine probing
+# ---------------------------------------------------------------------------
+
+
+def _env(monkeypatch, names):
+    for name in names:
+        monkeypatch.delenv(name, raising=False)
+
+
+def test_pick_workers_two_cores_eight_gb_is_four(monkeypatch):
+    _env(monkeypatch, ("ANIMATICA_TEST_JOBS", "ANIMATICA_RENDER_JOBS"))
+    workers, limit = pick_workers("test", cpus=2, mem_gb=8.0)
+    assert workers == 4
+    assert limit == "cpu"
+
+
+def test_pick_workers_four_cores_sixteen_gb_is_four(monkeypatch):
+    _env(monkeypatch, ("ANIMATICA_TEST_JOBS", "ANIMATICA_RENDER_JOBS"))
+    workers, limit = pick_workers("test", cpus=4, mem_gb=16.0)
+    assert workers == 4
+    assert limit == "cpu"
+
+
+def test_pick_workers_eight_cores_sixteen_gb_is_eight(monkeypatch):
+    _env(monkeypatch, ("ANIMATICA_TEST_JOBS", "ANIMATICA_RENDER_JOBS"))
+    workers, limit = pick_workers("test", cpus=8, mem_gb=16.0)
+    assert workers == 8
+    assert limit == "cpu"
+
+
+def test_pick_workers_sixteen_cores_eight_gb_is_five(monkeypatch):
+    _env(monkeypatch, ("ANIMATICA_TEST_JOBS", "ANIMATICA_RENDER_JOBS"))
+    workers, limit = pick_workers("test", cpus=16, mem_gb=8.0)
+    assert workers == 5
+    assert limit == "mem"
+
+
+def test_pick_workers_thirtytwo_cores_sixtyfour_gb_is_twelve_cap(monkeypatch):
+    _env(monkeypatch, ("ANIMATICA_TEST_JOBS", "ANIMATICA_RENDER_JOBS"))
+    workers, limit = pick_workers("test", cpus=32, mem_gb=64.0)
+    assert workers == 12
+    assert limit == "cap"
+
+
+def test_pick_workers_two_cores_two_gb_is_two_memory_forbids_four(monkeypatch):
+    _env(monkeypatch, ("ANIMATICA_TEST_JOBS", "ANIMATICA_RENDER_JOBS"))
+    workers, limit = pick_workers("test", cpus=2, mem_gb=2.0)
+    assert workers == 2
+    assert limit == "mem"
+
+
+def test_pick_workers_uses_affinity_when_it_is_smaller_than_cpu_count(monkeypatch):
+    _env(monkeypatch, ("ANIMATICA_TEST_JOBS", "ANIMATICA_RENDER_JOBS"))
+    import animatica.backends.scheduler as sched
+
+    orig_count = sched.os.cpu_count
+    orig_affinity = sched.affinity_cpus
+    sched.os.cpu_count = lambda: 64  # type: ignore[assignment]
+    sched.affinity_cpus = lambda: 2
+    try:
+        cpus, _mem = system_info()
+    finally:
+        sched.os.cpu_count = orig_count
+        sched.affinity_cpus = orig_affinity
+    assert cpus == 2
+
+
+def test_pick_workers_cgroup_quota_two_cpus(monkeypatch):
+    _env(monkeypatch, ("ANIMATICA_TEST_JOBS", "ANIMATICA_RENDER_JOBS"))
+    import animatica.backends.scheduler as sched
+
+    orig = sched.cgroup_cpu_quota
+    sched.cgroup_cpu_quota = lambda: 2.0
+    try:
+        workers, limit = pick_workers("test", mem_gb=64.0)
+    finally:
+        sched.cgroup_cpu_quota = orig
+    # quota limits usable cpus to 2; 2 cpus / 64 gb -> raised to min 4, cpu
+    assert workers == 4
+    assert limit == "cpu"
+
+
+def test_pick_workers_parse_cgroup_quota_200000_100000_is_two():
+    assert parse_cgroup_quota("200000 100000") == 2.0
+
+
+def test_pick_workers_env_override_wins(monkeypatch):
+    monkeypatch.setenv("ANIMATICA_TEST_JOBS", "7")
+    workers, limit = pick_workers("test", cpus=2, mem_gb=2.0)
+    assert workers == 7
+    assert limit == "env"
+
+
+def test_pick_workers_garbage_env_is_ignored_with_warning(monkeypatch, capsys):
+    monkeypatch.setenv("ANIMATICA_TEST_JOBS", "many")
+    workers, limit = pick_workers("test", cpus=32, mem_gb=64.0)
+    assert workers == 12
+    assert limit == "cap"
+    warning = capsys.readouterr().err
+    assert "not a whole number" in warning
+
+
+def test_pick_workers_mem_unknown_cpu_cap_rules_only(monkeypatch):
+    _env(monkeypatch, ("ANIMATICA_TEST_JOBS", "ANIMATICA_RENDER_JOBS"))
+    workers, limit = pick_workers("test", cpus=8, mem_gb=None)
+    assert workers == 8
+    assert limit == "cpu"
+
+    workers, limit = pick_workers("test", cpus=32, mem_gb=None)
+    assert workers == 12
+    assert limit == "cap"
+
+
+def test_pick_workers_render_keeps_its_budget(monkeypatch):
+    _env(monkeypatch, ("ANIMATICA_TEST_JOBS", "ANIMATICA_RENDER_JOBS"))
+    import animatica.backends.scheduler as sched
+
+    orig_free = sched.available_memory_mb
+    sched.available_memory_mb = lambda: 999999  # plenty of free memory
+    try:
+        workers, limit = pick_workers("render", cpus=64, mem_gb=64.0)
+    finally:
+        sched.available_memory_mb = orig_free
+    # plenty of cores and memory, but the render pool is capped at four
+    assert workers == 4
+    assert limit == "cap"
+
+
+def test_system_info_cpus_and_memory(monkeypatch):
+    import animatica.backends.scheduler as sched
+
+    orig_affinity = sched.affinity_cpus
+    orig_quota = sched.cgroup_cpu_quota
+    orig_mem = sched.total_memory_gb
+    sched.affinity_cpus = lambda: 3
+    sched.cgroup_cpu_quota = lambda: None
+    sched.total_memory_gb = lambda: 16.0
+    try:
+        cpus, mem = system_info()
+    finally:
+        sched.affinity_cpus = orig_affinity
+        sched.cgroup_cpu_quota = orig_quota
+        sched.total_memory_gb = orig_mem
+    assert cpus == 3
+    assert mem == 16.0
 
