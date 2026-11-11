@@ -33,12 +33,14 @@ from pathlib import Path
 #: it. Both are one constant pair on purpose: the URL below is pinned to this
 #: exact tag, so the hash and the file cannot drift apart.
 #:
-#: The sha256 is empty until the first build of the bundle publishes it.
-#: While it is empty the bundle is NOT used at all (fail closed) and the
-#: upstream TinyTeX installer is used instead.
-WINDOWS_TEX_RELEASE_TAG = "tex-deps-v1-windows"
+#: v2 carries varwidth, which standalone.cls loads for its border box: without
+#: it every formula fails to compile and the equations degrade to plain text.
+#: The bundle is not reproducible -- it is built from whatever TinyTeX the
+#: upstream installer fetches that day -- so a rebuilt bundle gets a new tag
+#: and a new hash, and this pair moves with it.
+WINDOWS_TEX_RELEASE_TAG = "tex-deps-v2-windows"
 WINDOWS_TEX_ASSET_NAME = "tinytex-manim-win.zip"
-WINDOWS_TEX_SHA256 = "e3e92c824cef9d0340e81d1bbecbef522a53582b77269e4dfbe5fe7e9c2463e3"
+WINDOWS_TEX_SHA256 = "0160245663bae6c032538c19536e777c2d49dc5196a7975fbd2e793e9897993c"
 
 #: Where the bundle is fetched from. Pinned to the tag above, never "latest".
 WINDOWS_TEX_URL = (
