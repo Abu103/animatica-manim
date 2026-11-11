@@ -77,15 +77,17 @@ installers otherwise do the same job (source, environment, LaTeX, verify, then
 The Linux LaTeX bundle is built on Ubuntu and cannot serve Windows (its
 binaries are ELF, not PE). `.github/workflows/build-tinytex-windows.yml` builds
 a separate TinyTeX tree on `windows-latest` with the upstream Windows
-installer, and publishes it as the release asset `tinytex-manim-win.zip` on the
-`tex-deps-v1-windows` tag.
+installer, and publishes it as the release asset `tinytex-manim-win.zip` on its
+own tag -- currently **`tex-deps-v2-windows`**.
 
 `animatica doctor --fix` uses it in this order on Windows:
 
 1. **The prebuilt bundle**, but only when its sha256 is known and matches.
    The bundle is downloaded, the hash is verified *before* unpacking, and the
-   tree is unpacked to `<project>/.tex/` so `bin/windows` sits where
-   `tinytex_bin_dirs` looks for it.
+   tree is unpacked to the per-user data dir (`%LOCALAPPDATA%\Animatica\tex`),
+   with `<project>/.tex/` as the fallback, so `bin/windows` sits where
+   `bundle_bin_dirs` looks for it. The per-user dir is deliberate: a shared
+   `ProgramData` folder would let another local user plant a fake `latex.exe`.
 2. **The upstream TinyTeX installer** (`rstudio/tinytex`), retried three times
    with a bounded backoff. This is the fallback for every bundle failure.
 
@@ -105,6 +107,49 @@ Two environment variables override the bundle for testing:
 The build workflow's own Windows job uses both to download the artifact it
 just built and verify it end to end, so the bundle path is proven in CI before
 any hash is committed.
+
+### Rolling the Windows bundle forward
+
+The Windows bundle is **not reproducible**: it bakes whatever TinyTeX tree the
+upstream installer serves that day, so a rebuild has a different sha256. That is
+why the workflow refuses to replace a published asset -- a published, verified
+zip has to keep matching the hash the product pins -- and why the tag and the
+hash travel together as one pair in `src/animatica/tex_bundle.py`.
+
+To ship a new one:
+
+1. Publish a new release (`release: published` is what starts the workflow):
+
+   ```bash
+   gh release create tex-deps-v3-windows --title "..." --notes "..."
+   ```
+
+2. Let `build-tinytex-windows.yml` build, verify and upload
+   `tinytex-manim-win.zip` and its `.sha256`, then read the digest of what it
+   **published** (not of a workflow artifact):
+
+   ```bash
+   gh release view tex-deps-v3-windows --json assets \
+     --jq '.assets[] | "\(.name) \(.digest)"'
+   ```
+
+3. Seed the pair in `src/animatica/tex_bundle.py`: `WINDOWS_TEX_RELEASE_TAG` and
+   `WINDOWS_TEX_SHA256`.
+
+4. Put the Linux bundle back as the latest release. A new release marks itself
+   latest, which moves the Linux installer's first URL
+   (`releases/latest/download/animatica-tex.tar.xz`) to the Windows release:
+
+   ```bash
+   gh release edit native-deps-v1 --latest
+   ```
+
+The old release keeps its old zip; nothing points at it any more.
+
+The Linux bundle needs no new tag: `tex-deps.yml` rebuilds it whenever that
+workflow file changes and uploads with `--clobber`, so its asset on
+`native-deps-v1` is replaced in place (and the `artifacts` branch is updated for
+hosts that can only reach codeload.github.com).
 
 ## Known limits
 
