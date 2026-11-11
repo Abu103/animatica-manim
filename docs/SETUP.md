@@ -60,3 +60,15 @@ does not match, the official installer above is used instead. See
 
 - Windows support is verified by the `windows` CI job; see the CI badge/status rather than this document.
 - Hindi/Devanagari text inside LaTeX equations can still fall back to plain text (pdfLaTeX limitation).
+
+## Worker count
+
+CI chooses how many workers the suite and the render gate use automatically:
+cores versus memory (one test worker needs about 1.5 GB), raised to a minimum of
+four and capped at twelve. Override either with `ANIMATICA_TEST_JOBS=N` (suite)
+or `ANIMATICA_RENDER_JOBS=N` (gate); an invalid value is ignored with a printed
+warning. `ci_tests.py` prints the chosen count first:
+
+```
+workers: 5 (cpus=8, mem=7.7GB, limit=mem)
+```

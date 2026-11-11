@@ -213,9 +213,19 @@ def main(argv: list[str] | None = None) -> int:
     if args.no_cache:
         os.environ["ANIMATICA_NO_RENDER_CACHE"] = "1"
 
-    from animatica.backends.scheduler import render_workers, run_in_parallel
+    from animatica.backends.scheduler import pick_workers, run_in_parallel, system_info
 
-    workers = args.jobs if args.jobs else render_workers()
+    cpus, mem = system_info()
+    mem_str = f"{mem:.1f}" if mem is not None else "?"
+    if args.jobs:
+        workers = args.jobs
+        limit = "env"
+    else:
+        workers, limit = pick_workers("render")
+    print(
+        f"workers: {workers} (cpus={cpus}, mem={mem_str}GB, limit={limit})",
+        flush=True,
+    )
     workers = max(1, min(workers, len(storyboards)))
 
     allowlist = load_allowlist()

@@ -1,6 +1,18 @@
 # Animatica session log (live, edit as you go)
 Updated: 2026-11-11. Newest status on top. Any Claude session can resume from here.
 
+## Status (2026-11-11, Hermes session, card "dynamic worker count for pytest (-n) and the render gate")
+- Branch: `hermes/m2-eval-baseline` (current, off `main` = `88652e2`). **Not pushed.** No new branch created; this completes the owner's in-progress worker-count rework left in the working tree.
+- Changed: `src/animatica/backends/scheduler.py`, `scripts/ci_tests.py`, `scripts/ci_render_gate.py`, `tests/test_scheduler.py`, `docs/SETUP.md`.
+- `system_info()` returns (usable CPUs, total RAM): affinity then cgroup `cpu.max` quota on Linux, else `os.cpu_count()`; `/proc/meminfo` on Linux, `GlobalMemoryStatusEx` via ctypes on Windows, `sysctl hw.memsize` on macOS; unknown -> None (memory limit skipped).
+- `pick_workers(kind, cpus, mem_gb)`: workers = min(cpus, floor(mem_gb / 1.5)), raised to min 4, never above memory limit when below 4 (then max(2, limit)), capped at 12. `kind="test"` uses 1.5 GB/worker; `kind="render"` keeps its budget (free memory, cap 4). `ANIMATICA_TEST_JOBS` / `ANIMATICA_RENDER_JOBS` override everything (invalid values ignored with a warning). Returns (workers, limit in {cpu, mem, cap, env}).
+- `ci_tests.py` prints `workers: N (cpus=..., mem=...GB, limit=...)` first and passes `-n N`; the gate prints the same line.
+- Tests (pure, injected cpus/mem, no machine probing): 2/8->4, 4/16->4, 8/16->8, 16/8->5, 32/64->12 (cap), 2/2->2 (memory forbids 4); affinity smaller than cpu_count; cgroup "200000 100000" -> 2 cpus; env override wins; garbage env ignored with warning; mem unknown -> cpu/cap rules only; render keeps its budget. `tests/test_scheduler.py`: 23 passed.
+- Verified (raw output): `ANIMATICA_TEST_JOBS=4 python scripts/ci_tests.py` -> workers 4, wall 317s, 0 skips. Dynamic default run 1 -> workers 5 (cpus=8, mem=7.7GB, limit=mem), wall 202s, 0 skips. Dynamic default run 2 -> workers 5, wall 270s, 0 skips. Both dynamic runs: 1037 passed, 0 skipped. (The 4 failures in every run are pre-existing Windows environment failures: `test_bootstrap_script.py` x3 needs bash, `test_tex_path.py` x1 needs TinyTeX -- they fail on a clean checkout too and are unrelated to this change.)
+- `tests/test_ci_gate.py` + `tests/test_render_pool.py`: pass.
+- NOT verified: a fully clean `python scripts/ci_tests.py` on this Windows box (the 4 pre-existing env failures block "CLEAN"); no CI has run; the gate's `-n` path was not exercised end-to-end (it needs real Manim renders).
+- Handoff: none needed; this is not a milestone end.
+
 ## Context
 - Repo: https://github.com/Abu103/animatica-manim (released v0.1.1 with tinytex-manim.zip asset, sha256 83fde080..., download verified + LaTeX compile verified from sandbox 2026-11-04)
 - User runs on Windows, provider nim, model nvidia/nemotron-3.5-super-vl-120b-a12b
