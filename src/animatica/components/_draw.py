@@ -211,6 +211,30 @@ CAPTION_BOTTOM_BUFF = 0.055
 #: Gap kept between the caption's top and the bottom of the content above it.
 CAPTION_CONTENT_GAP = 0.25
 
+#: Leading between two caption lines, in frame units. The caption is one Text
+#: per line, so the lines are placed on their own baselines: the leading is
+#: an absolute distance in the frame, not a fraction of the font size, so it
+#: stays the same when a caption is scaled down to fit the width.
+CAPTION_LINE_LEADING = 0.85
+
+
+def _text_baseline(text: Any) -> float:
+    """The y a one-line Text rests on: its baseline.
+
+    Most letters stand on the baseline; the few that hang below it (g, j, p,
+    q, y) do not. The bottom that most of the glyphs share is therefore the
+    baseline, and it is what the caption's lines are lined up on.
+    """
+    bottoms = [float(g.get_bottom()[1]) for g in text.submobjects]
+    if not bottoms:
+        return float(text.get_bottom()[1])
+    best, count = bottoms[0], 0
+    for candidate in bottoms:
+        hits = sum(1 for b in bottoms if abs(b - candidate) <= 0.02)
+        if hits > count:
+            best, count = candidate, hits
+    return best
+
 
 def make_caption(text: str, colors: ThemeColors) -> Any:
     """Burned-in caption pinned to the bottom edge, sized for actual frame dimensions.
@@ -229,12 +253,18 @@ def make_caption(text: str, colors: ThemeColors) -> Any:
     the edge puts its descenders inside that band, and frame-lint then warns
     about every single frame of the video.
 
-    One Text per line, deliberately. Word-by-word pieces with per-word math
-    lost the shared baseline and the word gaps: the rendered caption read
-    "termbrings" and "legendis". Typesetting math inside a caption needs one
-    block per line, driven by a measured baseline, and that is its own card.
+    **One Text per line, deliberately** (issue #31). A single Text holding
+    several lines is drawn *twice* by Manim as soon as it is as wide as the
+    frame: the first line comes back as a ghost a few pixels off, over the
+    caption itself, and the text is unreadable. The mobject is not
+    duplicated -- it holds one set of glyphs -- but the render is, so the
+    caption is built as one Text per line and the lines are put together
+    here. Word-by-word pieces are still not the answer: they lose the shared
+    baseline and the word gaps, and the rendered caption read "termbrings"
+    and "legendis". Typesetting math inside a caption needs one block per
+    line, driven by a measured baseline, and that is its own card.
     """
-    from manim import DOWN, Text, config
+    from manim import DOWN, RIGHT, UP, Text, VGroup, config
 
     frame_width = config.frame_width
     frame_height = config.frame_height
@@ -247,15 +277,34 @@ def make_caption(text: str, colors: ThemeColors) -> Any:
     # narrow frames still produce readable (if narrow) captions.
     wrap_width = max(20, int(62 * (frame_width / 12.4)))
 
-    cap = Text(wrap(text, wrap_width), font_size=font_size, color=colors.muted, line_spacing=0.8)
+    lines = wrap(text, wrap_width).split("\n")
+    pieces = [Text(line, font_size=font_size, color=colors.muted) for line in lines]
 
     # Only scale down if the caption is too wide for the frame with margins.
     # Never scale up: short captions stay at their natural readable size.
     # 5% horizontal margin on each side keeps captions from touching the edge.
+    # The lines are scaled before they are put together, so the leading
+    # between them is the same in frame units however much the text shrinks.
     max_caption_width = frame_width * 0.9
-    if cap.width > max_caption_width:
-        cap.scale_to_fit_width(max_caption_width)
+    natural_width = max((piece.width for piece in pieces), default=0.0)
+    if natural_width > max_caption_width:
+        for piece in pieces:
+            piece.scale(max_caption_width / natural_width)
 
+    # Put the lines on their own baselines: the same distance between the
+    # baselines whatever the lines contain, so the caption reads as one
+    # block of text.
+    if len(pieces) > 1:
+        baselines = [_text_baseline(piece) for piece in pieces]
+        for i, (piece, base) in enumerate(zip(pieces, baselines)):
+            piece.shift(UP * (baselines[0] - CAPTION_LINE_LEADING * i - base))
+        left = min(piece.get_left()[0] for piece in pieces)
+        for piece in pieces:
+            piece.shift(RIGHT * (left - piece.get_left()[0]))
+
+    cap = VGroup(*pieces)
+    # The caption is centred in the frame, as it was when it was one Text.
+    cap.shift(RIGHT * -cap.get_center()[0])
     cap.to_edge(DOWN, buff=frame_height * CAPTION_BOTTOM_BUFF)
     return cap
 
