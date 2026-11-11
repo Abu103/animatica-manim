@@ -56,7 +56,6 @@ KNOWN_VIOLATORS: dict[str, dict[str, str]] = {
         "matrix": "found by this test, no issue filed yet",
         "parametric_graph": "found by this test, no issue filed yet",
         "stat_callout": "found by this test, no issue filed yet",
-        "steps_list": "#30: later steps run into the caption",
         "table": "found by this test, no issue filed yet",
     },
 }
