@@ -17,6 +17,25 @@ Updated: 2026-11-11. Newest status on top. Any Claude session can resume from he
 - Repo: https://github.com/Abu103/animatica-manim (released v0.1.1 with tinytex-manim.zip asset, sha256 83fde080..., download verified + LaTeX compile verified from sandbox 2026-11-04)
 - User runs on Windows, provider nim, model nvidia/nemotron-3.5-super-vl-120b-a12b
 - Goal: stable demo to show others; then features that weak/free models (nemotron 120b, "3 super 550b") can drive reliably
+## Status (2026-11-11, Hermes session, card C31 "a caption wider than the frame is drawn twice")
+- Branch: `hermes/c31-caption-duplicate`, off `main` = `88652e2`. **Not pushed.**
+- Changed: `src/animatica/components/_draw.py`, `tests/test_caption.py`, `docs/SESSION_TASKS.md`. **No other source change.**
+- **The evidence** (the card asks for it before the fix): rendered the storyboard of issue #31 on `main` at `--quality preview` (the Fibonacci bounce with the 88-character caption) -> the caption's first line is printed twice, a few pixels off, over the caption itself. Frames: `out/c31_before.png` (before) and `out/c31_after.png` (after).
+- **What is duplicated -- measured, not guessed**:
+  - The caption **mobject** is NOT duplicated: `make_caption()` returns one `Text` with 72 glyph paths for the 72 non-space characters, no two glyphs at the same place, and the scene holds exactly one caption mobject.
+  - `wrap()`'s output is NOT joined twice: the caption's SVG holds one `<use>` element per character (88 for 88 characters).
+  - So the copy appears only in the **render**. Measured trigger: a caption of **two or more lines whose rendered baseline pitch is under ~0.75 units** is drawn twice. A one-line caption is never affected; a two-line caption narrower than the frame (the pitch stays 0.77) is fine; the same caption scaled down to the frame width (the pitch shrinks to 0.55) doubles -- and it doubles again when it is built at a smaller font instead of scaled (the pitch shrinks the same way).
+  - The mechanism inside Manim is **not** understood -- the mobject, the SVG and the animation cache are all clean -- so the fix works around the measured trigger instead of the cause.
+- **The fix** (`components/_draw.py`): the caption is built as **one Text per line** (the file's own docstring always said "one Text per line"), the lines are put on their own baselines, and the leading is an **absolute distance in the frame** (`CAPTION_LINE_LEADING = 0.85`) instead of a fraction of the font size, so scaling a caption down to fit the width no longer shrinks its leading into the range where Manim draws it twice.
+- **The effective font size**: the caption's font is 40 (the cap) and a caption that has to fit the frame width is scaled to 12.8/17.8 = 0.72 of it, so its effective font size is **28.8 -- below `MIN_FONT_SIZE` (32)**. It is still **one copy** of the text, which is what the card requires.
+- **The price**: the leading no longer shrinks with the caption, so a two-line caption is 1.15 units tall instead of 0.85 (the content above it loses 0.3 units) and its lines sit 0.5 units apart instead of 0.23.
+- RED (raw): `two-line: the caption holds 1 text piece(s) for 2 line(s) -- the text would be drawn twice` and `the three-line caption holds 1 pieces, not 3` (5 of the 27 caption tests failed). GREEN: **27 passed**.
+- The new test (`tests/test_caption.py`) checks, at 1280x720 and 1920x1080 for a one-line, a two-line and a 160+-character caption: one text piece per line, no two pieces overlapping (inflate 0.02u), the caption inside the safe-area width, and `caption_band_top()` still equal to the caption's real top.
+- Verified: `python scripts/ci_tests.py` -> **1005 passed, 4 failed, 0 skipped** (188 s; the 4 are the pre-existing Windows environment failures: `test_bootstrap_script.py` x3, `test_tex_path.py` x1). `python scripts/ci_render_gate.py` -> exit 0, `CLEAN: 19 storyboard(s) rendered within the allowlist` (the allowlist stays empty; the only advisory is the pre-existing `compare: text scaled to 25 px`).
+- **Lint warnings for the #31 storyboard: 0.**
+- New issue filed: [#33](https://github.com/Abu103/animatica-manim/issues/33) -- `bounce_sequence` puts its scale note at a fixed y, so a taller caption runs into it (the same family as #29 and #30: the components do not reserve room for the caption).
+- NOT verified: the mechanism inside Manim is still unknown; the leading is a workaround for the measured trigger, not a proof; the caption's look changed (looser leading, 0.3 units taller).
+
 ## Status (2026-11-11, Hermes session, card T14 "the graph's legend and its tick labels")
 - Branch: `hermes/t14-graph-legend-ticks` (from `main` = `0ac045a`). **Not pushed.**
 - Changed: `src/animatica/components/graph.py`, `src/animatica/components/_draw.py`, `tests/test_graph.py` (new), `tests/geometry.py`, `tests/test_caption.py`, `tests/conformance/graph_taylor.json` (new), `tests/conformance/expected.json`, `docs/COMPONENTS.md`.

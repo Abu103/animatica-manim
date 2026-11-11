@@ -255,11 +255,11 @@ def test_portrait_font_larger_than_landscape():
     """Portrait frames use a larger font (capped at 40) for readability."""
     with _frame_dims(LANDSCAPE_W, LANDSCAPE_H):
         cap_land = make_caption("Test caption text here", COLORS)
-        land_font = cap_land.font_size
+        land_font = _text_pieces(cap_land)[0].font_size
 
     with _frame_dims(PORTRAIT_W, PORTRAIT_H):
         cap_port = make_caption("Test caption text here", COLORS)
-        port_font = cap_port.font_size
+        port_font = _text_pieces(cap_port)[0].font_size
 
     # Both fonts should be positive and reasonable (Manim may adjust internally)
     assert land_font > 0 and port_font > 0
@@ -270,38 +270,151 @@ def test_portrait_font_larger_than_landscape():
 
 
 # ---------------------------------------------------------------------------
-# The caption is one Text mobject per line, not a row of words
+# The caption is one Text per line, and it is never drawn twice
 # ---------------------------------------------------------------------------
 
 
+#: The caption of issue #31: long enough to be scaled down to the frame
+#: width, which is what made Manim draw its first line twice.
+LONG_CAPTION = (
+    "A ball hops across pads whose heights show the Fibonacci numbers from "
+    "term 0 to term 10."
+)
+
+#: A caption of 160 characters or more: it wraps onto several lines.
+VERY_LONG_CAPTION = (
+    "Positive charges gather at the cloud's top, negative charges gather at "
+    "its base, and the ground below turns positive again once the storm has "
+    "passed overhead, which is why the lightning comes down from the cloud "
+    "and the air at the ground is the same as it was before the storm."
+)
+
+CAPTION_CASES = [
+    ("one-line", "Comparing two icy moons"),
+    ("two-line", LONG_CAPTION),
+    ("very-long", VERY_LONG_CAPTION),
+]
+
+
+def _text_pieces(mobject):
+    """The Text (or MathTex) mobjects a caption holds."""
+    out = []
+
+    def walk(node):
+        if node.__class__.__name__ in ("Text", "MarkupText", "MathTex"):
+            out.append(node)
+            return
+        for sub in getattr(node, "submobjects", None) or []:
+            walk(sub)
+
+    walk(mobject)
+    return out
+
+
+def _overlaps(a, b, inflate=0.02):
+    """True when two boxes overlap (inflated by `inflate` units)."""
+    return not (
+        a.get_right()[0] + inflate <= b.get_left()[0]
+        or b.get_right()[0] + inflate <= a.get_left()[0]
+        or a.get_top()[1] + inflate <= b.get_bottom()[1]
+        or b.get_top()[1] + inflate <= a.get_bottom()[1]
+    )
+
+
+@pytest.mark.parametrize("width,height", [(1280, 720), (1920, 1080)])
+@pytest.mark.parametrize("name,text", CAPTION_CASES, ids=[c[0] for c in CAPTION_CASES])
+def test_caption_is_one_text_per_line_and_never_doubles(width, height, name, text):
+    """A caption holds exactly one text piece per line, and no more.
+
+    Issue #31: a caption that is as wide as the frame was drawn TWICE by
+    Manim -- the first line came back as a ghost over the caption, so the
+    text was unreadable. The caption is now built as one Text per line, so
+    there is nothing for Manim to draw twice.
+
+    The rules: one text piece per line, no two pieces on top of each other,
+    the caption inside the safe-area width, and the band the layout works
+    against still derived from the caption's real top.
+    """
+    from geometry import resolution
+
+    from animatica.components._draw import wrap
+
+    with resolution(width, height):
+        from manim import config
+
+        frame_width = config.frame_width
+        cap = make_caption(text, COLORS)
+        pieces = _text_pieces(cap)
+        wrap_width = max(20, int(62 * (frame_width / 12.4)))
+        expected_lines = len(wrap(text, wrap_width).split("\n"))
+
+        assert len(pieces) == expected_lines, (
+            f"{name}: the caption holds {len(pieces)} text piece(s) for "
+            f"{expected_lines} line(s) -- the text would be drawn twice"
+        )
+
+        for i in range(len(pieces)):
+            for j in range(i + 1, len(pieces)):
+                assert not _overlaps(pieces[i], pieces[j]), (
+                    f"{name}: caption piece {i} and piece {j} overlap"
+                )
+
+        left, right = cap.get_left()[0], cap.get_right()[0]
+        safe_left = -frame_width / 2 + frame_width * SAFE_AREA_MARGIN
+        safe_right = frame_width / 2 - frame_width * SAFE_AREA_MARGIN
+        assert left >= safe_left - 1e-6, (
+            f"{name}: the caption starts at x={left:.3f}, outside the safe "
+            f"area x={safe_left:.3f}"
+        )
+        assert right <= safe_right + 1e-6, (
+            f"{name}: the caption ends at x={right:.3f}, outside the safe "
+            f"area x={safe_right:.3f}"
+        )
+
+        assert caption_band_top(cap) == pytest.approx(
+            cap.get_top()[1] + CAPTION_CONTENT_GAP, abs=1e-6
+        ), (
+            f"{name}: the band {caption_band_top(cap):.4f} does not follow "
+            f"the caption's real top {cap.get_top()[1]:.4f}"
+        )
+
+
 def test_caption_is_one_text_per_line():
-    """A caption is a single Text mobject; each newline is a line in it.
+    """A caption is one Text per line, and the words are the ones asked for.
 
     Word-by-word pieces (one Text or MathTex per word) lost the shared
     baseline and the word gaps: the rendered caption read "termbrings" and
     "legendis". Math inside a caption needs one block per line with a
-    measured baseline, which is its own card; until then the caption stays
-    exactly one Text.
+    measured baseline, which is its own card.
     """
     text = "The curve e^x and x**2 agree near zero."
     with _frame_dims(LANDSCAPE_W, LANDSCAPE_H):
         cap = make_caption(text, COLORS)
         multi = make_caption("Line one\nLine two\nLine three", COLORS)
 
-    assert cap.__class__.__name__ == "Text", (
-        f"the caption is a {cap.__class__.__name__}, not one Text mobject"
+    pieces = _text_pieces(cap)
+    assert len(pieces) == 1, (
+        f"the one-line caption holds {len(pieces)} text pieces, not 1"
+    )
+    assert pieces[0].__class__.__name__ == "Text", (
+        f"the caption piece is a {pieces[0].__class__.__name__}, not a Text"
     )
     # Manim's ``Text.text`` is the glyph text with the spaces removed; the
     # original string is the one the renderer asked for.
-    source = getattr(cap, "original_text", cap.text)
+    source = getattr(pieces[0], "original_text", pieces[0].text)
     assert source.split() == text.split(), (
         f"the caption's words changed: {source!r}"
     )
     assert not [m for m in cap.get_family() if m.__class__.__name__ == "MathTex"], (
         "the caption is typeset word by word again"
     )
-    # An explicit line break is one line of the same Text, not a group of rows.
-    assert multi.__class__.__name__ == "Text"
-    multi_source = getattr(multi, "original_text", multi.text)
-    assert multi_source.count("\n") == 2, multi_source
+    # An explicit line break is one line per Text, not one Text with a
+    # newline in it.
+    multi_pieces = _text_pieces(multi)
+    assert len(multi_pieces) == 3, (
+        f"the three-line caption holds {len(multi_pieces)} pieces, not 3"
+    )
+    assert "".join(
+        " " + getattr(p, "original_text", p.text) for p in multi_pieces
+    ).split() == "Line one Line two Line three".split()
 
