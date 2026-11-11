@@ -22,11 +22,40 @@ jobs:
           cache-dependency-path: pyproject.toml
       # --no-install-recommends: the default pulls ~220 packages / 1.3 GB (a JDK, docs, GUI libs) and
       # took ~6.5 min. No system ffmpeg either: the imageio-ffmpeg wheel is the binary users get anyway.
+      - name: A cache key that rotates every week
+        run: echo "APT_WEEK=$(date -u +%G%V)" >> "$GITHUB_ENV"
+      - name: Cache the apt downloads
+        uses: actions/cache@v4
+        with:
+          path: .apt-cache
+          key: apt-archives-v2-${{ runner.os }}-noble-cairo-${{ env.APT_WEEK }}
       - name: System libs (cairo/pango)
         run: |
-          sudo apt-get -o Acquire::Retries=3 update
-          sudo apt-get -o Acquire::Retries=3 install -y --no-install-recommends libcairo2-dev pkg-config libpango1.0-dev
-      # The TeX the project ships (45 MB, no compilation) instead of texlive-latex-extra
+          # Pick the first Ubuntu mirror that answers within 5 s (https first).
+          PICK=""
+          for m in https://archive.ubuntu.com/ubuntu \
+                   https://mirrors.edge.kernel.org/ubuntu \
+                   https://mirror.math.princeton.edu/pub/ubuntu \
+                   https://mirrors.xtom.com/ubuntu \
+                   http://azure.archive.ubuntu.com/ubuntu; do
+            if curl -fsI --max-time 5 "$m/dists/noble/InRelease" >/dev/null 2>&1; then PICK="$m"; break; fi
+          done
+          echo "apt mirror: ${PICK:-none reachable}"
+          if [ -n "$PICK" ]; then
+            printf '%s\n' "$PICK" | sudo tee /etc/apt/apt-mirrors.txt >/dev/null
+            sudo sed -i -E "s#https?://[^ ]*(archive|security)\.ubuntu\.com/ubuntu#$PICK#g" \
+              /etc/apt/sources.list.d/ubuntu.sources 2>/dev/null || true
+          fi
+          APT="-o Acquire::Retries=3 -o Acquire::http::Timeout=20 -o Acquire::https::Timeout=20"
+          sudo apt-get $APT update
+          mkdir -p .apt-cache
+          if compgen -G ".apt-cache/*.deb" > /dev/null; then
+            sudo cp -n .apt-cache/*.deb /var/cache/apt/archives/
+          fi
+          sudo apt-get $APT -o APT::Keep-Downloaded-Packages=true \
+            install -y --no-install-recommends libcairo2-dev pkg-config libpango1.0-dev
+          sudo cp -n /var/cache/apt/archives/*.deb .apt-cache/ 2>/dev/null || true
+          sudo chown -R "$(id -u):$(id -g)" .apt-cache    # The TeX the project ships (45 MB, no compilation) instead of texlive-latex-extra
       # and friends, which took 10m47s on the runner. The bundle is verified by
       # compiling a real document: when it does not work, the apt route below
       # still does, so this job is never weaker than before, only faster.
@@ -84,10 +113,40 @@ jobs:
           python-version: "3.13"
           cache: pip
           cache-dependency-path: pyproject.toml
+      - name: A cache key that rotates every week
+        run: echo "APT_WEEK=$(date -u +%G%V)" >> "$GITHUB_ENV"
+      - name: Cache the apt downloads
+        uses: actions/cache@v4
+        with:
+          path: .apt-cache
+          key: apt-archives-v2-${{ runner.os }}-noble-cairo-${{ env.APT_WEEK }}
       - name: System libs (cairo/pango)
         run: |
-          sudo apt-get -o Acquire::Retries=3 update
-          sudo apt-get -o Acquire::Retries=3 install -y --no-install-recommends libcairo2-dev pkg-config libpango1.0-dev
+          # Pick the first Ubuntu mirror that answers within 5 s (https first).
+          PICK=""
+          for m in https://archive.ubuntu.com/ubuntu \
+                   https://mirrors.edge.kernel.org/ubuntu \
+                   https://mirror.math.princeton.edu/pub/ubuntu \
+                   https://mirrors.xtom.com/ubuntu \
+                   http://azure.archive.ubuntu.com/ubuntu; do
+            if curl -fsI --max-time 5 "$m/dists/noble/InRelease" >/dev/null 2>&1; then PICK="$m"; break; fi
+          done
+          echo "apt mirror: ${PICK:-none reachable}"
+          if [ -n "$PICK" ]; then
+            printf '%s\n' "$PICK" | sudo tee /etc/apt/apt-mirrors.txt >/dev/null
+            sudo sed -i -E "s#https?://[^ ]*(archive|security)\.ubuntu\.com/ubuntu#$PICK#g" \
+              /etc/apt/sources.list.d/ubuntu.sources 2>/dev/null || true
+          fi
+          APT="-o Acquire::Retries=3 -o Acquire::http::Timeout=20 -o Acquire::https::Timeout=20"
+          sudo apt-get $APT update
+          mkdir -p .apt-cache
+          if compgen -G ".apt-cache/*.deb" > /dev/null; then
+            sudo cp -n .apt-cache/*.deb /var/cache/apt/archives/
+          fi
+          sudo apt-get $APT -o APT::Keep-Downloaded-Packages=true \
+            install -y --no-install-recommends libcairo2-dev pkg-config libpango1.0-dev
+          sudo cp -n /var/cache/apt/archives/*.deb .apt-cache/ 2>/dev/null || true
+          sudo chown -R "$(id -u):$(id -g)" .apt-cache
       - name: Cache the TinyTeX tree
         uses: actions/cache@v4
         with:
@@ -215,92 +274,216 @@ jobs:
       - run: python scripts/ci_smoke.py
       - run: python scripts/ci_render_gate.py
 
-
   windows:
     runs-on: windows-latest
     timeout-minutes: 60
     defaults:
       run:
         shell: pwsh
+
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # --------------------------------------------------
+      # Python + uv
+      # --------------------------------------------------
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-          cache: pip
-          cache-dependency-path: pyproject.toml
-      # The real thing users run. It must set up Python, manim, ffmpeg and TeX by
-      # itself, then skip prompts safely in CI and report the next interactive command.
+
+      - name: Set up uv (with dependency cache)
+        uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+          cache-dependency-glob: pyproject.toml
+
+      # --------------------------------------------------
+      # TinyTeX cache
+      # --------------------------------------------------
+
+      - name: Restore TinyTeX cache
+        uses: actions/cache/restore@v4
+        with:
+          path: .tex
+          key: windows-tex-native-deps-v1-${{ runner.os }}-${{ github.run_id }}
+          restore-keys: |
+            windows-tex-native-deps-v1-${{ runner.os }}-
+
+      # --------------------------------------------------
+      # Real installer test
+      # --------------------------------------------------
+
       - name: Windows installer, end to end (PowerShell)
         run: pwsh -NoProfile -File scripts/bootstrap.ps1
+
+      - name: Save TinyTeX cache
+        if: success() && github.ref == 'refs/heads/main'
+        uses: actions/cache/save@v4
+        with:
+          path: .tex
+          key: windows-tex-native-deps-v1-${{ runner.os }}-${{ github.run_id }}
+
+      # --------------------------------------------------
+      # Installer verification
+      # --------------------------------------------------
+
       - name: Doctor from a non-project directory (bundle visibility)
         shell: pwsh
         run: |
           $d = Join-Path $env:TEMP "animatica-doctor-cwd-test"
           New-Item -ItemType Directory -Force $d | Out-Null
+
           $animatica = "$env:GITHUB_WORKSPACE\.venv\Scripts\animatica.exe"
-          if (-not (Test-Path $animatica)) { Write-Host "::error::animatica.exe not found at $animatica"; exit 1 }
+
+          if (-not (Test-Path $animatica)) {
+            Write-Host "::error::animatica.exe not found at $animatica"
+            exit 1
+          }
+
           $latex = Get-Command latex -ErrorAction SilentlyContinue
-          if ($latex) { Write-Host "::error::latex is on PATH ($($latex.Source)); the bundle must not be discoverable"; exit 1 }
+
+          if ($latex) {
+            Write-Host "::error::latex is on PATH ($($latex.Source)); the bundle must not be discoverable"
+            exit 1
+          }
+
           Push-Location $d
-          try { $output = & $animatica doctor 2>&1 } finally { Pop-Location }
+          try {
+            $output = & $animatica doctor 2>&1
+          } finally {
+            Pop-Location
+          }
+
           $output | ForEach-Object { Write-Host $_ }
-          if ($LASTEXITCODE -ne 0) { Write-Host "::error::doctor exited non-zero"; exit $LASTEXITCODE }
-          if (-not (($output | Out-String) -match '\[OK \] latex:')) { Write-Host "::error::latex not OK in doctor output"; exit 1 }
+
+          if ($LASTEXITCODE -ne 0) {
+            Write-Host "::error::doctor exited non-zero"
+            exit $LASTEXITCODE
+          }
+
+          if (-not (($output | Out-String) -match '\[OK \] latex:')) {
+            Write-Host "::error::latex not OK in doctor output"
+            exit 1
+          }
+
       - name: TUI dependency installed by bootstrap
-        run: .\\.venv\\Scripts\\python.exe -c "import textual; print('Textual import OK')"
-      - name: Test extras into the venv the installer built
+        run: .\.venv\Scripts\python.exe -c "import textual; print('Textual import OK')"
+
+      # --------------------------------------------------
+      # Development and test dependencies
+      # --------------------------------------------------
+
+      - name: Install development and test extras
         run: |
-          .\.venv\Scripts\python.exe -m ensurepip --upgrade 2>$null
-          .\.venv\Scripts\python.exe -m pip install --disable-pip-version-check -q -e ".[dev,tui]"
+          uv pip install --python .\.venv\Scripts\python.exe -e ".[dev,tui]"
+
+      # --------------------------------------------------
+      # Health checks
+      # --------------------------------------------------
+
       - name: Doctor (must pass)
         run: |
           $ErrorActionPreference = "Continue"
+
           $doctorOutput = & .\.venv\Scripts\python.exe -m animatica doctor 2>&1
           $doctorExit = $LASTEXITCODE
+
           $ErrorActionPreference = "Stop"
+
           $doctorOutput | ForEach-Object { Write-Host $_ }
+
           if ($doctorExit -ne 0) {
             $doctorOutput |
               Where-Object { "$_" -match "^\[FAIL\]" } |
               ForEach-Object { Write-Host "::error::$($_)" }
+
             exit $doctorExit
           }
+
+      # --------------------------------------------------
+      # Complete test suite
+      # --------------------------------------------------
+
       - name: Full test suite (zero skips allowed)
         run: .\.venv\Scripts\python.exe scripts/ci_tests.py
+
+      # --------------------------------------------------
+      # Real rendering
+      # --------------------------------------------------
+
       - name: Real render smoke test (space + non-ASCII output paths)
         run: .\.venv\Scripts\python.exe scripts/ci_smoke.py
-      # The suite does not render the conformance corpus any more, so this is
-      # where it is rendered: the gate checks the lint, the fallbacks, the
-      # timing and the promised durations of every storyboard.
+
+      # --------------------------------------------------
+      # Persistent render cache
+      # --------------------------------------------------
+
       - name: Restore the render cache
         uses: actions/cache/restore@v4
         with:
           path: .animatica_cache/renders
           key: render-cache-${{ runner.os }}-${{ github.run_id }}
-          restore-keys: render-cache-${{ runner.os }}-
+          restore-keys: |
+            render-cache-${{ runner.os }}-
+
       - name: Fixture render gate (no lint/fallback/timing warnings)
         run: .\.venv\Scripts\python.exe scripts/ci_render_gate.py
+
       - name: Save the render cache
-        if: github.ref == 'refs/heads/main'
+        if: success() && github.ref == 'refs/heads/main'
         uses: actions/cache/save@v4
         with:
           path: .animatica_cache/renders
           key: render-cache-${{ runner.os }}-${{ github.run_id }}
+
+      # --------------------------------------------------
+      # Installer syntax validation
+      # --------------------------------------------------
+
       - name: PowerShell installer parses
         run: |
           $errs = $null
-          [System.Management.Automation.Language.Parser]::ParseFile("$PWD\scripts\bootstrap.ps1", [ref]$null, [ref]$errs) | Out-Null
-          if ($errs) { $errs | ForEach-Object { Write-Host $_ }; exit 1 }
+
+          [System.Management.Automation.Language.Parser]::ParseFile(
+            "$PWD\scripts\bootstrap.ps1",
+            [ref]$null,
+            [ref]$errs
+          ) | Out-Null
+
+          if ($errs) {
+            $errs | ForEach-Object { Write-Host $_ }
+            exit 1
+          }
+
           Write-Host "bootstrap.ps1 parses cleanly"
+
+      # --------------------------------------------------
+      # Failure diagnostics
+      # --------------------------------------------------
+
       - name: TeX diagnostics (only on failure)
         if: failure()
         run: |
           $ErrorActionPreference = "Continue"
-          $env:PATH = "$env:APPDATA\TinyTeX\bin\windows;$env:PATH"
+
+          $texBin = Join-Path $env:GITHUB_WORKSPACE ".tex\bin\windows"
+
+          if (Test-Path $texBin) {
+            $env:PATH = "$texBin;$env:PATH"
+          }
+
           $latex = Get-Command latex -ErrorAction SilentlyContinue
           $kpse = Get-Command kpsewhich -ErrorAction SilentlyContinue
-          if ($latex) { Write-Host "latex: $($latex.Source)" } else { Write-Host "latex: unavailable" }
+
+          if ($latex) {
+            Write-Host "latex: $($latex.Source)"
+          } else {
+            Write-Host "latex: unavailable"
+          }
+
           if ($kpse) {
             foreach ($f in "standalone.cls","preview.sty","xkeyval.sty","english.ldf","amsmath.sty","amssymb.sty") {
               $found = & $kpse.Source $f 2>$null
@@ -309,19 +492,31 @@ jobs:
           } else {
             Write-Host "kpsewhich: unavailable; package-file diagnostics skipped"
           }
+
           $d = Join-Path $env:RUNNER_TEMP "texdiag"
           New-Item -ItemType Directory -Force $d | Out-Null
+
           Set-Content (Join-Path $d "t.tex") '\documentclass[preview]{standalone}\usepackage[english]{babel}\usepackage{amsmath}\usepackage{amssymb}\begin{document}$x^2$\end{document}'
+
           if ($latex) {
             Push-Location $d
+
             try {
               $latexOutput = & $latex.Source -interaction=nonstopmode t.tex 2>&1
               $latexExit = $LASTEXITCODE
+
               $latexOutput | Select-Object -Last 15 | ForEach-Object { Write-Host $_ }
+
               Write-Host "latex exit code: $latexExit"
               Write-Host "---- t.log (first error + context)"
+
               if (Test-Path t.log) {
-                Select-String -Path t.log -Pattern '^!' -Context 0,8 | Select-Object -First 1 | ForEach-Object { $_.Line; $_.Context.PostContext }
+                Select-String -Path t.log -Pattern '^!' -Context 0,8 |
+                  Select-Object -First 1 |
+                  ForEach-Object {
+                    $_.Line
+                    $_.Context.PostContext
+                  }
               } else {
                 Write-Host "t.log was not created"
               }
@@ -331,6 +526,7 @@ jobs:
           } else {
             Write-Host "LaTeX compile probe skipped because latex is unavailable."
           }
+
           Write-Host "TeX diagnostics complete; the original job failure remains authoritative."
           exit 0
 
@@ -363,20 +559,49 @@ jobs:
           # files back into it ("Permission denied").
           path: .apt-cache
           key: apt-archives-v2-${{ runner.os }}-noble-ffmpeg-${{ env.APT_WEEK }}
+
       - name: System libs (cairo/pango for the manim import path, ffmpeg for the CLI)
         run: |
-          sudo apt-get -o Acquire::Retries=3 update
-          # The .deb files of an earlier run first: apt takes what it finds
-          # and only downloads what is missing.
+          # Pick the first Ubuntu mirror that answers within 5 s (https first).
+          PICK=""
+          for m in https://archive.ubuntu.com/ubuntu \
+                   https://mirrors.edge.kernel.org/ubuntu \
+                   https://mirror.math.princeton.edu/pub/ubuntu \
+                   https://mirrors.xtom.com/ubuntu \
+                   http://azure.archive.ubuntu.com/ubuntu; do
+            if curl -fsI --max-time 5 "$m/dists/noble/InRelease" >/dev/null 2>&1; then
+              PICK="$m"
+              break
+            fi
+          done
+
+          echo "apt mirror: ${PICK:-none reachable}"
+
+          if [ -n "$PICK" ]; then
+            printf '%s\n' "$PICK" | sudo tee /etc/apt/apt-mirrors.txt >/dev/null
+            sudo sed -i -E "s#https?://[^ ]*(archive|security)\.ubuntu\.com/ubuntu#$PICK#g" \
+              /etc/apt/sources.list.d/ubuntu.sources 2>/dev/null || true
+          fi
+
+          APT="-o Acquire::Retries=3 -o Acquire::http::Timeout=20 -o Acquire::https::Timeout=20"
+
+          sudo apt-get $APT update
+
+          # Restore previously downloaded packages.
           mkdir -p .apt-cache
           if compgen -G ".apt-cache/*.deb" > /dev/null; then
             sudo cp -n .apt-cache/*.deb /var/cache/apt/archives/
           fi
-          sudo apt-get -o Acquire::Retries=3 -o APT::Keep-Downloaded-Packages=true \
-            install -y --no-install-recommends libcairo2-dev pkg-config libpango1.0-dev ffmpeg
-          # Keep them for the next run.
+
+          # Install only required dependencies.
+          sudo apt-get $APT -o APT::Keep-Downloaded-Packages=true \
+            install -y --no-install-recommends \
+            libcairo2-dev pkg-config libpango1.0-dev ffmpeg
+
+          # Persist downloaded packages for subsequent runs.
           sudo cp -n /var/cache/apt/archives/*.deb .apt-cache/ 2>/dev/null || true
           sudo chown -R "$(id -u):$(id -g)" .apt-cache
+
       - run: pip install -e ".[dev]"
       - name: The pinned HyperFrames CLI
         run: |
