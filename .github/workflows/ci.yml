@@ -307,10 +307,10 @@ jobs:
       - name: Restore TinyTeX cache
         uses: actions/cache/restore@v4
         with:
-          path: .tex
-          key: windows-tex-native-deps-v1-${{ runner.os }}-${{ github.run_id }}
+          path: C:\Users\runneradmin\AppData\Local\Animatica\tex
+          key: windows-tex-native-deps-v1-Windows-${{ github.run_id }}
           restore-keys: |
-            windows-tex-native-deps-v1-${{ runner.os }}-
+            windows-tex-native-deps-v1-Windows-
 
       # --------------------------------------------------
       # Real installer test
@@ -320,11 +320,11 @@ jobs:
         run: pwsh -NoProfile -File scripts/bootstrap.ps1
 
       - name: Save TinyTeX cache
-        if: success() && github.ref == 'refs/heads/main'
+        if: success() && github.event_name != 'pull_request'
         uses: actions/cache/save@v4
         with:
-          path: .tex
-          key: windows-tex-native-deps-v1-${{ runner.os }}-${{ github.run_id }}
+          path: C:\Users\runneradmin\AppData\Local\Animatica\tex
+          key: windows-tex-native-deps-v1-Windows-${{ github.run_id }}
 
       # --------------------------------------------------
       # Installer verification
