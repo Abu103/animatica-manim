@@ -268,3 +268,40 @@ def test_portrait_font_larger_than_landscape():
         f"portrait font {port_font} too small vs landscape {land_font}"
     )
 
+
+# ---------------------------------------------------------------------------
+# The caption is one Text mobject per line, not a row of words
+# ---------------------------------------------------------------------------
+
+
+def test_caption_is_one_text_per_line():
+    """A caption is a single Text mobject; each newline is a line in it.
+
+    Word-by-word pieces (one Text or MathTex per word) lost the shared
+    baseline and the word gaps: the rendered caption read "termbrings" and
+    "legendis". Math inside a caption needs one block per line with a
+    measured baseline, which is its own card; until then the caption stays
+    exactly one Text.
+    """
+    text = "The curve e^x and x**2 agree near zero."
+    with _frame_dims(LANDSCAPE_W, LANDSCAPE_H):
+        cap = make_caption(text, COLORS)
+        multi = make_caption("Line one\nLine two\nLine three", COLORS)
+
+    assert cap.__class__.__name__ == "Text", (
+        f"the caption is a {cap.__class__.__name__}, not one Text mobject"
+    )
+    # Manim's ``Text.text`` is the glyph text with the spaces removed; the
+    # original string is the one the renderer asked for.
+    source = getattr(cap, "original_text", cap.text)
+    assert source.split() == text.split(), (
+        f"the caption's words changed: {source!r}"
+    )
+    assert not [m for m in cap.get_family() if m.__class__.__name__ == "MathTex"], (
+        "the caption is typeset word by word again"
+    )
+    # An explicit line break is one line of the same Text, not a group of rows.
+    assert multi.__class__.__name__ == "Text"
+    multi_source = getattr(multi, "original_text", multi.text)
+    assert multi_source.count("\n") == 2, multi_source
+

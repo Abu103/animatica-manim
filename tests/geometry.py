@@ -30,8 +30,21 @@ SAFE_AREA_MARGIN = 0.05
 FRAME_HEIGHT = 8.0
 
 #: Mobject classes that carry text. Decorative shapes (lines, rectangles,
-#: dots) may cross text without anything being unreadable.
-TEXT_CLASSES = ("Text", "MarkupText", "MathTex", "Tex", "Paragraph", "Code", "SVGText", "CodeBlock")
+#: dots) may cross text without anything being unreadable. Axis numbers are
+#: text too: a number under the caption is unreadable just like a caption
+#: over it, so ``DecimalNumber`` and ``Integer`` count.
+TEXT_CLASSES = (
+    "Text",
+    "MarkupText",
+    "MathTex",
+    "Tex",
+    "Paragraph",
+    "Code",
+    "SVGText",
+    "CodeBlock",
+    "DecimalNumber",
+    "Integer",
+)
 
 
 @contextmanager
@@ -97,6 +110,9 @@ class RecordingScene:
         self.plays: list[tuple[list, float]] = []
         self.mobjects: list = [VMobject()]  # non-empty so finish() fades them out
         self.warnings: list[str] = []
+        # The caption the renderer burns in. A component that lays out against
+        # the caption (the graph does) reads it from here.
+        self.caption_mobject = None
 
     def play(self, *anims, run_time: float = 0.0):
         self.played_run_times.append(run_time)
@@ -227,13 +243,21 @@ def play_component(
     pixel_height: int,
     colors=None,
     label: str = "",
+    caption=None,
 ) -> Beat:
-    """Run ``component.play()`` at a pixel resolution and collect the result."""
+    """Run ``component.play()`` at a pixel resolution and collect the result.
+
+    ``caption`` is the caption mobject the renderer burns in for this beat.
+    A component that lays out against the caption reads it from the scene, so
+    the test has to hand it the real one.
+    """
     colors = colors or make_colors()
     with resolution(pixel_width, pixel_height):
         from manim import config
 
         scene = RecordingScene()
+        if caption is not None:
+            scene.caption_mobject = caption
         component.play(scene, params, colors)
 
         mobjects = []
