@@ -1,6 +1,7 @@
 """Shared Manim helpers for components: timing budget, text fitting, text-card fallback, warnings."""
 from __future__ import annotations
 
+import re
 import textwrap
 from typing import Any
 
@@ -62,6 +63,55 @@ def wrap(text: str, width: int) -> str:
     for line in text.split("\n"):
         out.extend(textwrap.wrap(line, width=width) or [""])
     return "\n".join(out)
+
+
+#: What marks a piece of text as math rather than prose: a power, a subscript,
+#: a backslash command, a division sign next to a word, a Python power, or a
+#: function call.
+_MATH_HINT = re.compile(
+    r"(?<=[A-Za-z0-9])[\\^_\/]|[\\^_\/](?=[A-Za-z0-9])"
+    r"|\*\*"
+    r"|\b(?:exp|sin|cos|tan|log|ln|sqrt)\s*\("
+)
+
+#: Python function names that have a LaTeX command of the same name.
+_FUNCTIONS = ("sin", "cos", "tan", "log", "ln")
+_POWERS = re.compile(r"\^(-?\w+|\([^()]*\))")
+
+
+def looks_like_math(label: str) -> bool:
+    """True when the label carries math notation, not prose.
+
+    Prose stays plain text: setting a sentence in math mode makes every space
+    and letter italic and unreadable.
+    """
+    return _MATH_HINT.search(label) is not None
+
+
+def latex_expression(expr: str) -> str:
+    """A Python expression as LaTeX: ``1 + x + x**2/2`` -> ``1 + x + x^{2}/2``.
+
+    Storyboards carry expressions the way Python writes them, and a text widget
+    prints them as source code -- the exponent stays a literal ``**2``. Any
+    place that shows an equation (a graph's title, its legend) uses this, so
+    the math reads like math instead of like a line of Python.
+    """
+    text = " ".join(expr.split()).replace("**", "^")
+    text = _POWERS.sub(lambda m: "^{" + m.group(1).strip("()") + "}", text)
+    text = re.sub(r"\bexp\(([^()]*)\)", lambda m: "e^{" + m.group(1) + "}", text)
+    for name in _FUNCTIONS:
+        text = re.sub(
+            rf"\b{name}\(([^()]*)\)",
+            lambda m, name=name: "\\" + name + "(" + m.group(1) + ")",
+            text,
+        )
+    text = re.sub(r"\bsqrt\(([^()]*)\)", lambda m: "\\sqrt{" + m.group(1) + "}", text)
+    return re.sub(r"\s*\*\s*", r" \\cdot ", text)
+
+
+def split_terms(latex: str) -> list[str]:
+    """The top-level ``+`` terms of a LaTeX sum, so a long one can be shortened."""
+    return [part for part in re.split(r"\s\+\s", latex) if part.strip()]
 
 
 def fit(
@@ -178,6 +228,11 @@ def make_caption(text: str, colors: ThemeColors) -> Any:
     It is pinned clear of the ``SAFE_AREA_MARGIN`` band: a caption closer to
     the edge puts its descenders inside that band, and frame-lint then warns
     about every single frame of the video.
+
+    One Text per line, deliberately. Word-by-word pieces with per-word math
+    lost the shared baseline and the word gaps: the rendered caption read
+    "termbrings" and "legendis". Typesetting math inside a caption needs one
+    block per line, driven by a measured baseline, and that is its own card.
     """
     from manim import DOWN, Text, config
 
