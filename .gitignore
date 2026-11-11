@@ -56,3 +56,6 @@ native/
 
 # apt downloads cached by the CI (the hyperframes job)
 .apt-cache/
+
+# an exported session transcript (opencode session export) -- never committed
+session-*.json
