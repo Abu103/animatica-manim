@@ -1,0 +1,38 @@
+{
+  "version": "1",
+  "title": "Number Line from 0 to 20",
+  "theme": {
+    "palette": "dark-blue",
+    "font": "default"
+  },
+  "scenes": [
+    {
+      "beats": [
+        {
+          "component": "number_line",
+          "params": {
+            "title": "Number Line from 0 to 20",
+            "start": 0,
+            "end": 20,
+            "marks": [
+              0,
+              7,
+              15
+            ],
+            "jumps": [
+              [
+                0,
+                7
+              ],
+              [
+                7,
+                15
+              ]
+            ]
+          },
+          "caption": "A number line from 0 to 20 marks 0, 7, and 15 with jumps between them."
+        }
+      ]
+    }
+  ]
+}

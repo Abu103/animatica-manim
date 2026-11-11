@@ -1,0 +1,65 @@
+{
+  "version": "1",
+  "title": "Taylor Series",
+  "theme": {
+    "palette": "dark-blue",
+    "font": "default"
+  },
+  "scenes": [
+    {
+      "beats": [
+        {
+          "component": "title_card",
+          "params": {
+            "title": "Taylor Series",
+            "subtitle": "Approximating functions with polynomials"
+          },
+          "caption": "Taylor series approximate functions with polynomials."
+        }
+      ]
+    },
+    {
+      "beats": [
+        {
+          "component": "equation",
+          "params": {
+            "mode": "reveal",
+            "latex": [
+              "f(x) \\approx f(a) + f'(a)(x-a) + \\frac{f''(a)}{2!}(x-a)^2 + \\cdots"
+            ]
+          },
+          "caption": "A Taylor series builds a polynomial from a function's derivatives at a center point."
+        },
+        {
+          "component": "graph",
+          "params": {
+            "fn": "sin(x)",
+            "approx_fn": "x - x**3/6 + x**5/120",
+            "x_range": [
+              -3,
+              3
+            ],
+            "y_range": [
+              -1.5,
+              1.5
+            ],
+            "label": "sin(x)",
+            "approx_label": "Taylor polynomial near 0"
+          },
+          "caption": "The polynomial tracks sine closely near zero and diverges farther away."
+        },
+        {
+          "component": "steps_list",
+          "params": {
+            "items": [
+              "Choose a center point a.",
+              "Match the function's value and derivatives at a.",
+              "Add more terms to improve the approximation near a."
+            ]
+          },
+          "caption": "Each term uses a higher derivative to fit the curve better close to the center."
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,34 @@
+{
+  "version": "1",
+  "title": "Sales by Quarter",
+  "theme": {
+    "palette": "dark-blue",
+    "font": "default"
+  },
+  "scenes": [
+    {
+      "beats": [
+        {
+          "component": "bar_chart",
+          "params": {
+            "title": "Sales by Quarter",
+            "labels": [
+              "Q1",
+              "Q2",
+              "Q3",
+              "Q4"
+            ],
+            "values": [
+              45,
+              60,
+              55,
+              70
+            ],
+            "scale": "linear"
+          },
+          "caption": "Sales are shown for each quarter, with Q4 reaching the highest value."
+        }
+      ]
+    }
+  ]
+}

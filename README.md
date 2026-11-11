@@ -102,6 +102,13 @@ animatica make --from docs/gallery/fibonacci.json -o out/
 
 All ten render successfully with LaTeX installed (equations and graph axis numbers use real LaTeX; without LaTeX they degrade gracefully to plain text). Burned-in captions appear at the bottom of each video and may trigger `safe_area` frame-lint warnings — this is expected caption placement, not clipping.
 
+Also in `docs/gallery/`: five **model outputs** from the eval baseline (`eval_*.json`, with a still of each):
+- `eval_taylor_series` — a Taylor polynomial against `sin(x)`, with the graph's legend
+- `eval_recursion_tree` — the `fib(5)` call tree
+- `eval_bar_chart`, `eval_number_line`, `eval_code_highlight` — one clean render each
+
+The prompts, the numbers and the provider they came from are in [`docs/EVAL_BASELINE.md`](docs/EVAL_BASELINE.md).
+
 The rendered MP4s are not committed (they're large binary artifacts). To regenerate them all:
 ```
 for f in docs/gallery/*.json; do
