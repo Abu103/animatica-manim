@@ -12,7 +12,7 @@ from typing import ClassVar
 
 from pydantic import BaseModel, Field, model_validator
 
-from animatica.components._draw import Clock, fit, prepare
+from animatica.components._draw import Clock, caption_band_top, fit, prepare
 from animatica.components._scale import NOTES, Scale, scaled_heights
 from animatica.components.base import Component
 from animatica.storyboard.models import MAX_TEXT
@@ -76,8 +76,7 @@ class BounceSequence(Component):
         slot = X_SPAN / n
         pad_w = min(0.95, slot * 0.62)
         xs = [-X_SPAN / 2 + slot * (i + 0.5) for i in range(n)]
-        heights, used_scale = scaled_heights(values, MAX_PAD_HEIGHT, MIN_PAD_HEIGHT, p.scale)
-        tops = [BASELINE_Y + h for h in heights]
+        _, used_scale = scaled_heights(values, MAX_PAD_HEIGHT, MIN_PAD_HEIGHT, p.scale)
         radius = 0.2
 
         title = Text(p.title, font_size=40, color=colors.text).to_edge(UP, buff=0.55)
@@ -96,11 +95,24 @@ class BounceSequence(Component):
         axis_note = Text(note, font_size=22, color=colors.muted).next_to(base, DOWN, buff=0.85).align_to(base, LEFT) \
             if note else None
 
+        # Leave the caption its room (#33): the labels and the note hang below the
+        # baseline, so the baseline must sit high enough for the lowest of them to
+        # clear the caption band. The pads give up the same height, so the top of
+        # the stage (ball, sum text) stays where it was.
+        band = caption_band_top(getattr(scene, "caption_mobject", None))
+        lowest = min(m.get_bottom()[1] for m in [*cats, *([axis_note] if axis_note is not None else [])])
+        lift_stage = max(0.0, band - lowest)
+        base_y = BASELINE_Y + lift_stage
+        for m in (base, *cats, *([axis_note] if axis_note is not None else [])):
+            m.shift(UP * lift_stage)
+        heights, _ = scaled_heights(values, MAX_PAD_HEIGHT - lift_stage, MIN_PAD_HEIGHT, p.scale)
+        tops = [base_y + h for h in heights]
+
         pads, vals = [], []
         for i in range(n):
             pad = Rectangle(width=pad_w, height=heights[i], stroke_width=0, fill_opacity=1.0,
                             fill_color=colors.accent if i % 2 == 0 else colors.accent2)
-            pad.move_to([xs[i], BASELINE_Y + heights[i] / 2, 0])
+            pad.move_to([xs[i], base_y + heights[i] / 2, 0])
             pads.append(pad)
             vals.append(Text(f"{values[i]:g}", font_size=label_size + 4, color=colors.text)
                         .next_to(pad, UP, buff=0.12))
