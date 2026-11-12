@@ -8,7 +8,7 @@ from typing import ClassVar
 
 from pydantic import BaseModel, Field, model_validator
 
-from animatica.components._draw import MIN_FONT_SIZE, Clock, fit, prepare, wrap
+from animatica.components._draw import MIN_FONT_SIZE, Clock, fit_in_room, prepare, wrap
 from animatica.components.base import Component
 from animatica.storyboard.models import MAX_TEXT
 
@@ -58,7 +58,7 @@ class Table(Component):
             body_rows.append(cells)
         body = VGroup(*body_rows).arrange(DOWN, buff=0.5)
         group = VGroup(title, header, body).arrange(DOWN, buff=0.5)
-        fit(group)
+        fit_in_room(scene, group)
         clock = Clock(scene, self.duration(p))
         clock.play(FadeIn(title), run_time=0.6)
         clock.play(FadeIn(header), run_time=0.6)

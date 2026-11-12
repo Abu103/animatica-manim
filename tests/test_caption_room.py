@@ -48,15 +48,7 @@ CAPTIONS = {
 #: was sized for.
 KNOWN_VIOLATORS: dict[str, dict[str, str]] = {
     "one line": {},
-    "two lines": {
-        "bar_chart": "found by this test, no issue filed yet",
-        "code_walkthrough": "found by this test, no issue filed yet",
-        "flow": "found by this test, no issue filed yet",
-        "matrix": "found by this test, no issue filed yet",
-        "parametric_graph": "found by this test, no issue filed yet",
-        "stat_callout": "found by this test, no issue filed yet",
-        "table": "found by this test, no issue filed yet",
-    },
+    "two lines": {},
 }
 
 _CONFORMANCE = os.path.join(os.path.dirname(__file__), "conformance")
@@ -156,3 +148,46 @@ def test_long_formula_derivation_leaves_the_caption_its_room(kind: str):
         beat = play_component(component, validated, *PIXELS, caption=caption, label="formula_derivation")
         lowest = min(text.get_bottom()[1] for text in beat.texts if text is not caption)
     assert lowest >= limit - 1e-6, f"derivation reaches y={lowest:.2f}, must stay above y={limit:.2f}"
+
+
+#: The largest input each component accepts. The registry examples are small,
+#: and the room a component needs grows with its content, so the biggest case
+#: is the one that would reach down into the caption first.
+_LONG = "A long label that wraps onto several lines"
+LARGEST = {
+    "matrix": {"title": "A full matrix", "values": [[r * 6 + c + 0.5 for c in range(6)] for r in range(6)]},
+    "table": {
+        "title": _LONG,
+        "columns": [f"Column {i}" for i in range(6)],
+        "rows": [[f"cell {r}-{c} with text" for c in range(6)] for r in range(6)],
+    },
+    "code_walkthrough": {
+        "title": "A twelve line program",
+        "code": "\n".join(f"    t{i} = step({i}) + 1" for i in range(12)),
+        "variables": {f"v{i}": str(i * 11) for i in range(6)},
+    },
+    "flow": {
+        "title": _LONG,
+        "nodes": [f"N{i}" for i in range(10)],
+        "edges": [[i, i + 1] for i in range(9)],
+    },
+    "stat_callout": {"value": "1,234,567,890", "label": _LONG * 3, "delta": "+12% vs last year, " * 4},
+    "bar_chart": {
+        "title": _LONG,
+        "labels": [f"Category {i}" for i in range(12)],
+        "values": [10.0 ** (i % 5) * (i + 1) for i in range(12)],
+    },
+}
+
+
+@pytest.mark.parametrize("kind", list(CAPTIONS))
+@pytest.mark.parametrize("name", sorted(LARGEST))
+def test_largest_input_leaves_the_caption_its_room(name: str, kind: str):
+    component = default_registry().get(name)
+    validated = component.Params.model_validate(LARGEST[name])
+    with resolution(*PIXELS):
+        caption = make_caption(CAPTIONS[kind], make_colors())
+        limit = caption.get_top()[1] + MIN_CLEARANCE
+        beat = play_component(component, validated, *PIXELS, caption=caption, label=name)
+        lowest = min(text.get_bottom()[1] for text in beat.texts if text is not caption)
+    assert lowest >= limit - 1e-6, f"{name} reaches y={lowest:.2f}, must stay above y={limit:.2f}"
