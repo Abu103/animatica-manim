@@ -7,6 +7,7 @@ from typing import ClassVar
 from pydantic import BaseModel, Field, model_validator
 
 from animatica.components._draw import MIN_FONT_SIZE, Clock, fit, prepare
+from animatica.components._draw import caption_band_top as caption_band_top_of
 from animatica.components._scale import NOTES, Scale, scaled_heights
 from animatica.components.base import Component
 from animatica.storyboard.models import MAX_TEXT
@@ -42,7 +43,7 @@ class BarChart(Component):
         return "\n".join([p.title] + [f"{a}: {b:g}" for a, b in zip(p.labels, p.values)])  # type: ignore[attr-defined]
 
     def play(self, scene, p, colors) -> None:
-        from manim import DOWN, DR, UP, FadeIn, GrowFromEdge, LaggedStart, Line, Rectangle, Text, VGroup, config
+        from manim import DOWN, RIGHT, UP, FadeIn, GrowFromEdge, LaggedStart, Line, Rectangle, Text, VGroup, config
         prepare(scene, colors)
         n = len(p.values)
         total = self.duration(p)
@@ -69,7 +70,20 @@ class BarChart(Component):
         fit(title, max_width=config.frame_width - 2.0, scale_up=False)
         extra = []
         if used_scale in NOTES:
-            extra = [Text(f"({NOTES[used_scale]})", font_size=22, color=colors.muted).to_corner(DR, buff=0.75).shift(UP * 0.55)]
+            note = Text(f"({NOTES[used_scale]})", font_size=22, color=colors.muted)
+            note.next_to(VGroup(*cats), DOWN, buff=0.15).align_to(base, RIGHT)
+            extra = [note]
+
+        # Keep the whole chart, labels and scale note included, above the real
+        # caption: its height depends on how the caption wraps, so the room is
+        # measured from the caption itself rather than from a fixed baseline.
+        chart = VGroup(base, *bars, *vals, *cats, *extra)
+        band = caption_band_top_of(getattr(scene, "caption_mobject", None))
+        room_top = title.get_bottom()[1] - 0.15
+        if chart.height > room_top - band:
+            chart.scale((room_top - band) / chart.height)
+        if chart.get_bottom()[1] < band:
+            chart.shift(UP * (band - chart.get_bottom()[1]))
         clock = Clock(scene, total)
         clock.play(FadeIn(title), FadeIn(base), *[FadeIn(e) for e in extra], *[FadeIn(c) for c in cats], run_time=0.6)
         clock.play(LaggedStart(*[GrowFromEdge(b, DOWN) for b in bars], lag_ratio=0.25),

@@ -11,7 +11,7 @@ from typing import ClassVar
 
 from pydantic import BaseModel, Field, model_validator
 
-from animatica.components._draw import Clock, fit, prepare, text_card, warn
+from animatica.components._draw import Clock, fit, fit_in_room, prepare, text_card, warn
 from animatica.components.base import Component
 from animatica.storyboard.models import MAX_TEXT
 
@@ -117,7 +117,7 @@ class Flow(Component):
 
         # --- Arrange title + diagram ---
         whole = VGroup(title, diagram).arrange(DOWN, buff=0.6)
-        fit(whole)
+        fit_in_room(scene, whole)
 
         clock = Clock(scene, self.duration(p))
         clock.play(FadeIn(title), run_time=0.6)

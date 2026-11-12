@@ -333,6 +333,26 @@ def caption_band_top(caption: Any = None) -> float:
     )
 
 
+def fit_in_room(scene: Any, mobject: Any, scale_up: bool = True) -> Any:
+    """Fit a mobject into the room the caption leaves, and centre it there.
+
+    The room runs from the top safe margin down to the real caption's band
+    (``caption_band_top``), and across the side safe margins. A two-line caption
+    is taller than a one-line one, so the room is measured from the caption the
+    scene actually holds, never assumed. Use this instead of ``fit`` for the
+    final layout of a component, which centres in the whole frame and so runs
+    into a tall caption.
+    """
+    from manim import config
+
+    top = config.frame_height * (0.5 - SAFE_AREA_MARGIN) - 0.3
+    band = caption_band_top(getattr(scene, "caption_mobject", None))
+    width = config.frame_width * (1 - 2 * SAFE_AREA_MARGIN) - 0.3
+    fit(mobject, max_width=width, max_height=top - band, scale_up=scale_up)
+    mobject.move_to([0.0, (top + band) / 2, 0.0])
+    return mobject
+
+
 def caption_strip_fraction(caption: Any = None, frame_height: float = 8.0) -> float:
     """The fraction of the frame height the burned-in caption covers.
 

@@ -11,7 +11,7 @@ from typing import ClassVar
 
 from pydantic import BaseModel, Field
 
-from animatica.components._draw import Clock, fit, prepare, text_card, warn
+from animatica.components._draw import Clock, fit, fit_in_room, prepare, text_card, warn
 from animatica.components.base import Component
 from animatica.storyboard.models import MAX_TEXT
 
@@ -52,7 +52,7 @@ class StatCallout(Component):
             if delta.width > 11.0:
                 delta.scale_to_fit_width(11.0)
             group = VGroup(group, delta).arrange(DOWN, buff=0.3)
-        fit(group)
+        fit_in_room(scene, group)
 
         clock = Clock(scene, 3.0)
         clock.play(FadeIn(big), run_time=0.8)
