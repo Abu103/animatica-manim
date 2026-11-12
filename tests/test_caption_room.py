@@ -52,7 +52,6 @@ KNOWN_VIOLATORS: dict[str, dict[str, str]] = {
         "bar_chart": "found by this test, no issue filed yet",
         "code_walkthrough": "found by this test, no issue filed yet",
         "flow": "found by this test, no issue filed yet",
-        "formula_derivation": "#29: the last derivation step runs into the caption",
         "matrix": "found by this test, no issue filed yet",
         "parametric_graph": "found by this test, no issue filed yet",
         "stat_callout": "found by this test, no issue filed yet",
@@ -129,3 +128,31 @@ def test_known_violators_name_real_components():
         assert kind in CAPTIONS
         assert set(listed) <= names, f"unknown component(s) in KNOWN_VIOLATORS[{kind!r}]: {set(listed) - names}"
     assert not KNOWN_VIOLATORS["one line"], "the one-line caption is the case every component was sized for"
+
+
+#: #29: a derivation with the most steps and long lines is the case that grows
+#: tallest, so it is checked on its own: the registry example is short.
+LONG_DERIVATION = {
+    "title": "Derive the quadratic formula by completing the square",
+    "steps": [
+        "ax^2 + bx + c = 0",
+        "x^2 + (b/a)x + c/a = 0",
+        "x^2 + (b/a)x = -c/a",
+        "x^2 + (b/a)x + (b/2a)^2 = (b/2a)^2 - c/a",
+        "(x + b/2a)^2 = (b^2 - 4ac) / 4a^2",
+        "x = (-b ± sqrt(b^2 - 4ac)) / 2a",
+    ],
+    "highlight": [5],
+}
+
+
+@pytest.mark.parametrize("kind", list(CAPTIONS))
+def test_long_formula_derivation_leaves_the_caption_its_room(kind: str):
+    component = default_registry().get("formula_derivation")
+    validated = component.Params.model_validate(LONG_DERIVATION)
+    with resolution(*PIXELS):
+        caption = make_caption(CAPTIONS[kind], make_colors())
+        limit = caption.get_top()[1] + MIN_CLEARANCE
+        beat = play_component(component, validated, *PIXELS, caption=caption, label="formula_derivation")
+        lowest = min(text.get_bottom()[1] for text in beat.texts if text is not caption)
+    assert lowest >= limit - 1e-6, f"derivation reaches y={lowest:.2f}, must stay above y={limit:.2f}"

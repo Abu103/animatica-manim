@@ -11,7 +11,8 @@ from typing import ClassVar
 
 from pydantic import BaseModel, Field, model_validator
 
-from animatica.components._draw import Clock, fit, prepare, text_card, warn
+from animatica.components._draw import SAFE_AREA_MARGIN, Clock, fit, prepare, text_card, warn
+from animatica.components._draw import caption_band_top as caption_band_top_of
 from animatica.components.base import Component
 from animatica.storyboard.models import MAX_TEXT
 
@@ -54,8 +55,18 @@ class FormulaDerivation(Component):
         highlight = set(p.highlight)  # type: ignore[attr-defined]
         n = len(steps)
 
-        title = Text(p.title, font_size=40, color=colors.text).to_edge(UP, buff=0.4)
-        fit(title)
+        # The title and the steps live in the space between the top margin and the
+        # caption (#29). A two-line caption is taller than a one-line one, so the room
+        # is measured from the real caption, not assumed.
+        from manim import config
+
+        top = config.frame_height * (0.5 - SAFE_AREA_MARGIN) - 0.3
+        band = caption_band_top_of(getattr(scene, "caption_mobject", None))
+        max_width = config.frame_width * (1 - 2 * SAFE_AREA_MARGIN) - 0.3
+        gap = 0.4
+
+        title = Text(p.title, font_size=40, color=colors.text)
+        fit(title, max_width=max_width, max_height=1.0, scale_up=False)
 
         rendered: list = []
         for i, step in enumerate(steps):
@@ -64,9 +75,11 @@ class FormulaDerivation(Component):
             rendered.append(line)
 
         group = VGroup(*rendered).arrange(DOWN, buff=0.5)
-        fit(group)
-        whole = VGroup(title, group).arrange(DOWN, buff=0.5)
-        fit(whole)
+        fit(group, max_width=max_width, max_height=top - band - title.height - gap)
+        whole = VGroup(title, group).arrange(DOWN, buff=gap)
+        whole.move_to([0.0, (top + band) / 2, 0.0])
+        title.set_x(0.0)
+        group.set_x(0.0)
 
         clock = Clock(scene, self.duration(p))
         clock.play(FadeIn(title), run_time=0.6)
