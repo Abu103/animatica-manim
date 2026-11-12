@@ -42,37 +42,25 @@ def _status(app) -> str:
     return _text(_q(app, "#status"))
 
 
-async def _click(app, pilot, selector: str) -> bool:
-    """Click a visible point inside a control, scrolling pane controls first.
-
-    Pilot.click defaults to offset (0, 0), which may be clipped in a scroll
-    pane. Find a point that Textual itself hit-tests as this widget (or one of
-    its children) so the click stays within the visible part of the control.
-    """
-    widget = _q(app, selector)
-    if selector not in {"#next", "#back"}:
-        widget.scroll_visible(animate=False)
-        await pilot.pause()
-
+def _hit_offset(app, widget):
+    """Return a click offset Textual hit-tests as ``widget`` (or a child), else None."""
     region = widget.region
     screen = app.screen.size.region
     left, top = max(region.x, screen.x), max(region.y, screen.y)
     right, bottom = min(region.right, screen.right), min(region.bottom, screen.bottom)
     if left >= right or top >= bottom:
-        raise AssertionError(f"{selector} has no on-screen area after scrolling: {region!r}")
+        return None
 
     center_x, center_y = (left + right) // 2, (top + bottom) // 2
     points = sorted(
         ((x, y) for y in range(top, bottom) for x in range(left, right)),
         key=lambda point: abs(point[0] - center_x) + abs(point[1] - center_y),
     )
-    click_offset = None
     descendant_offset = None
     for x, y in points:
         under_pointer, _ = app.get_widget_at(x, y)
         if under_pointer is widget:
-            click_offset = (x - region.x, y - region.y)
-            break
+            return (x - region.x, y - region.y)
         current = under_pointer
         while current is not None:
             if current is widget:
@@ -80,10 +68,34 @@ async def _click(app, pilot, selector: str) -> bool:
                     descendant_offset = (x - region.x, y - region.y)
                 break
             current = current.parent
+    return descendant_offset
+
+
+async def _click(app, pilot, selector: str) -> bool:
+    """Click a visible point inside a control, scrolling pane controls first.
+
+    Pilot.click defaults to offset (0, 0), which may be clipped in a scroll
+    pane. Find a point that Textual itself hit-tests as this widget (or one of
+    its children) so the click stays within the visible part of the control.
+
+    Scrolling and layout settle asynchronously, and slower runners (the Windows
+    CI job) can still have the control under the docked step-nav after a single
+    pause. Scroll immediately and retry until the control is hit-testable.
+    """
+    widget = _q(app, selector)
+    click_offset = None
+    for _ in range(8):
+        if selector not in {"#next", "#back"}:
+            widget.scroll_visible(animate=False, immediate=True, force=True)
+        await pilot.pause()
+        await pilot.wait_for_scheduled_animations()
+        click_offset = _hit_offset(app, widget)
+        if click_offset is not None:
+            break
     if click_offset is None:
-        click_offset = descendant_offset
-    if click_offset is None:
-        raise AssertionError(f"{selector} has no visible hit-test point in {region!r}")
+        raise AssertionError(
+            f"{selector} has no visible hit-test point in {widget.region!r}"
+        )
 
     clicked = await pilot.click(widget, offset=click_offset)
     await pilot.pause()
