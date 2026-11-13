@@ -1,6 +1,17 @@
 # Animatica session log (live, edit as you go)
 Updated: 2026-11-11. Newest status on top. Any Claude session can resume from here.
 
+## Status (2026-11-13, Claude session, card "parametric_graph: a circle is a circle, and labels stay readable")
+- Branch: `hermes/parametric-shape`, stacked on `hermes/eval-model-flag`. **Not pushed.**
+- Changed: `src/animatica/components/parametric_graph.py`, `tests/test_parametric_graph.py`, `docs/SESSION_TASKS.md`.
+- **Problem (noticed while fixing #32)**: the axes were always 10 x 5 units, so one unit along x was twice as long as one along y; `cos t, sin t` was drawn as an ellipse (measured curve width/height = 2.00). The circle also passes through the axis numbers at +-1, and the curve was drawn over them.
+- **Fix**: `_axes_lengths()` gives the largest equal-scale plot that fits the 10 x 5 box; if that would leave a side under 2.0 units (a very wide, flat curve) the axes fill the box with independent scales as before. Axis numbers get a higher z-index than the curve and a background-colour halo (stroke width 6), so a curve crossing a label does not hide it.
+- Tests (6 new, 34 in the file): `_axes_lengths` keeps equal scales and stays inside the box (4 cases), falls back for a flat curve; render tests: the circle's width/height is 1.00 +- 0.02, and every label the curve really crosses is above the curve and has a halo (the test first checks that a crossing exists). RED on the old source: width/height 2.000 and `label -1.0 is under the curve`. GREEN: 34 passed.
+- Frame checked by eye (`animatica make --from` the Parametric Circle storyboard, preview quality): a round circle, the crossed `1.0` / `-1.0` labels legible.
+- Verified on Linux with dvisvgm: `test_caption_room.py`, `test_conformance.py`, `test_parametric_graph.py`, `test_ci_gate.py`, `test_graph.py` -> 178 passed.
+- **The price**: an equal-scale circle is 5 x 5 units, so on the slide it is smaller than the old 10 x 5 ellipse.
+- NOT verified: `ci_render_gate.py` and the full suite were not run on this branch; nothing was run on Windows.
+
 ## Status (2026-11-13, Claude session, card "eval: a model per provider, and defaults that still exist")
 - Branch: `hermes/eval-model-flag`, stacked on `hermes/windows-test-env`. **Not pushed.**
 - Changed: `src/animatica/cli.py`, `src/animatica/ai/router.py`, `src/animatica/ai/groq.py`, `src/animatica/ai/openrouter.py`, `src/animatica/ai/providers.toml`, `tests/test_provider_defaults.py` (new), `docs/SESSION_TASKS.md`.

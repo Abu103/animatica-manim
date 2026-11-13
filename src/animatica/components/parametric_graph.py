@@ -17,6 +17,8 @@ from animatica.storyboard.models import MAX_TEXT
 from animatica.storyboard.safety import parse_function, UnsafeInput
 
 SAMPLES = 400
+NUMBERS_Z = 3  # axis numbers sit above the curve (one below) and the axes lines (0)
+NUMBER_HALO = 6.0  # stroke width of the background-colour outline around each axis number
 
 
 def _nice_axis(lo: float, hi: float) -> tuple[float, float, float]:
@@ -39,6 +41,29 @@ def _nice_axis(lo: float, hi: float) -> tuple[float, float, float]:
     start = math.floor(round(lo / step, 9)) * step
     stop = math.ceil(round(hi / step, 9)) * step
     return round(start, 10), round(stop, 10), round(step, 10)
+
+
+AXES_BOX = (10.0, 5.0)  # the room the plot gets before the whole slide is scaled to fit
+MIN_SIDE = 2.0  # below this the plot is too flat to read: stop insisting on equal scales
+
+
+def _axes_lengths(
+    x_span: float, y_span: float, box: tuple[float, float] = AXES_BOX, min_side: float = MIN_SIDE
+) -> tuple[float, float]:
+    """Axis lengths ``(x_length, y_length)`` for a plot of the given data spans.
+
+    A parametric curve is a shape, so one unit along x must be as long as one unit along y:
+    otherwise ``cos t, sin t`` is drawn as an ellipse. The plot takes the largest equal-scale
+    size that fits ``box``. When that would leave one side shorter than ``min_side`` (a curve
+    far wider than it is tall), equal scales would draw a line, so the axes fill the box with
+    independent scales instead, as before.
+    """
+    bw, bh = box
+    scale = min(bw / x_span, bh / y_span)
+    x_len, y_len = x_span * scale, y_span * scale
+    if min(x_len, y_len) < min_side:
+        return bw, bh
+    return x_len, y_len
 
 
 def _sample_and_segment(
@@ -181,12 +206,14 @@ class ParametricGraph(Component):
         x_start, x_stop, x_step = _nice_axis(x_lo - pad, x_hi + pad)
         y_start, y_stop, y_step = _nice_axis(y_lo - pad, y_hi + pad)
 
+        x_len, y_len = _axes_lengths(x_stop - x_start, y_stop - y_start)
+
         try:
             axes = Axes(
                 x_range=[x_start, x_stop, x_step],
                 y_range=[y_start, y_stop, y_step],
-                x_length=10.0,
-                y_length=5.0,
+                x_length=x_len,
+                y_length=y_len,
                 axis_config={"color": colors.muted, "include_numbers": True},
             )
         except Exception as exc:  # axes need LaTeX for numbers: degrade
@@ -201,6 +228,15 @@ class ParametricGraph(Component):
             curve = VMobject(stroke_color=colors.accent, stroke_width=6, fill_opacity=0)
             curve.set_points_as_corners([axes.c2p(x, y) for x, y in seg])
             curves.append(curve)
+
+        # A curve that passes through a tick label must not hide it: the numbers are drawn above
+        # the curve and get a halo in the background colour so both stay readable.
+        for curve in curves:
+            curve.set_z_index(NUMBERS_Z - 1)
+        for axis in (axes.x_axis, axes.y_axis):
+            for number in getattr(axis, "numbers", []):
+                number.set_z_index(NUMBERS_Z)
+                number.set_stroke(colors.background, width=NUMBER_HALO, background=True)
 
         title = Text(p.title, font_size=40, color=colors.text)
 
