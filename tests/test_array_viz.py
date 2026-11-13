@@ -261,7 +261,7 @@ def test_array_viz_beat_has_no_timing_warning(kind):
     """The renderer's own `timing:` warning must stay silent."""
     beat = play_component(ArrayViz(), ArrayViz.Params(**STEP_KINDS[kind]), 1280, 720)
 
-    assert not [w for w in beat.warnings if w.startswith("timing:")], beat.warnings
+    assert not [w for w in beat.scene.warnings if w.startswith("timing:")], beat.scene.warnings
 
 
 @pytest.mark.parametrize("fps", [15, 24, 30, 60])
