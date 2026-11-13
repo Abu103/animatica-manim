@@ -2,6 +2,7 @@
 # Print the 12-hex key of the sandbox runtime a checkout needs.
 #
 #   sh scripts/runtime_key.sh [PYPROJECT]        (default: ../pyproject.toml)
+#   sh scripts/runtime_key.sh --deps [PYPROJECT] print the requirements, one per line
 #
 # key = sha256(sorted, normalised [project] dependencies + python minor + platform)
 # One implementation, called by scripts/sandbox.sh and by the runtime workflow, so
@@ -12,6 +13,8 @@
 set -eu
 
 here="$(cd "$(dirname "$0")" && pwd)"
+want_deps=0
+if [ "${1:-}" = "--deps" ]; then want_deps=1; shift; fi
 pyproject="${1:-$here/../pyproject.toml}"
 py="${ANIMATICA_RT_PYTHON:-3.12}"
 plat="${ANIMATICA_RT_PLATFORM:-linux-x86_64}"
@@ -40,5 +43,10 @@ deps="$(awk '
 ' "$pyproject" | LC_ALL=C sort)"
 
 [ -n "$deps" ] || { echo "runtime_key: no [project] dependencies found in $pyproject" >&2; exit 1; }
+
+if [ "$want_deps" = "1" ]; then
+  printf '%s\n' "$deps" | sed 's/^"//; s/"$//'
+  exit 0
+fi
 
 printf '%s\npython=%s\nplatform=%s\n' "$deps" "$py" "$plat" | sha256_stdin | cut -c1-12
