@@ -1,0 +1,62 @@
+{
+  "version": "1",
+  "title": "Conformance Graph Legend Shapes",
+  "scenes": [
+    {
+      "beats": [
+        {
+          "component": "graph",
+          "params": {
+            "fn": "exp(-x)",
+            "approx_fn": "1 - x",
+            "x_range": [
+              -2,
+              2
+            ],
+            "y_range": [
+              -1.5,
+              8
+            ],
+            "label": "e^-x",
+            "approx_label": "1st-order Taylor"
+          },
+          "caption": "A falling curve: the tangent line at zero leans the same way as the curve."
+        },
+        {
+          "component": "graph",
+          "params": {
+            "fn": "sin(x)",
+            "approx_fn": "x - x**3/6",
+            "x_range": [
+              -3,
+              3
+            ],
+            "y_range": [
+              -2,
+              2
+            ]
+          },
+          "caption": "An oscillating curve: the cubic stays close to the sine near zero and then leaves it."
+        },
+        {
+          "component": "graph",
+          "params": {
+            "fn": "x**2",
+            "approx_fn": "2*x - 1",
+            "x_range": [
+              -3,
+              3
+            ],
+            "y_range": [
+              -8,
+              10
+            ],
+            "label": "parabola",
+            "approx_label": "tangent at x = 1"
+          },
+          "caption": "A parabola and its tangent line touch at exactly one point."
+        }
+      ]
+    }
+  ]
+}
