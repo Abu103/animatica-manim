@@ -1,0 +1,6 @@
+{
+  "prompt": "number line from 0 to 20 with jumps at 0 7 15",
+  "provider": "nim",
+  "model": "nvidia/nemotron-3.5-super-vl-120b-a12b",
+  "response": "{\"version\":\"1\",\"title\":\"Number line jumps 0 to 7 to 15\",\"scenes\":[{\"beats\":[{\"component\":\"number_line\",\"params\":{\"title\":\"Jumps on a number line from 0 to 20\",\"start\":0,\"end\":20,\"marks\":[0,7,15,20],\"jumps\":[[0,7],[7,15]]},\"caption\":\"A number line from 0 to 20 shows jumps from 0 to 7 and then from 7 to 15.\"}]}]}"
+}

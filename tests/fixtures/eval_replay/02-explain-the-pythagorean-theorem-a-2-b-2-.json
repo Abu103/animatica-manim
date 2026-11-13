@@ -1,0 +1,6 @@
+{
+  "prompt": "explain the pythagorean theorem a^2 + b^2 = c^2",
+  "provider": "nim",
+  "model": "nvidia/nemotron-3.5-super-vl-120b-a12b",
+  "response": "{\"version\":\"1\",\"title\":\"Pythagorean Theorem\",\"scenes\":[{\"beats\":[{\"component\":\"title_card\",\"params\":{\"title\":\"Pythagorean Theorem\",\"subtitle\":\"a^2 + b^2 = c^2\"},\"caption\":\"The Pythagorean Theorem relates the sides of a right triangle.\"},{\"component\":\"equation\",\"params\":{\"mode\":\"reveal\",\"latex\":[\"a^2 + b^2 = c^2\"]},\"caption\":\"The square of leg a plus the square of leg b equals the square of the hypotenuse c.\"},{\"component\":\"steps_list\",\"params\":{\"items\":[\"Identify the right angle and label the legs a and b.\",\"Label the longest side opposite the right angle as c.\",\"Square each leg, add them, and take the square root to find c.\"]},\"caption\":\"Three steps show how to apply the theorem to a right triangle.\"}]}]}"
+}

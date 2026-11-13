@@ -9,6 +9,7 @@
 - New: `table` component (max 6x6, rows fade in one by one) -- task card T4.
 - New: `number_line` component (line, ticks, jumping arrows) -- task card T1.
 - New: `animatica eval --save-dir DIR` writes each prompt's raw model responses, failure reasons and storyboard as one JSON file, so a live run can be replayed offline (groundwork for T17).
+- New: offline regression gate (`tests/test_eval_gate.py`, T17): ten recorded NIM storyboards are replayed through parse, validate, lint and duration with no network, against `tests/fixtures/eval_replay/thresholds.json`.
 - New: `animatica eval` -- deterministic eval harness over reference prompts (P1.2).
 - New: `--two-stage` on `animatica make` -- P1.1 two-stage generation (scene outline, then params filled per scene with individual retries).
 - New: `animatica new-component NAME` scaffolds a component (module, registry entry, COMPONENTS.md row, test, conformance JSON) -- task card T9 for Hermes/Nemotron.

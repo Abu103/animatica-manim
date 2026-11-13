@@ -1,0 +1,6 @@
+{
+  "prompt": "flow diagram from water to steam to turbine",
+  "provider": "nim",
+  "model": "nvidia/nemotron-3.5-super-vl-120b-a12b",
+  "response": "{\"version\":\"1\",\"title\":\"Water to Steam to Turbine\",\"scenes\":[{\"beats\":[{\"component\":\"flow\",\"params\":{\"title\":\"Water to Steam to Turbine\",\"nodes\":[\"Water\",\"Steam\",\"Turbine\"],\"edges\":[[0,1],[1,2]]},\"caption\":\"Water turns into steam, which spins the turbine.\"}]}]}"
+}

@@ -1,0 +1,6 @@
+{
+  "prompt": "bar chart of sales by quarter",
+  "provider": "nim",
+  "model": "nvidia/nemotron-3.5-super-vl-120b-a12b",
+  "response": "{\"version\":\"1\",\"title\":\"Sales by Quarter\",\"scenes\":[{\"beats\":[{\"component\":\"bar_chart\",\"params\":{\"title\":\"Sales by Quarter\",\"labels\":[\"Q1\",\"Q2\",\"Q3\",\"Q4\"],\"values\":[45000,52000,48000,61000],\"scale\":\"auto\"},\"caption\":\"Quarterly sales are shown as bars, with Q4 the highest.\"}]}]}"
+}

@@ -1,0 +1,6 @@
+{
+  "prompt": "stat callout that 42 percent of students borrowed a book",
+  "provider": "nim",
+  "model": "nvidia/nemotron-3.5-super-vl-120b-a12b",
+  "response": "{\"version\":\"1\",\"title\":\"42% of Students Borrowed a Book\",\"scenes\":[{\"beats\":[{\"component\":\"stat_callout\",\"params\":{\"value\":\"42%\",\"label\":\"of students borrowed a book\"},\"caption\":\"Forty-two percent of students borrowed a book.\"}]}]}"
+}
