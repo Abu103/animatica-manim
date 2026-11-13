@@ -58,7 +58,31 @@ python scripts/render_gallery.py --write-doc
 
 <!-- gallery-results:start -->
 
-No run recorded yet. Run `python scripts/render_gallery.py --write-doc` on a machine with Manim
-and LaTeX installed; it replaces this paragraph with the real table.
+| | |
+|---|---|
+| Date | 2026-11-13 18:11 (local time, the machine below) |
+| Commit | `e071c1707ddc2566ff00963f1ab81cb367e29fc7` |
+| Machine | Windows 11, Python 3.14.10, Manim 0.22.1 |
+| Command | `animatica make --from <file> -o out/gallery/<name> --quality preview` |
+
+| storyboard | result | warnings | seconds |
+|---|---|---|---|
+| `code_walkthrough` | ok | 0 | 10.3 |
+| `eval_bar_chart` | ok | 0 | 7.2 |
+| `eval_code_highlight` | ok | 0 | 7.9 |
+| `eval_number_line` | ok | 0 | 7.9 |
+| `eval_recursion_tree` | ok | 0 | 11.7 |
+| `eval_taylor_series` | ok | 0 | 16.2 |
+| `fibonacci` | ok | 0 | 25.2 |
+| `flow` | ok | 0 | 7.8 |
+| `formula_derivation` | ok | 0 | 9.6 |
+| `howto` | ok | 0 | 12.5 |
+| `matrix` | ok | 0 | 7.7 |
+| `parametric_graph` | ok | 0 | 8.6 |
+| `pythagoras` | ok | 0 | 11.8 |
+| `sine` | ok | 0 | 11.8 |
+| `stat_callout` | ok | 0 | 7.8 |
+
+15/15 rendered, 0 failed.
 
 <!-- gallery-results:end -->
