@@ -16,7 +16,6 @@ ROOT = Path(__file__).resolve().parent.parent
 KEY_SH = ROOT / "scripts" / "runtime_key.sh"
 SH = shutil.which("sh")
 
-pytestmark = pytest.mark.skipif(SH is None or os.name == "nt", reason="needs a POSIX sh")
 
 
 def _pyproject(tmp_path: Path, deps: list[str], extra: str = "") -> Path:
@@ -58,6 +57,21 @@ def test_key_ignores_comments_whitespace_order_and_other_sections(tmp_path):
         encoding="utf-8",
     )
     assert _key(p) == plain
+
+
+def test_key_changes_when_an_optional_dependency_changes(tmp_path):
+    """The runtime also carries the test and TUI extras, so they are part of the key."""
+    a = _key(_pyproject(tmp_path, ["a>=1"], '[project.optional-dependencies]\ndev = ["pytest>=8"]\n'))
+    b = _key(_pyproject(tmp_path, ["a>=1"], '[project.optional-dependencies]\ndev = ["pytest>=9"]\n'))
+    c = _key(_pyproject(tmp_path, ["a>=1"], '[project.optional-dependencies]\ndev = ["pytest>=8"]\ntui = ["textual>=1"]\n'))
+    none = _key(_pyproject(tmp_path, ["a>=1"]))
+    assert len({a, b, c, none}) == 4
+
+
+def test_key_ignores_comments_inside_optional_dependencies(tmp_path):
+    plain = _key(_pyproject(tmp_path, ["a>=1"], '[project.optional-dependencies]\ndev = ["pytest>=8", "x"]\n'))
+    noisy = _key(_pyproject(tmp_path, ["a>=1"], '[project.optional-dependencies]\n# a "quoted" comment\ndev = [\n  "x",  # why\n  "pytest>=8",\n]\n'))
+    assert plain == noisy
 
 
 def test_key_changes_with_python_minor_and_platform(tmp_path):
@@ -303,7 +317,6 @@ def _path_without(tmp: Path, *names: str) -> str:
     return str(bindir)
 
 
-@pytest.mark.skipif(not (shutil.which("shasum") or shutil.which("openssl")), reason="needs shasum or openssl")
 def test_works_without_sha256sum_using_shasum_or_openssl(tmp_path):
     remote = Remote(tmp_path)
     archive = _make_runtime_archive(tmp_path)
@@ -327,6 +340,13 @@ def test_deps_flag_prints_requirements(tmp_path):
     r = subprocess.run([SH, str(KEY_SH), "--deps", str(p)], capture_output=True, text=True, timeout=30)
     assert r.returncode == 0, r.stderr
     assert r.stdout.splitlines() == ["a>=1", "b==2; python_version < '3.11'"]
+
+
+def test_deps_flag_includes_the_optional_extras(tmp_path):
+    p = _pyproject(tmp_path, ["a>=1"], '[project.optional-dependencies]\ntui = ["textual>=0.86"]\ndev = ["pytest>=8", "pytest-xdist>=3"]\n')
+    r = subprocess.run([SH, str(KEY_SH), "--deps", str(p)], capture_output=True, text=True, timeout=30)
+    assert r.returncode == 0, r.stderr
+    assert sorted(r.stdout.splitlines()) == ["a>=1", "pytest-xdist>=3", "pytest>=8", "textual>=0.86"]
 
 
 def _checkout(tmp: Path) -> Path:
@@ -397,7 +417,6 @@ def _import_in(co: Path, module: str) -> subprocess.CompletedProcess:
     return subprocess.run([shutil.which("python3"), "-S", "-c", code], capture_output=True, text=True, timeout=60)
 
 
-@pytest.mark.skipif(GIT is None, reason="needs git")
 def test_pth_points_at_src_not_a_copy(tmp_path):
     remote, co = Remote(tmp_path), _checkout(tmp_path)
     _publish_for_checkout(remote, co, tmp_path)
@@ -407,7 +426,6 @@ def test_pth_points_at_src_not_a_copy(tmp_path):
     assert not (_site_packages(co) / "animatica").exists()
 
 
-@pytest.mark.skipif(GIT is None, reason="needs git")
 def test_added_module_importable_and_deleted_module_gone_without_rebuild(tmp_path):
     remote, co = Remote(tmp_path), _checkout(tmp_path)
     _publish_for_checkout(remote, co, tmp_path)
@@ -419,7 +437,6 @@ def test_added_module_importable_and_deleted_module_gone_without_rebuild(tmp_pat
     assert _import_in(co, "animatica.newmod").returncode != 0
 
 
-@pytest.mark.skipif(GIT is None, reason="needs git")
 def test_second_run_does_not_redownload_when_key_matches(tmp_path):
     remote, co = Remote(tmp_path), _checkout(tmp_path)
     _publish_for_checkout(remote, co, tmp_path)
@@ -431,7 +448,6 @@ def test_second_run_does_not_redownload_when_key_matches(tmp_path):
     assert "up to date" in r.stdout
 
 
-@pytest.mark.skipif(GIT is None, reason="needs git")
 def test_second_run_keeps_local_edits(tmp_path):
     remote, co = Remote(tmp_path), _checkout(tmp_path)
     _publish_for_checkout(remote, co, tmp_path)
@@ -443,7 +459,6 @@ def test_second_run_keeps_local_edits(tmp_path):
     assert (co / "notes.txt").read_text() == "mine\n"
 
 
-@pytest.mark.skipif(GIT is None, reason="needs git")
 def test_root_with_spaces_and_non_ascii(tmp_path):
     base = tmp_path / "my chéck out"
     base.mkdir()
@@ -458,7 +473,6 @@ def test_root_with_spaces_and_non_ascii(tmp_path):
     assert shim.stdout.strip() == "stub-python -m animatica hello", shim.stderr
 
 
-@pytest.mark.skipif(GIT is None, reason="needs git")
 def test_env_file_exports_path_and_native_dirs(tmp_path):
     remote, co = Remote(tmp_path), _checkout(tmp_path)
     _publish_for_checkout(remote, co, tmp_path)
@@ -471,7 +485,6 @@ def test_env_file_exports_path_and_native_dirs(tmp_path):
     assert out[2] == str(rt / "native" / "lib")
 
 
-@pytest.mark.skipif(GIT is None, reason="needs git")
 def test_no_git_access_gets_git_init_and_one_commit(tmp_path):
     remote, co = Remote(tmp_path), _checkout(tmp_path)
     _publish_for_checkout(remote, co, tmp_path)
@@ -482,7 +495,6 @@ def test_no_git_access_gets_git_init_and_one_commit(tmp_path):
     assert _git(co, "status", "--porcelain") == ""  # runtime and env files are excluded
 
 
-@pytest.mark.skipif(GIT is None, reason="needs git")
 def test_git_clone_path_adds_history_without_touching_files(tmp_path):
     remote, co = Remote(tmp_path), _checkout(tmp_path)
     origin = tmp_path / "origin.git-src"
@@ -499,7 +511,6 @@ def test_git_clone_path_adds_history_without_touching_files(tmp_path):
     assert (co / "src" / "animatica" / "__init__.py").read_text() == before
 
 
-@pytest.mark.skipif(GIT is None, reason="needs git")
 def test_degraded_runtime_is_retried_on_the_next_run(tmp_path):
     """A substituted (older) runtime must not be recorded as the wanted key."""
     remote, co = Remote(tmp_path), _checkout(tmp_path)
@@ -530,7 +541,6 @@ def _ready_setup(tmp_path: Path):
     return remote, co
 
 
-@pytest.mark.skipif(GIT is None, reason="needs git")
 def test_final_line_is_ready_with_seconds(tmp_path):
     remote, co = _ready_setup(tmp_path)
     r = _run_main(co, remote)
@@ -538,7 +548,6 @@ def test_final_line_is_ready_with_seconds(tmp_path):
     assert re.fullmatch(r"READY \d+s", _final_line(r)), r.stdout
 
 
-@pytest.mark.skipif(GIT is None, reason="needs git")
 def test_per_phase_timings_are_printed(tmp_path):
     remote, co = _ready_setup(tmp_path)
     r = _run_main(co, remote)
@@ -547,7 +556,6 @@ def test_per_phase_timings_are_printed(tmp_path):
     assert re.search(r"^timings: .*total \d+s$", r.stdout, re.M), r.stdout
 
 
-@pytest.mark.skipif(GIT is None, reason="needs git")
 def test_degraded_when_latest_runtime_substituted(tmp_path):
     remote, co = Remote(tmp_path), _checkout(tmp_path)
     remote.publish_release(OLD_KEY, _make_runtime_archive(tmp_path, marker="old"))
@@ -558,7 +566,6 @@ def test_degraded_when_latest_runtime_substituted(tmp_path):
     assert OLD_KEY in _final_line(r)
 
 
-@pytest.mark.skipif(GIT is None, reason="needs git")
 def test_exit_nonzero_when_doctor_fails(tmp_path):
     remote, co = _ready_setup(tmp_path)
     r = _run_main(co, remote, extra_env={"ANIMATICA_DOCTOR_CMD": "echo cairo manim; exit 1"})
@@ -567,7 +574,6 @@ def test_exit_nonzero_when_doctor_fails(tmp_path):
     assert "cairo manim" in _final_line(r)
 
 
-@pytest.mark.skipif(GIT is None, reason="needs git")
 def test_exit_nonzero_when_the_smoke_render_fails(tmp_path):
     remote, co = _ready_setup(tmp_path)
     r = _run_main(co, remote, extra_env={"ANIMATICA_SMOKE_CMD": "exit 1"})
@@ -575,7 +581,6 @@ def test_exit_nonzero_when_the_smoke_render_fails(tmp_path):
     assert _final_line(r).startswith("FAILED smoke render"), r.stdout
 
 
-@pytest.mark.skipif(GIT is None, reason="needs git")
 def test_exit_nonzero_over_budget(tmp_path):
     remote, co = _ready_setup(tmp_path)
     r = _run_main(co, remote, extra_env={"ANIMATICA_SMOKE_CMD": "sleep 3", "ANIMATICA_BUDGET_S": "1"})
@@ -583,7 +588,6 @@ def test_exit_nonzero_over_budget(tmp_path):
     assert _final_line(r).startswith("FAILED over budget"), r.stdout
 
 
-@pytest.mark.skipif(GIT is None, reason="needs git")
 def test_tex_start_does_not_block(tmp_path):
     remote, co = _ready_setup(tmp_path)
     marker = tmp_path / "tex-done"
@@ -600,7 +604,6 @@ def test_tex_start_does_not_block(tmp_path):
     assert marker.exists(), "the background TeX fetch never ran"
 
 
-@pytest.mark.skipif(GIT is None, reason="needs git")
 def test_no_tex_flag_skips_it(tmp_path):
     remote, co = _ready_setup(tmp_path)
     marker = tmp_path / "tex-ran"
@@ -611,7 +614,6 @@ def test_no_tex_flag_skips_it(tmp_path):
     assert "tex: skipped" in r.stdout
 
 
-@pytest.mark.skipif(GIT is None, reason="needs git")
 def test_verify_only_does_not_download(tmp_path):
     remote, co = _ready_setup(tmp_path)
     assert _run_main(co, remote).returncode == 0
@@ -629,7 +631,6 @@ def test_verify_only_without_a_runtime_fails_clearly(tmp_path):
     assert _final_line(r).startswith("FAILED no runtime"), r.stdout
 
 
-@pytest.mark.skipif(GIT is None, reason="needs git")
 def test_runtime_only_skips_verification_and_tex(tmp_path):
     remote, co = _ready_setup(tmp_path)
     r = _run_main(co, remote, "--runtime-only", extra_env={"ANIMATICA_DOCTOR_CMD": "exit 1"})
@@ -654,7 +655,6 @@ def _wait_for(path: Path, seconds: int = 20) -> bool:
     return False
 
 
-@pytest.mark.skipif(GIT is None, reason="needs git")
 def test_default_tex_fetcher_unpacks_the_release_bundle(tmp_path):
     remote, co = _ready_setup(tmp_path)
     bundle = _tex_bundle(tmp_path)
@@ -663,7 +663,6 @@ def test_default_tex_fetcher_unpacks_the_release_bundle(tmp_path):
     assert _wait_for(co / ".tex" / "bin" / "x86_64-linux" / "latex")
 
 
-@pytest.mark.skipif(GIT is None, reason="needs git")
 def test_default_tex_fetcher_falls_back_to_the_codeload_artifacts_branch(tmp_path):
     remote, co = _ready_setup(tmp_path)
     bundle = _tex_bundle(tmp_path)
@@ -677,7 +676,6 @@ def test_default_tex_fetcher_falls_back_to_the_codeload_artifacts_branch(tmp_pat
     assert _wait_for(co / ".tex" / "bin" / "x86_64-linux" / "latex")
 
 
-@pytest.mark.skipif(GIT is None, reason="needs git")
 def test_tex_already_present_is_not_fetched_again(tmp_path):
     remote, co = _ready_setup(tmp_path)
     (co / ".tex" / "bin").mkdir(parents=True)
@@ -687,3 +685,145 @@ def test_tex_already_present_is_not_fetched_again(tmp_path):
     assert "tex: ready" in r.stdout
     time.sleep(1)
     assert not marker.exists()
+
+
+# --------------------------------------------------------------------------- #
+# Task 5: building and publishing the runtime
+# --------------------------------------------------------------------------- #
+BUILD_SH = ROOT / "scripts" / "build_runtime.sh"
+RUNTIME_WORKFLOW = ROOT / ".github" / "workflows" / "sandbox-runtime.yml"
+
+
+def _stage(tmp: Path, payload: int = 300_000) -> Path:
+    stage = tmp / "stage"
+    (stage / "python" / "bin").mkdir(parents=True)
+    (stage / "python" / "lib" / "python3.12" / "site-packages").mkdir(parents=True)
+    (stage / "native" / "lib").mkdir(parents=True)
+    (stage / "python" / "bin" / "python3").write_text("#!/bin/sh\necho stub-python \"$@\"\n")
+    (stage / "python" / "bin" / "python3").chmod(0o755)
+    (stage / "native" / "lib" / "libfake.so").write_bytes(os.urandom(payload))  # incompressible
+    (stage / "MARKER").write_text("packed")
+    return stage
+
+
+def _pack(tmp: Path, part_bytes: int = 65536, stage: Path | None = None):
+    out = tmp / "out"
+    env = {**os.environ, "ANIMATICA_PART_BYTES": str(part_bytes)}
+    r = subprocess.run([SH, str(BUILD_SH), "--pack-only", str(stage or _stage(tmp)), str(out)], capture_output=True, text=True, env=env, timeout=120)
+    return r, out
+
+
+def _repo_key() -> str:
+    return subprocess.run([SH, str(KEY_SH), str(ROOT / "pyproject.toml")], capture_output=True, text=True).stdout.strip()
+
+
+def test_pack_only_produces_parts_under_the_size_limit(tmp_path):
+    r, out = _pack(tmp_path)
+    assert r.returncode == 0, r.stdout + r.stderr
+    parts = sorted(out.glob("part-*"))
+    assert len(parts) > 1
+    assert [p.name for p in parts] == [f"part-{i:02d}" for i in range(len(parts))]
+    assert all(p.stat().st_size <= 65536 for p in parts)
+    archive = out / f"animatica-runtime-{_repo_key()}.tar.gz"
+    assert archive.is_file()
+    assert b"".join(p.read_bytes() for p in parts) == archive.read_bytes()
+
+
+def test_default_part_size_is_below_githubs_100mb_limit(tmp_path):
+    text = BUILD_SH.read_text()
+    m = re.search(r"ANIMATICA_PART_BYTES:-(\d+)", text)
+    assert m, "the part size default must be written in the script"
+    assert int(m.group(1)) < 100 * 1000 * 1000
+
+
+def test_sha256sums_cover_parts_and_archive(tmp_path):
+    r, out = _pack(tmp_path)
+    assert r.returncode == 0, r.stdout + r.stderr
+    listed = {}
+    for line in (out / "SHA256SUMS").read_text().splitlines():
+        digest, name = line.split(None, 1)
+        listed[name.lstrip("*")] = digest
+    expected = {p.name for p in out.glob("part-*")} | {f"animatica-runtime-{_repo_key()}.tar.gz"}
+    assert set(listed) == expected
+    for name, digest in listed.items():
+        assert _sha(out / name) == digest, name
+
+
+def test_packed_archive_keeps_the_runtime_layout(tmp_path):
+    r, out = _pack(tmp_path)
+    assert r.returncode == 0, r.stdout + r.stderr
+    with tarfile.open(out / f"animatica-runtime-{_repo_key()}.tar.gz") as t:
+        names = t.getnames()
+    assert "python/bin/python3" in names
+    assert "native/lib/libfake.so" in names
+
+
+def test_packed_output_is_fetchable_through_the_release_path(tmp_path):
+    r, out = _pack(tmp_path)
+    assert r.returncode == 0, r.stdout + r.stderr
+    key = _repo_key()
+    remote = Remote(tmp_path)
+    rel = remote.releases / f"runtime-{key}"
+    rel.mkdir()
+    shutil.copy(out / f"animatica-runtime-{key}.tar.gz", rel)
+    shutil.copy(out / "SHA256SUMS", rel)
+    res, dest = _fetch(tmp_path, remote, key=key)
+    assert res.returncode == 0, res.stdout + res.stderr
+    assert "source=release" in res.stdout
+    assert (dest / "MARKER").read_text() == "packed"
+
+
+def test_packed_output_is_fetchable_through_the_codeload_branch_path(tmp_path):
+    r, out = _pack(tmp_path)
+    assert r.returncode == 0, r.stdout + r.stderr
+    key = _repo_key()
+    remote = Remote(tmp_path)
+    top = tmp_path / "top"
+    inner = top / f"repo-runtime-{key}"
+    inner.mkdir(parents=True)
+    for part in out.glob("part-*"):
+        shutil.copy(part, inner)
+    shutil.copy(out / "SHA256SUMS", inner)
+    with tarfile.open(remote.codeload / f"runtime-{key}", "w:gz") as t:
+        t.add(inner, arcname=inner.name)
+    res, dest = _fetch(tmp_path, remote, key=key)
+    assert res.returncode == 0, res.stdout + res.stderr
+    assert "source=branch" in res.stdout
+    assert (dest / "MARKER").read_text() == "packed"
+
+
+def test_pack_only_rejects_a_stage_without_python(tmp_path):
+    stage = tmp_path / "bad-stage"
+    (stage / "native" / "lib").mkdir(parents=True)
+    r, out = _pack(tmp_path, stage=stage)
+    assert r.returncode != 0
+    assert not list(out.glob("part-*")) if out.exists() else True
+
+
+def test_build_script_pins_python_and_checks_the_download():
+    text = BUILD_SH.read_text()
+    assert re.search(r"^PBS_TAG=\d{8}$", text, re.M)
+    assert re.search(r"^PBS_PYTHON=3\.12\.\d+$", text, re.M)
+    assert re.search(r"^PBS_SHA256=[0-9a-f]{64}$", text, re.M)
+    assert "--deps" in text  # installs the same list the key is computed from
+
+
+def test_runtime_workflow_triggers_publishes_and_prunes():
+    text = RUNTIME_WORKFLOW.read_text()
+    assert re.search(r"^on:\s*$", text, re.M)
+    for needle in ("pyproject.toml", "sandbox-runtime.yml", "schedule:", "cron:", "workflow_dispatch"):
+        assert needle in text, needle
+    assert "runtime_key.sh" in text and "build_runtime.sh" in text
+    assert "python:3.12-slim-bookworm" in text  # glibc 2.36, the floor the runtime promises
+    assert "gh release create" in text
+    assert "runtime-latest" in text
+    assert re.search(r"name:\s*Prune", text)
+    assert "contents: write" in text
+
+
+def test_build_script_compiles_extensions_with_gcc_not_the_pinned_pythons_clang():
+    """python-build-standalone records CC=clang; the build host only has gcc (build-essential)."""
+    text = BUILD_SH.read_text()
+    assert re.search(r'CC="\$\{CC:-gcc\}"', text) and re.search(r'CXX="\$\{CXX:-g\+\+\}"', text)
+    pip_line = next(ln for ln in text.splitlines() if "pip install" in ln)
+    assert "CC=" in pip_line, "the compiler override must apply to the pip install that builds pycairo/manimpango"

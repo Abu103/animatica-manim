@@ -61,8 +61,10 @@ a standalone CPython (python-build-standalone), every pinned dependency from
 Python, pip and apt are never used. Target: Linux x86_64, glibc 2.36 or newer
 (the same floor as `docs/NATIVE_DEPS.md`).
 
-Runtime key: `sha256(dependency list from pyproject.toml + python minor +
-platform tag)`, shortened to 12 hex. The script computes it locally from the
+Runtime key: `sha256(dependency list from pyproject.toml, including the
+`[project.optional-dependencies]` extras, + python minor + platform tag)`,
+shortened to 12 hex. The extras are in because the runtime also carries the test
+and TUI packages an agent needs to run the suite. The script computes it locally from the
 fetched `pyproject.toml`, so the key is always the one the checked-out code
 needs.
 

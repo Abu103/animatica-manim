@@ -4,7 +4,9 @@
 #   sh scripts/runtime_key.sh [PYPROJECT]        (default: ../pyproject.toml)
 #   sh scripts/runtime_key.sh --deps [PYPROJECT] print the requirements, one per line
 #
-# key = sha256(sorted, normalised [project] dependencies + python minor + platform)
+# key = sha256(sorted, normalised [project] dependencies and every
+# [project.optional-dependencies] extra + python minor + platform). The extras are in
+# because the runtime also carries the test and TUI packages an agent needs.
 # One implementation, called by scripts/sandbox.sh and by the runtime workflow, so
 # the key the runtime was published under is the key the checkout asks for.
 #
@@ -30,7 +32,18 @@ sha256_stdin() {
 }
 
 deps="$(awk '
-  /^\[/ { in_project = ($0 == "[project]"); next }
+  /^\[/ { in_project = ($0 == "[project]"); in_opt = ($0 == "[project.optional-dependencies]"); next }
+  in_opt {
+    line = $0
+    sub(/^[ \t]*#.*$/, "", line)         # whole-line comments
+    sub(/\][ \t]*#.*$/, "]", line)      # trailing comment after the closing bracket
+    sub(/,[ \t]*#.*$/, ",", line)        # trailing comment after an item
+    while (match(line, /"[^"]*"/)) {     # every quoted requirement on the line
+      print substr(line, RSTART, RLENGTH)
+      line = substr(line, RSTART + RLENGTH)
+    }
+    next
+  }
   in_project && /^dependencies[ \t]*=[ \t]*\[/ { grab = 1; next }
   grab && /^[ \t]*\][ \t]*(#.*)?$/ { grab = 0; next }
   grab {
@@ -40,7 +53,7 @@ deps="$(awk '
     sub(/,$/, "", line)                  # trailing comma
     if (line != "") print line
   }
-' "$pyproject" | LC_ALL=C sort)"
+' "$pyproject" | LC_ALL=C sort -u)"
 
 [ -n "$deps" ] || { echo "runtime_key: no [project] dependencies found in $pyproject" >&2; exit 1; }
 
