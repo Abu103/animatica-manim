@@ -77,6 +77,14 @@
     "min_duration": 1.0,
     "max_duration": 5
   },
+  "19-derive-the-quadratic-formula-step-by-ste.json": {
+    "components": [
+      "formula_derivation"
+    ],
+    "max_warnings": 0,
+    "min_duration": 4,
+    "max_duration": 12
+  },
   "20-parametric-graph-of-a-circle-with-x-equa.json": {
     "components": [
       "parametric_graph"

@@ -1,6 +1,6 @@
 """T17: offline regression gate.
 
-Ten real model outputs, recorded once with `animatica eval --save-dir`, are replayed through
+Eleven real model outputs, recorded once with `animatica eval --save-dir`, are replayed through
 parse -> validate -> lint -> duration with no network. A storyboard that stops validating, starts
 drawing lint warnings, or changes length/shape beyond the thresholds in `thresholds.json` fails here.
 
@@ -16,7 +16,7 @@ from pathlib import Path
 
 import pytest
 
-from animatica.ai.base import StoryboardGenerationError
+from animatica.ai.base import StoryboardGenerationError, extract_json
 from animatica.ai.repair import generate_storyboard
 from animatica.components.registry import default_registry
 from animatica.eval import _duration
@@ -65,7 +65,7 @@ def gate_problems(prompt: str, response: str, limits: dict) -> list[str]:
     return problems
 
 
-def test_there_are_ten_recorded_outputs_and_each_has_thresholds():
+def test_there_are_at_least_ten_recorded_outputs_and_each_has_thresholds():
     on_disk = sorted(p.name for p in FIXTURES.glob("*.json") if p.name != "thresholds.json")
     assert on_disk == NAMES
     assert len(NAMES) >= 10
@@ -81,7 +81,7 @@ def test_recorded_output_still_passes_the_gate(name):
 def test_deleting_a_field_from_a_fixture_fails_the_gate(name):
     """The card's proof: a damaged fixture must not slip through."""
     rec = _load(name)
-    data = json.loads(rec["response"])
+    data = extract_json(rec["response"])  # one fixture is missing its last brace on purpose
     del data["scenes"][0]["beats"][0]["params"]
     problems = gate_problems(rec["prompt"], json.dumps(data), THRESHOLDS[name])
     assert problems and "no longer valid" in problems[0]

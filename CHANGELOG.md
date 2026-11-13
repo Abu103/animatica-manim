@@ -10,6 +10,8 @@
 - New: `number_line` component (line, ticks, jumping arrows) -- task card T1.
 - New: `animatica eval --save-dir DIR` writes each prompt's raw model responses, failure reasons and storyboard as one JSON file, so a live run can be replayed offline (groundwork for T17).
 - New: offline regression gate (`tests/test_eval_gate.py`, T17): ten recorded NIM storyboards are replayed through parse, validate, lint and duration with no network, against `tests/fixtures/eval_replay/thresholds.json`.
+- Fix: `extract_json` ignores brackets inside strings and finishes an object a model left one or more closing brackets short (a recorded NIM run for "derive the quadratic formula" failed on this); a cut-off reply now says so.
+- Fix: the prompt catalog spells out the keys for `compare` (`heading`, `bullets`), `timeline` (`label`, `text`) and `array_viz`; models had been guessing `name`/`purpose` and `year`/`event`. A test fails if a component with free-form dict params has no hint.
 - New: `animatica eval` -- deterministic eval harness over reference prompts (P1.2).
 - New: `--two-stage` on `animatica make` -- P1.1 two-stage generation (scene outline, then params filled per scene with individual retries).
 - New: `animatica new-component NAME` scaffolds a component (module, registry entry, COMPONENTS.md row, test, conformance JSON) -- task card T9 for Hermes/Nemotron.
