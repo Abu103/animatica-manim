@@ -207,6 +207,69 @@ jobs:
           path: .animatica_cache/renders
           key: render-cache-${{ runner.os }}-${{ github.run_id }}
 
+  # --- the one-command sandbox fast path (docs/superpowers/specs/2026-11-12-sandbox-bootstrap-design.md) ---
+  # A dependency change must never leave scripts/sandbox.sh on a stale runtime. The key comes from
+  # scripts/runtime_key.sh (the one implementation); sandbox-runtime.yml publishes branch runtime-<key>
+  # on the push that changes pyproject.toml, so this job waits for it and fails with a message if it
+  # never shows up. Neither job is part of the `linux` aggregate that branch protection waits on.
+  sandbox-runtime-gate:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 50
+    env:
+      ANIMATICA_GATE_WAIT_MIN: "40"
+    steps:
+      - uses: actions/checkout@v4
+      - name: A published runtime must exist for this pyproject.toml
+        run: |
+          KEY="$(sh scripts/runtime_key.sh)"
+          echo "runtime key for this change: $KEY"
+          DEADLINE=$(( $(date +%s) + ANIMATICA_GATE_WAIT_MIN * 60 ))
+          while :; do
+            if git ls-remote --exit-code --heads "https://github.com/${GITHUB_REPOSITORY}.git" "runtime-$KEY" >/dev/null 2>&1; then
+              echo "runtime-$KEY is published"
+              exit 0
+            fi
+            if [ "$(date +%s)" -ge "$DEADLINE" ]; then break; fi
+            echo "runtime-$KEY not published yet; waiting for the sandbox-runtime workflow"
+            sleep 30
+          done
+          echo "::error::No sandbox runtime is published for key $KEY (pyproject.toml dependencies changed)."
+          echo "::error::Run the 'sandbox-runtime' workflow (Actions tab, Run workflow) on this branch, or push a change to it, then re-run this job."
+          exit 1
+
+  # The evidence for the tier targets: the real command, in a container that has only curl, tar and sh
+  # (plus ca-certificates for https). Two runs, one per network tier: release asset, and codeload-only
+  # (the release host forced unreachable). Each prints per-phase times and fails over its budget.
+  sandbox-fast-path:
+    needs: sandbox-runtime-gate
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    container:
+      image: debian:bookworm-slim
+    steps:
+      - name: Only curl, tar and sh
+        run: |
+          apt-get update -qq
+          DEBIAN_FRONTEND=noninteractive apt-get install -y -qq --no-install-recommends ca-certificates curl
+      - name: Tier release (budget 60 s)
+        env:
+          ANIMATICA_BUDGET_S: "60"
+          ANIMATICA_REF: ${{ github.sha }}
+        run: |
+          mkdir release && cd release
+          curl -fsSL "https://codeload.github.com/${GITHUB_REPOSITORY}/tar.gz/${GITHUB_SHA}" | tar xz
+          cd animatica-manim-* && sh scripts/sandbox.sh --no-tex
+      - name: Tier codeload only (budget 120 s)
+        env:
+          ANIMATICA_BUDGET_S: "120"
+          ANIMATICA_REF: ${{ github.sha }}
+          # the release host is made unreachable, so the runtime must come from the runtime-<key> branch parts
+          ANIMATICA_RELEASE_BASE: "http://127.0.0.1:9/unreachable"
+        run: |
+          mkdir codeload && cd codeload
+          curl -fsSL "https://codeload.github.com/${GITHUB_REPOSITORY}/tar.gz/${GITHUB_SHA}" | tar xz
+          cd animatica-manim-* && sh scripts/sandbox.sh --no-tex
+
   # Aggregator: green only when both halves of the old linux job are green.
   # Never blocks a PR on its own; merge queues gate on it through branch protection.
   linux:
