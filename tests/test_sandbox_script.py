@@ -902,3 +902,57 @@ def test_build_ships_fonts_and_checks_a_real_render():
     assert "animatica make" in text or "-m animatica make" in text  # the build proves a render works on the bundled fonts alone
     wf = RUNTIME_WORKFLOW.read_text()
     assert "fonts-dejavu-core" in wf
+
+
+# --------------------------------------------------------------------------- #
+# Task 7: the agent entry point and the docs
+# --------------------------------------------------------------------------- #
+SANDBOX_SH = ROOT / "scripts" / "sandbox.sh"
+ONE_COMMAND = (
+    "curl -fsSL https://codeload.github.com/Abu103/animatica-manim/tar.gz/refs/heads/main"
+    " | tar xz && sh animatica-manim-main/scripts/sandbox.sh"
+)
+
+
+def _help() -> str:
+    r = subprocess.run([SH, str(SANDBOX_SH), "--help"], capture_output=True, text=True, timeout=30)
+    assert r.returncode == 0, r.stdout + r.stderr
+    return r.stdout
+
+
+def test_agents_md_leads_with_the_one_command():
+    head = "\n".join((ROOT / "AGENTS.md").read_text(encoding="utf-8").splitlines()[:16])
+    assert ONE_COMMAND in head
+    assert ". ./.animatica-env" in head
+    assert "Read this first" in head  # the existing opening is kept, not replaced
+
+
+def test_agents_md_command_matches_sandbox_help():
+    text = _help()
+    assert ONE_COMMAND in text, "sandbox.sh --help must print the same command AGENTS.md leads with"
+    assert ". ./.animatica-env" in text
+
+
+def test_help_does_not_start_an_install(tmp_path):
+    """--help only prints: no runtime directory, no checkout changes."""
+    co = _checkout(tmp_path)
+    r = subprocess.run([SH, str(co / "scripts" / "sandbox.sh"), "--help"], capture_output=True, text=True, timeout=30)
+    assert r.returncode == 0
+    assert not (co / ".animatica-runtime").exists()
+    assert not (co / ".animatica-env").exists()
+
+
+def test_setup_doc_lists_every_flag_tier_and_fallback():
+    doc = (ROOT / "docs" / "SETUP.md").read_text(encoding="utf-8")
+    for flag in ("--no-tex", "--verify-only", "--runtime-only", "--ref"):
+        assert flag in doc, flag
+        assert flag in _help(), f"{flag} is documented but sandbox.sh --help does not list it"
+    for word in ("ANIMATICA_REF", "ANIMATICA_BUDGET_S", "codeload", "bootstrap.sh", "runtime-latest", "glibc"):
+        assert word in doc, word
+    for state in ("READY", "DEGRADED", "FAILED"):
+        assert state in doc, state
+
+
+def test_readme_points_agents_at_the_sandbox_command():
+    readme = (ROOT / "README.md").read_text(encoding="utf-8")
+    assert "scripts/sandbox.sh" in readme and "AGENTS.md" in readme

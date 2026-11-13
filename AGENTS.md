@@ -2,6 +2,13 @@
 
 Read this first, every session. These rules beat your own habits.
 
+**Bare sandbox? One command** (needs only `curl`, `tar`, `sh`; ends with `animatica doctor` passing and a smoke render):
+```sh
+curl -fsSL https://codeload.github.com/Abu103/animatica-manim/tar.gz/refs/heads/main | tar xz && sh animatica-manim-main/scripts/sandbox.sh
+cd animatica-manim-main && . ./.animatica-env   # run this in every new shell
+```
+The last line it prints is `READY`, `DEGRADED <reason>` or `FAILED <reason>`; say which in your report. Flags and fallbacks: `docs/SETUP.md`.
+
 ## What this repo is
 Prompt or storyboard JSON -> validated components -> deterministic Manim render -> MP4.
 Models choose components and fill short JSON. Reviewed Python code does layout and rendering.

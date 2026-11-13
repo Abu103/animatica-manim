@@ -315,10 +315,36 @@ finish() {  # STATUS REASON
   esac
 }
 
+usage() {
+  cat <<'EOF'
+Animatica sandbox setup: a bare machine (curl, tar, sh) to a verified checkout, under a minute.
+
+One command:
+
+  curl -fsSL https://codeload.github.com/Abu103/animatica-manim/tar.gz/refs/heads/main | tar xz && sh animatica-manim-main/scripts/sandbox.sh
+
+Then, in every new shell:
+
+  cd animatica-manim-main && . ./.animatica-env
+
+Flags:
+  --no-tex        do not fetch the TeX layer in the background
+  --verify-only   no download: run animatica doctor and the smoke render on what is installed
+  --runtime-only  fetch the runtime only (no code layer, no verification, no TeX)
+  --ref REF       branch or tag to use (the download URL's ref changes too; ANIMATICA_REF does the same)
+  -h, --help      this text
+
+The last line printed is READY <seconds>s, DEGRADED <reason> or FAILED <reason>.
+Exit status is non-zero on FAILED, including a core install over ANIMATICA_BUDGET_S (default 60).
+Details: docs/SETUP.md
+EOF
+}
+
 main() {
   RUNTIME_ONLY=0; NO_TEX=0; VERIFY_ONLY=0
   while [ $# -gt 0 ]; do
     case "$1" in
+      -h|--help) usage; return 0 ;;
       --runtime-only) RUNTIME_ONLY=1 ;;
       --no-tex) NO_TEX=1 ;;
       --verify-only) VERIFY_ONLY=1 ;;

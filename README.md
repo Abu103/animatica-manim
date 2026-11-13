@@ -66,6 +66,12 @@ animatica doctor --fix
 ```
 </details>
 
+### Coding agents and bare sandboxes
+
+An agent in a container with only `curl`, `tar` and `sh` should use the one command at the top of
+[`AGENTS.md`](AGENTS.md) (it runs `scripts/sandbox.sh`): a verified checkout in about a minute instead
+of a full install. Flags, network tiers and fallbacks are in [`docs/SETUP.md`](docs/SETUP.md).
+
 ## First video (no key needed)
 
 ```
