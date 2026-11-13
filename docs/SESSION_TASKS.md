@@ -1,6 +1,15 @@
 # Animatica session log (live, edit as you go)
 Updated: 2026-11-11. Newest status on top. Any Claude session can resume from here.
 
+## Status (2026-11-13, Claude session, card "eval: a model per provider, and defaults that still exist")
+- Branch: `hermes/eval-model-flag`, stacked on `hermes/windows-test-env`. **Not pushed.**
+- Changed: `src/animatica/cli.py`, `src/animatica/ai/router.py`, `src/animatica/ai/groq.py`, `src/animatica/ai/openrouter.py`, `src/animatica/ai/providers.toml`, `tests/test_provider_defaults.py` (new), `docs/SESSION_TASKS.md`.
+- **Problem (found in T16)**: `animatica eval` had no way to give two providers two model ids (one `ANIMATICA_MODEL` for the process), and two defaults were retired: Groq shut `llama-3.1-8b-instant` down for free and developer keys on 2026-08-16 (Groq's deprecation page names `openai/gpt-oss-20b` as the replacement), and the OpenRouter default `meta-llama/llama-3.1-8b-instruct:free` was unavailable.
+- **Fix**: `get_provider(name, config, model=None)`; `animatica eval --provider X --model M`; `--models nim,groq:openai/gpt-oss-20b` (`provider:model`, split on the first `:` so `:free` ids work); the same provider listed twice is an error (the table has one column per provider); an unknown provider is a clean `Error:` line, not a traceback. New defaults: groq `openai/gpt-oss-20b`; openrouter `nvidia/nemotron-3.5-super-vl:free` (id as shown on openrouter.ai; the free list changes every few days, so `--model` is the way to override).
+- Tests: `tests/test_provider_defaults.py`, 12 tests. RED on the old source: 7 failed; GREEN on the new source: 12 passed. Code defaults equal `providers.toml`, no default is a retired id, the OpenRouter default ends in `:free`.
+- Verified on Linux: `-m "not render"` run stopped at 2 failures in `test_caption_room.py` / `test_graph.py` that also fail on unmodified `main` in this sandbox (no `dvisvgm`, so no axis numbers); they are not in files this change touches.
+- NOT verified: no live call to Groq or OpenRouter (no keys here), so the two new default ids are checked against the providers' published pages only, not by a request.
+
 ## Status (2026-11-13, Claude session, card "the four Windows-only test failures")
 - Branch: `hermes/windows-test-env`, off `main` = `ff7cc06`. **Not pushed.**
 - Changed: `tests/test_bootstrap_script.py`, `tests/test_tex_path.py`, `docs/SESSION_TASKS.md`. **No source change.**

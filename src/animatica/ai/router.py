@@ -23,8 +23,18 @@ def _build(name: str):
     return None
 
 
-def get_provider(name: str, config: Config):
-    """Return a provider for `name`, or None for `auto` when none configured."""
+def get_provider(name: str, config: Config, model: str | None = None):
+    """Return a provider for `name`, or None for `auto` when none configured.
+
+    `model` (optional) names the model id this provider should use instead of its default, so two
+    providers in one process can use two different models."""
+    provider = _get_provider(name, config)
+    if provider is not None and model:
+        provider.model = model
+    return provider
+
+
+def _get_provider(name: str, config: Config):
     if name == "auto":
         for pname in _CLOUD:
             if config.cloud_allowed and load_key(pname):

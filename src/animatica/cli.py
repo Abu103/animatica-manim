@@ -182,7 +182,13 @@ def new_component(
 @app.command("eval")
 def eval_cmd(
     provider: str = typer.Option("auto", "--provider", help="AI provider to evaluate (single-provider mode)"),
-    models: str = typer.Option(None, "--models", help="Comma-separated providers for multi-provider comparison (Phase 2.1)"),
+    model: str = typer.Option(None, "--model", help="Model id for --provider (default: the provider's own default)"),
+    models: str = typer.Option(
+        None,
+        "--models",
+        help="Comma-separated providers for multi-provider comparison; give each its own model as "
+        "provider:model, e.g. nim,groq:openai/gpt-oss-20b",
+    ),
     prompts_file: Path = typer.Option(Path("tests/reference_prompts.txt"), "--prompts", help="One prompt per line"),
     max_retries: int = typer.Option(2, "--max-retries"),
 ) -> None:
@@ -200,17 +206,33 @@ def eval_cmd(
         # Phase 2.1: multi-provider comparison
         model_list = [m.strip() for m in models.split(",") if m.strip()]
         providers = []
-        for m in model_list:
-            prov = get_provider(m, cfg)
+        seen: set[str] = set()
+        for spec in model_list:
+            # "provider" or "provider:model"; a model id may itself contain ":" (e.g. ":free").
+            name, _, model_id = spec.partition(":")
+            name, model_id = name.strip(), model_id.strip()
+            if name in seen:
+                typer.echo(f"Error: provider {name!r} is listed twice; the comparison table has one column per provider")
+                raise typer.Exit(code=1)
+            seen.add(name)
+            try:
+                prov = get_provider(name, cfg, model=model_id or None)
+            except ValueError as exc:
+                typer.echo(f"Error: {exc}")
+                raise typer.Exit(code=1)
             if prov is None:
-                typer.echo(f"Error: no AI provider available for {m!r}; run 'animatica setup' or check the provider name")
+                typer.echo(f"Error: no AI provider available for {name!r}; run 'animatica setup' or check the provider name")
                 raise typer.Exit(code=1)
             providers.append(prov)
         summary = run_eval_multi(prompts, providers, registry, max_retries=max_retries)
         typer.echo(format_multi_table(summary))
     else:
         # P1.2: single-provider eval
-        prov = get_provider(provider, cfg)
+        try:
+            prov = get_provider(provider, cfg, model=model)
+        except ValueError as exc:
+            typer.echo(f"Error: {exc}")
+            raise typer.Exit(code=1)
         if prov is None:
             typer.echo("Error: no AI provider available; run 'animatica setup' or pass --provider")
             raise typer.Exit(code=1)

@@ -7,7 +7,7 @@ from animatica.config import load_key
 
 class GroqProvider(BaseProvider):
     name = "groq"
-    default_model = "llama-3.1-8b-instant"
+    default_model = "openai/gpt-oss-20b"
 
     def generate(self, prompt: str, schema: dict) -> str:
         key = load_key("groq")
