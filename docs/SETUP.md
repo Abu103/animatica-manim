@@ -21,6 +21,62 @@ cloud provider asks for permission and an API key. In CI or without an interacti
 terminal, the wizard is skipped and the installer prints the command to run later.
 Set `ANIMATICA_SKIP_SETUP=1` to skip it explicitly.
 
+## Sandbox fast path (agents, containers, CI)
+
+For a machine that has only `curl`, `tar` and `sh` (no Python, no apt, no git needed):
+
+```sh
+curl -fsSL https://codeload.github.com/Abu103/animatica-manim/tar.gz/refs/heads/main | tar xz && sh animatica-manim-main/scripts/sandbox.sh
+cd animatica-manim-main && . ./.animatica-env   # in every new shell
+```
+
+It runs `animatica doctor` and one smoke render, prints the time of each phase, and ends with
+exactly one status line: `READY <seconds>s`, `DEGRADED <reason>` or `FAILED <reason>`. Exit status
+is non-zero on `FAILED`, including a core install slower than `ANIMATICA_BUDGET_S` (default 60;
+CI sets 120 for the codeload-only tier). LaTeX is fetched in the background and is not part of that
+budget; `animatica doctor` reports it as still downloading until it lands.
+
+Two layers. The **code layer** is the repo itself, always live: a `.pth` file points the runtime at
+`src/`, so adding, changing or deleting code needs no rebuild. The **runtime layer** is a prebuilt,
+relocatable directory (standalone CPython, every dependency from `pyproject.toml` including the test
+and TUI extras, cairo/pango with the libraries they link against, and DejaVu fonts). The sandbox's
+own Python, pip and apt are never used. Target: Linux x86_64 with glibc 2.36 or newer; anything
+else goes straight to `scripts/bootstrap.sh`.
+
+| Flag | Effect |
+| --- | --- |
+| `--no-tex` | do not fetch the TeX layer in the background |
+| `--verify-only` | download nothing: run doctor and the smoke render on what is installed |
+| `--runtime-only` | fetch the runtime only (no code layer, no verification, no TeX) |
+| `--ref REF` | use another branch or tag; `ANIMATICA_REF` does the same (change the URL's ref too) |
+
+Other variables: `ANIMATICA_BUDGET_S`, `ANIMATICA_GH_REPO`, `ANIMATICA_RELEASE_BASE`,
+`ANIMATICA_CODELOAD_BASE`, `ANIMATICA_BOOTSTRAP`. Run `sh scripts/sandbox.sh --help` for the
+short version. Re-running is safe: when the runtime key matches nothing is downloaded again, and
+local edits to the checkout are never overwritten.
+
+**Runtime key.** The first 12 hex characters of a sha256 over the dependency list (including the
+optional extras), the Python minor version and the platform tag, from `scripts/runtime_key.sh`. The
+script computes it from the checked-out `pyproject.toml`, so it is always the runtime that code needs.
+
+**Fetch order and fallbacks.** Each step has its own timeout and every download is checked against
+a checksum (a mismatch is a failed step, not a warning); failure moves to the next step:
+
+1. Release asset `runtime-<key>` (fastest; needs `github.com`).
+2. Branch `runtime-<key>` through `codeload.github.com`, in parts under 95 MB, joined and verified.
+   This is the only host the most restricted networks reach.
+3. Key not published yet: the newest runtime named in the `runtime-latest` branch. When PyPI answers,
+   only the differing packages are installed; otherwise a `WARN` line lists the mismatch and the
+   result is `DEGRADED`.
+4. Nothing reachable: `scripts/bootstrap.sh`, unchanged.
+
+**Keeping it fresh.** `.github/workflows/sandbox-runtime.yml` builds and publishes the runtime when
+`pyproject.toml` or the build scripts change, and nightly repairs anything that went missing. It keeps
+the last three `runtime-*` branches (force-pushed; nothing else may live there). In `ci.yml`,
+`sandbox-runtime-gate` fails a change whose key has no published runtime, and `sandbox-fast-path`
+runs the command above in a bare `debian:bookworm-slim` container on both network tiers and fails
+over budget.
+
 ## What it does
 
 1. Installs `uv` if missing, creates `.venv`, installs Animatica + Manim (re-running is safe).

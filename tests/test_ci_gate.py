@@ -218,3 +218,59 @@ def test_the_suite_runs_on_several_workers():
     jobs = int(suite_jobs())
 
     assert 0 <= jobs <= MAX_JOBS
+
+
+# --- the sandbox fast path in ci.yml ------------------------------------------------------------
+import re as _re
+
+_CI = Path(__file__).resolve().parent.parent / ".github" / "workflows" / "ci.yml"
+
+
+def _ci_job(name: str) -> str:
+    """The text of one top-level job of ci.yml (no YAML dependency: split on 2-space job keys)."""
+    text = _CI.read_text(encoding="utf-8")
+    m = _re.search(rf"^  {_re.escape(name)}:\n(.*?)(?=^  [A-Za-z0-9_-]+:\n|\Z)", text, _re.M | _re.S)
+    assert m, f"ci.yml has no job named {name}"
+    return m.group(1)
+
+
+def test_ci_has_the_sandbox_gate_job():
+    job = _ci_job("sandbox-runtime-gate")
+    assert "runtime_key.sh" in job
+    assert "ls-remote" in job and "runtime-" in job
+    assert "ANIMATICA_GATE_WAIT_MIN" in job  # it waits for the publishing workflow, then fails with a message
+
+
+def test_gate_job_uses_runtime_key_sh():
+    """One key implementation: the gate must not re-derive the key some other way."""
+    job = _ci_job("sandbox-runtime-gate")
+    assert "sh scripts/runtime_key.sh" in job
+    assert "sha256sum" not in job
+
+
+def test_ci_has_the_clean_container_timing_job():
+    job = _ci_job("sandbox-fast-path")
+    assert "needs: sandbox-runtime-gate" in job
+    assert "container:" in job and "debian:bookworm-slim" in job
+    assert "sh scripts/sandbox.sh" in job
+    assert "ANIMATICA_BUDGET_S" in job
+    # both network tiers: the release path and the codeload-only path
+    assert "release" in job and "codeload" in job
+    assert "ANIMATICA_RELEASE_BASE" in job  # forced to an unreachable host for the codeload tier
+
+
+def test_fast_path_container_is_bare():
+    """The point is a machine with only curl, tar and sh: no git, python, ffmpeg or apt-installed cairo."""
+    job = _ci_job("sandbox-fast-path")
+    installs = [ln for ln in job.splitlines() if "apt-get install" in ln]
+    assert installs, "the container needs ca-certificates and curl"
+    joined = " ".join(installs)
+    for forbidden in ("git", "python", "ffmpeg", "cairo", "pango", "pkg-config"):
+        assert forbidden not in joined, forbidden
+
+
+def test_aggregate_linux_job_is_untouched():
+    """The new jobs must not change what branch protection waits on."""
+    job = _ci_job("linux")
+    assert "needs: [linux-tests, linux-render]" in job
+    assert "sandbox" not in job
