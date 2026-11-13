@@ -187,3 +187,26 @@ def test_eval_cli_accepts_save_dir(tmp_path, monkeypatch):
     r = CliRunner().invoke(app, ["eval", "--prompts", str(prompts), "--max-retries", "0", "--save-dir", str(out)])
     assert r.exit_code == 0, r.output
     assert len(list(out.glob("*.json"))) == 2
+
+
+def test_empty_completion_fails_that_prompt_and_the_run_goes_on(tmp_path):
+    from animatica.ai.base import EmptyCompletion
+
+    class EmptyThenGood:
+        name = "empty"
+        model = "empty-model"
+
+        def __init__(self):
+            self.calls = 0
+
+        def generate(self, prompt, schema):
+            self.calls += 1
+            if self.calls == 1:  # the provider's own retry already happened inside it
+                raise EmptyCompletion("empty: empty reply after 2 attempt(s) (finish_reason='length')")
+            return json.dumps(GOOD)
+
+    results = run_eval(["first", "second"], EmptyThenGood(), max_retries=0, save_dir=tmp_path)
+    assert [r.eventual_success for r in results] == [False, True]
+    assert "finish_reason='length'" in results[0].error
+    saved = json.loads(next(tmp_path.glob("*01-*.json")).read_text(encoding="utf-8"))
+    assert saved["ok"] is False and saved["errors"] == []

@@ -137,6 +137,10 @@ class ProviderError(Exception):
     """Raised when a provider request fails for a clear, nameable reason."""
 
 
+class EmptyCompletion(ProviderError):
+    """The provider answered HTTP 200 but the message had no text in it."""
+
+
 class BaseProvider:
     name: str = ""
     base_url: str = ""
@@ -172,6 +176,57 @@ class BaseProvider:
                 f"{self.name}: HTTP {resp.status_code}: {(resp.text or '')[:200]}{hint}"
             )
         return resp
+
+    def _chat_text(self, url: str, headers: dict, payload: dict, attempts: int = 2) -> str:
+        """POST a chat completion and return the reply text.
+
+        An empty reply is retried once, because it is usually a one-off. If it
+        is still empty, raises `EmptyCompletion` saying why.
+        """
+        reason = ""
+        for _ in range(attempts):
+            data = self._post(url, headers, payload).json()
+            try:
+                text = _message_text(data["choices"][0]["message"])
+            except (KeyError, IndexError, TypeError):
+                text = ""
+            if text.strip():
+                return text
+            reason = _empty_reason(data)
+        raise EmptyCompletion(
+            f"{self.name}: empty reply after {attempts} attempt(s) ({reason}; model: {self.model!r})"
+        )
+
+
+def _message_text(message: object) -> str:
+    """Text of one chat-completion message; "" when it has none.
+
+    `content` is null when a reasoning model spends its whole token budget
+    thinking, or when the answer is filtered. Some servers send a list of parts.
+    """
+    if not isinstance(message, dict):
+        return ""
+    content = message.get("content")
+    if isinstance(content, str):
+        return content
+    if isinstance(content, list):
+        return "".join(
+            part.get("text", "") for part in content
+            if isinstance(part, dict) and isinstance(part.get("text"), str)
+        )
+    return ""
+
+
+def _empty_reason(data: object) -> str:
+    try:
+        choice = data["choices"][0]  # type: ignore[index]
+    except (KeyError, IndexError, TypeError):
+        return "no choices in the response"
+    bits = [f"finish_reason={choice.get('finish_reason')!r}"]
+    message = choice.get("message") or {}
+    if message.get("reasoning_content") or message.get("reasoning"):
+        bits.append("the model returned reasoning but no answer, so it likely ran out of max_tokens")
+    return ", ".join(bits)
 
 
 def _openrouter_allow_paid() -> bool:

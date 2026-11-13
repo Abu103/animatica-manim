@@ -116,3 +116,69 @@ def test_router_openrouter_refuses_non_free_model():
     with pytest.raises(ProviderError):
         p.generate("prompt", {})
 
+
+
+# ---------------------------------------------------------------------------
+# An HTTP 200 whose message has no text (reasoning model out of tokens, filter)
+# ---------------------------------------------------------------------------
+
+from animatica.ai.base import EmptyCompletion
+
+
+def _sequence_client(bodies):
+    """Client that answers each POST with the next body and counts the calls."""
+    calls = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        calls.append(1)
+        return httpx.Response(200, json=bodies[min(len(calls) - 1, len(bodies) - 1)])
+
+    return _client(handler), calls
+
+
+NULL_BODY = {"choices": [{"finish_reason": "length", "message": {"content": None, "reasoning_content": "hmm"}}]}
+OK_BODY = {"choices": [{"message": {"content": "{}"}}]}
+
+
+@pytest.mark.parametrize("module,cls", [
+    ("groq", GroqProvider), ("nim", NIMProvider), ("openrouter", OpenRouterProvider),
+])
+def test_null_content_is_retried_once(monkeypatch, module, cls):
+    monkeypatch.setattr(f"animatica.ai.{module}.load_key", lambda provider: "sk-x")
+    client, calls = _sequence_client([NULL_BODY, OK_BODY])
+    p = cls(client=client, model="m:free") if module == "openrouter" else cls(client=client)
+    assert p.generate("prompt", {}) == "{}"
+    assert len(calls) == 2
+
+
+@pytest.mark.parametrize("module,cls", [
+    ("groq", GroqProvider), ("nim", NIMProvider), ("openrouter", OpenRouterProvider),
+])
+def test_null_content_twice_raises_with_the_reason(monkeypatch, module, cls):
+    monkeypatch.setattr(f"animatica.ai.{module}.load_key", lambda provider: "sk-x")
+    client, calls = _sequence_client([NULL_BODY])
+    p = cls(client=client, model="m:free") if module == "openrouter" else cls(client=client)
+    with pytest.raises(EmptyCompletion) as exc:
+        p.generate("prompt", {})
+    msg = str(exc.value)
+    assert module in msg and "finish_reason='length'" in msg and "max_tokens" in msg
+    assert len(calls) == 2
+
+
+def test_empty_completion_is_a_provider_error():
+    assert issubclass(EmptyCompletion, ProviderError)
+
+
+def test_content_parts_list_is_joined(monkeypatch):
+    body = {"choices": [{"message": {"content": [{"type": "text", "text": "{"}, {"type": "text", "text": "}"}]}}]}
+    monkeypatch.setattr("animatica.ai.nim.load_key", lambda provider: "sk-x")
+    client, _ = _sequence_client([body])
+    assert NIMProvider(client=client).generate("prompt", {}) == "{}"
+
+
+def test_missing_choices_raises_instead_of_keyerror(monkeypatch):
+    monkeypatch.setattr("animatica.ai.groq.load_key", lambda provider: "sk-x")
+    client, _ = _sequence_client([{"error": "overloaded"}])
+    with pytest.raises(EmptyCompletion) as exc:
+        GroqProvider(client=client).generate("prompt", {})
+    assert "no choices" in str(exc.value)

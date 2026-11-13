@@ -11,7 +11,7 @@ import re
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from animatica.ai.base import StoryboardGenerationError
+from animatica.ai.base import EmptyCompletion, StoryboardGenerationError
 from animatica.ai.repair import generate_storyboard
 from animatica.components.registry import ComponentRegistry, default_registry
 from animatica.storyboard.lint import lint_storyboard
@@ -127,7 +127,7 @@ def _eval_one(
                     "prompt": prompt, "provider": prov_name, "model": prov_model, "ok": True,
                     "calls": prov.calls, "storyboard": raw_sb, "responses": prov.responses,
                 })
-        except StoryboardGenerationError as exc:
+        except (StoryboardGenerationError, EmptyCompletion) as exc:
             results.append(EvalResult(
                 prompt=prompt,
                 provider=prov_name,
@@ -140,7 +140,7 @@ def _eval_one(
             if save_dir is not None:
                 _record(save_dir, index, {
                     "prompt": prompt, "provider": prov_name, "model": prov_model, "ok": False,
-                    "calls": prov.calls, "error": str(exc), "errors": list(exc.errors),
+                    "calls": prov.calls, "error": str(exc), "errors": list(getattr(exc, "errors", [])),
                     "responses": prov.responses,
                 })
     return results
