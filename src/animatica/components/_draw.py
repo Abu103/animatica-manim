@@ -11,6 +11,19 @@ MIN_FONT_SIZE = 32  # Manim font_size units; ~3% of 1080p height
 FADE_OUT = 0.4
 
 
+def unescape_code(code: Any) -> Any:
+    """Turn a literal backslash-n into a newline when `code` has no real newline.
+
+    Models often double-escape the code string in JSON, so a three-line function
+    arrives as one line holding `\\n` twice and every `lines` entry looks out of
+    range. Code that already has a real newline is left alone, since a `\\n`
+    inside it can be a string literal.
+    """
+    if isinstance(code, str) and "\n" not in code and "\\n" in code:
+        return code.replace("\\r\\n", "\n").replace("\\n", "\n")
+    return code
+
+
 def warn(scene: Any, message: str) -> None:
     sink = getattr(scene, "warnings", None)
     if sink is not None:

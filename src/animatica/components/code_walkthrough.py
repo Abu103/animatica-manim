@@ -10,9 +10,9 @@ from __future__ import annotations
 
 from typing import ClassVar
 
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
-from animatica.components._draw import FADE_OUT, Clock, fit, fit_in_room, prepare, text_card, warn
+from animatica.components._draw import FADE_OUT, Clock, fit, fit_in_room, prepare, text_card, unescape_code, warn
 from animatica.components.base import Component
 from animatica.storyboard.models import MAX_TEXT
 
@@ -34,6 +34,8 @@ class CodeWalkthrough(Component):
             default_factory=dict,
             description="variable name -> value shown in the static panel",
         )
+
+        _unescape = field_validator("code", mode="before")(unescape_code)
 
         @model_validator(mode="after")
         def _check(self):
