@@ -182,3 +182,17 @@ def test_missing_choices_raises_instead_of_keyerror(monkeypatch):
     with pytest.raises(EmptyCompletion) as exc:
         GroqProvider(client=client).generate("prompt", {})
     assert "no choices" in str(exc.value)
+
+
+def test_network_failure_raises_provider_unreachable(monkeypatch):
+    from animatica.ai.base import ProviderUnreachable
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        raise httpx.ConnectError("[Errno 11001] getaddrinfo failed")
+
+    monkeypatch.setattr("animatica.ai.nim.load_key", lambda provider: "sk-x")
+    p = NIMProvider(client=_client(handler))
+    with pytest.raises(ProviderUnreachable) as exc:
+        p.generate("prompt", {})
+    assert "nim" in str(exc.value) and "getaddrinfo" in str(exc.value)
+    assert isinstance(exc.value, ProviderError)

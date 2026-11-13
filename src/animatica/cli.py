@@ -229,7 +229,11 @@ def eval_cmd(
                 typer.echo(f"Error: no AI provider available for {name!r}; run 'animatica setup' or check the provider name")
                 raise typer.Exit(code=1)
             providers.append(prov)
-        summary = run_eval_multi(prompts, providers, registry, max_retries=max_retries, save_dir=save_dir)
+        try:
+            summary = run_eval_multi(prompts, providers, registry, max_retries=max_retries, save_dir=save_dir)
+        except (ProviderError, RateLimited) as exc:
+            typer.echo(f"Error: {exc}")
+            raise typer.Exit(code=1)
         typer.echo(format_multi_table(summary))
     else:
         # P1.2: single-provider eval
@@ -241,7 +245,12 @@ def eval_cmd(
         if prov is None:
             typer.echo("Error: no AI provider available; run 'animatica setup' or pass --provider")
             raise typer.Exit(code=1)
-        typer.echo(run_eval(prompts, prov, registry, max_retries=max_retries, as_table=True, save_dir=save_dir))
+        try:
+            table = run_eval(prompts, prov, registry, max_retries=max_retries, as_table=True, save_dir=save_dir)
+        except (ProviderError, RateLimited) as exc:
+            typer.echo(f"Error: {exc}")
+            raise typer.Exit(code=1)
+        typer.echo(table)
 
 
 @app.command("list-components")

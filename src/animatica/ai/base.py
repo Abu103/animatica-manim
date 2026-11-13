@@ -137,6 +137,10 @@ class ProviderError(Exception):
     """Raised when a provider request fails for a clear, nameable reason."""
 
 
+class ProviderUnreachable(ProviderError):
+    """The request never got an answer (DNS failure, refused connection, timeout)."""
+
+
 class EmptyCompletion(ProviderError):
     """The provider answered HTTP 200 but the message had no text in it."""
 
@@ -155,7 +159,7 @@ class BaseProvider:
         try:
             resp = self._client.post(url, headers=headers, json=payload)
         except httpx.RequestError as exc:  # pragma: no cover - network
-            raise ProviderError(f"{self.name}: request failed: {exc}") from exc
+            raise ProviderUnreachable(f"{self.name}: request failed: {exc}") from exc
         if resp.status_code == 429:
             retry_after = None
             raw = resp.headers.get("retry-after")

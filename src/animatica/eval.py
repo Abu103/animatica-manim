@@ -11,7 +11,7 @@ import re
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from animatica.ai.base import EmptyCompletion, StoryboardGenerationError
+from animatica.ai.base import EmptyCompletion, ProviderUnreachable, StoryboardGenerationError
 from animatica.ai.repair import generate_storyboard
 from animatica.components.registry import ComponentRegistry, default_registry
 from animatica.storyboard.lint import lint_storyboard
@@ -127,7 +127,7 @@ def _eval_one(
                     "prompt": prompt, "provider": prov_name, "model": prov_model, "ok": True,
                     "calls": prov.calls, "storyboard": raw_sb, "responses": prov.responses,
                 })
-        except (StoryboardGenerationError, EmptyCompletion) as exc:
+        except (StoryboardGenerationError, EmptyCompletion, ProviderUnreachable) as exc:
             results.append(EvalResult(
                 prompt=prompt,
                 provider=prov_name,

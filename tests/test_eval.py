@@ -210,3 +210,47 @@ def test_empty_completion_fails_that_prompt_and_the_run_goes_on(tmp_path):
     assert "finish_reason='length'" in results[0].error
     saved = json.loads(next(tmp_path.glob("*01-*.json")).read_text(encoding="utf-8"))
     assert saved["ok"] is False and saved["errors"] == []
+
+
+def test_network_blip_fails_that_prompt_and_the_run_goes_on():
+    from animatica.ai.base import ProviderUnreachable
+
+    class BlipThenGood:
+        name = "blip"
+        model = "blip-model"
+
+        def __init__(self):
+            self.calls = 0
+
+        def generate(self, prompt, schema):
+            self.calls += 1
+            if self.calls == 1:
+                raise ProviderUnreachable("blip: request failed: [Errno 11001] getaddrinfo failed")
+            return json.dumps(GOOD)
+
+    results = run_eval(["first", "second"], BlipThenGood(), max_retries=0)
+    assert [r.eventual_success for r in results] == [False, True]
+    assert "getaddrinfo" in results[0].error
+
+
+def test_eval_cli_prints_one_line_for_a_provider_error_not_a_traceback(tmp_path, monkeypatch):
+    from typer.testing import CliRunner
+    from animatica.ai.base import ProviderError
+    from animatica.cli import app
+    import animatica.ai.router as router
+
+    class NoKey:
+        name = "nokey"
+        model = "m"
+
+        def generate(self, prompt, schema):
+            raise ProviderError("nokey: no API key configured; run 'animatica setup'")
+
+    monkeypatch.setattr(router, "get_provider", lambda *a, **k: NoKey())
+    prompts = tmp_path / "p.txt"
+    prompts.write_text("one\n", encoding="utf-8")
+    for extra in ([], ["--models", "nokey"]):
+        r = CliRunner().invoke(app, ["eval", "--prompts", str(prompts), "--max-retries", "0", *extra])
+        assert r.exit_code == 1
+        assert "Error: nokey: no API key configured" in r.output
+        assert "Traceback" not in r.output
