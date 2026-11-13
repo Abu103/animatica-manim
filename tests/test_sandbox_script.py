@@ -89,13 +89,16 @@ def _sha(path: Path) -> str:
 def _make_runtime_archive(tmp: Path, name: str = "rt", marker: str = "v1") -> Path:
     """A tiny runtime: python/bin/python3 stub, native/lib/libfake.so, a marker file."""
     src = tmp / f"{name}-src"
+    shutil.rmtree(src, ignore_errors=True)
     (src / "python" / "bin").mkdir(parents=True)
+    (src / "python" / "lib" / "python3.12" / "site-packages").mkdir(parents=True)
     (src / "native" / "lib").mkdir(parents=True)
-    (src / "python" / "bin" / "python3").write_text("#!/bin/sh\nexec python3 \"$@\"\n")
+    (src / "python" / "bin" / "python3").write_text("#!/bin/sh\necho stub-python \"$@\"\n")
     (src / "python" / "bin" / "python3").chmod(0o755)
     (src / "native" / "lib" / "libfake.so").write_text("x")
     (src / "MARKER").write_text(marker)
     archive = tmp / f"{name}.tar.gz"
+    archive.unlink(missing_ok=True)
     with tarfile.open(archive, "w:gz") as t:
         for child in sorted(src.iterdir()):
             t.add(child, arcname=child.name)
@@ -351,3 +354,157 @@ def test_all_sources_failing_runs_bootstrap(tmp_path):
     }
     r = subprocess.run([SH, str(co / "scripts" / "sandbox.sh"), "--runtime-only"], capture_output=True, text=True, env=env, timeout=120, cwd=tmp_path)
     assert marker.exists(), r.stdout + r.stderr
+
+
+# --------------------------------------------------------------------------- #
+# Task 3: code layer, activation, idempotence
+# --------------------------------------------------------------------------- #
+GIT = shutil.which("git")
+
+
+def _git(cwd: Path, *args: str) -> str:
+    env = {**os.environ, "GIT_AUTHOR_NAME": "t", "GIT_AUTHOR_EMAIL": "t@t", "GIT_COMMITTER_NAME": "t", "GIT_COMMITTER_EMAIL": "t@t"}
+    r = subprocess.run(["git", *args], cwd=cwd, capture_output=True, text=True, env=env, timeout=60)
+    assert r.returncode == 0, r.stderr
+    return r.stdout.strip()
+
+
+def _publish_for_checkout(remote: Remote, co: Path, tmp: Path, marker: str = "v1") -> str:
+    key = subprocess.run([SH, str(co / "scripts" / "runtime_key.sh"), str(co / "pyproject.toml")], capture_output=True, text=True).stdout.strip()
+    remote.publish_release(key, _make_runtime_archive(tmp, marker=marker))
+    return key
+
+
+def _run_main(co: Path, remote: Remote, *args: str, extra_env: dict | None = None):
+    env = {
+        **os.environ, **remote.env(),
+        "ANIMATICA_GIT_URL": "file:///nonexistent/repo.git",
+        "ANIMATICA_PYPI_URL": f"file:///nonexistent/pypi",
+        **(extra_env or {}),
+    }
+    return subprocess.run([SH, str(co / "scripts" / "sandbox.sh"), *args], capture_output=True, text=True, env=env, timeout=180, cwd=co.parent)
+
+
+def _site_packages(co: Path) -> Path:
+    return co / ".animatica-runtime" / "python" / "lib" / "python3.12" / "site-packages"
+
+
+def _import_in(co: Path, module: str) -> subprocess.CompletedProcess:
+    code = f"import site; site.addsitedir({str(_site_packages(co))!r}); import {module}"
+    return subprocess.run([shutil.which("python3"), "-S", "-c", code], capture_output=True, text=True, timeout=60)
+
+
+@pytest.mark.skipif(GIT is None, reason="needs git")
+def test_pth_points_at_src_not_a_copy(tmp_path):
+    remote, co = Remote(tmp_path), _checkout(tmp_path)
+    _publish_for_checkout(remote, co, tmp_path)
+    r = _run_main(co, remote)
+    assert r.returncode == 0, r.stdout + r.stderr
+    assert (_site_packages(co) / "animatica-src.pth").read_text().strip() == str(co / "src")
+    assert not (_site_packages(co) / "animatica").exists()
+
+
+@pytest.mark.skipif(GIT is None, reason="needs git")
+def test_added_module_importable_and_deleted_module_gone_without_rebuild(tmp_path):
+    remote, co = Remote(tmp_path), _checkout(tmp_path)
+    _publish_for_checkout(remote, co, tmp_path)
+    assert _run_main(co, remote).returncode == 0
+    assert _import_in(co, "animatica.newmod").returncode != 0
+    (co / "src" / "animatica" / "newmod.py").write_text("VALUE = 1\n")
+    assert _import_in(co, "animatica.newmod").returncode == 0
+    (co / "src" / "animatica" / "newmod.py").unlink()
+    assert _import_in(co, "animatica.newmod").returncode != 0
+
+
+@pytest.mark.skipif(GIT is None, reason="needs git")
+def test_second_run_does_not_redownload_when_key_matches(tmp_path):
+    remote, co = Remote(tmp_path), _checkout(tmp_path)
+    _publish_for_checkout(remote, co, tmp_path)
+    assert _run_main(co, remote).returncode == 0
+    shutil.rmtree(remote.root)  # the network is gone
+    r = _run_main(co, remote)
+    assert r.returncode == 0, r.stdout + r.stderr
+    assert "source=" not in r.stdout
+    assert "up to date" in r.stdout
+
+
+@pytest.mark.skipif(GIT is None, reason="needs git")
+def test_second_run_keeps_local_edits(tmp_path):
+    remote, co = Remote(tmp_path), _checkout(tmp_path)
+    _publish_for_checkout(remote, co, tmp_path)
+    assert _run_main(co, remote).returncode == 0
+    (co / "src" / "animatica" / "__init__.py").write_text("EDITED = True\n")
+    (co / "notes.txt").write_text("mine\n")
+    assert _run_main(co, remote).returncode == 0
+    assert (co / "src" / "animatica" / "__init__.py").read_text() == "EDITED = True\n"
+    assert (co / "notes.txt").read_text() == "mine\n"
+
+
+@pytest.mark.skipif(GIT is None, reason="needs git")
+def test_root_with_spaces_and_non_ascii(tmp_path):
+    base = tmp_path / "my chéck out"
+    base.mkdir()
+    remote, co = Remote(tmp_path), _checkout(base)
+    _publish_for_checkout(remote, co, tmp_path)
+    r = _run_main(co, remote)
+    assert r.returncode == 0, r.stdout + r.stderr
+    assert (_site_packages(co) / "animatica-src.pth").read_text().strip() == str(co / "src")
+    out = subprocess.run([SH, "-c", '. ./.animatica-env && printf "%s" "$ANIMATICA_HOME"'], cwd=co, capture_output=True, text=True)
+    assert out.stdout == str(co)
+    shim = subprocess.run([SH, "-c", '. ./.animatica-env && animatica hello'], cwd=co, capture_output=True, text=True)
+    assert shim.stdout.strip() == "stub-python -m animatica hello", shim.stderr
+
+
+@pytest.mark.skipif(GIT is None, reason="needs git")
+def test_env_file_exports_path_and_native_dirs(tmp_path):
+    remote, co = Remote(tmp_path), _checkout(tmp_path)
+    _publish_for_checkout(remote, co, tmp_path)
+    assert _run_main(co, remote).returncode == 0
+    probe = '. ./.animatica-env && printf "%s\n%s\n%s" "$PATH" "$LD_LIBRARY_PATH" "$ANIMATICA_NATIVE_DIR"'
+    out = subprocess.run([SH, "-c", probe], cwd=co, capture_output=True, text=True).stdout.split("\n")
+    rt = co / ".animatica-runtime"
+    assert out[0].startswith(f"{rt}/bin:{rt}/python/bin:")
+    assert str(rt / "native" / "lib") in out[1].split(":")
+    assert out[2] == str(rt / "native" / "lib")
+
+
+@pytest.mark.skipif(GIT is None, reason="needs git")
+def test_no_git_access_gets_git_init_and_one_commit(tmp_path):
+    remote, co = Remote(tmp_path), _checkout(tmp_path)
+    _publish_for_checkout(remote, co, tmp_path)
+    r = _run_main(co, remote)
+    assert r.returncode == 0, r.stdout + r.stderr
+    assert _git(co, "rev-list", "--count", "HEAD") == "1"
+    assert _git(co, "remote", "get-url", "origin") == "file:///nonexistent/repo.git"
+    assert _git(co, "status", "--porcelain") == ""  # runtime and env files are excluded
+
+
+@pytest.mark.skipif(GIT is None, reason="needs git")
+def test_git_clone_path_adds_history_without_touching_files(tmp_path):
+    remote, co = Remote(tmp_path), _checkout(tmp_path)
+    origin = tmp_path / "origin.git-src"
+    shutil.copytree(co, origin)
+    _git(origin, "init", "-q", "-b", "main")
+    _git(origin, "add", "-A")
+    _git(origin, "commit", "-qm", "upstream history")
+    before = (co / "src" / "animatica" / "__init__.py").read_text()
+    _publish_for_checkout(remote, co, tmp_path)
+    r = _run_main(co, remote, extra_env={"ANIMATICA_GIT_URL": str(origin)})
+    assert r.returncode == 0, r.stdout + r.stderr
+    assert _git(co, "log", "-1", "--format=%s") == "upstream history"
+    assert _git(co, "status", "--porcelain") == ""
+    assert (co / "src" / "animatica" / "__init__.py").read_text() == before
+
+
+@pytest.mark.skipif(GIT is None, reason="needs git")
+def test_degraded_runtime_is_retried_on_the_next_run(tmp_path):
+    """A substituted (older) runtime must not be recorded as the wanted key."""
+    remote, co = Remote(tmp_path), _checkout(tmp_path)
+    remote.publish_release(OLD_KEY, _make_runtime_archive(tmp_path, marker="old"))
+    remote.publish_latest(OLD_KEY)
+    assert _run_main(co, remote).returncode == 0
+    assert (co / ".animatica-runtime" / "MARKER").read_text() == "old"
+    key = _publish_for_checkout(remote, co, tmp_path, marker="new")
+    assert _run_main(co, remote).returncode == 0
+    assert (co / ".animatica-runtime" / "MARKER").read_text() == "new"
+    assert (co / ".animatica-runtime" / "KEY").read_text().strip() == key

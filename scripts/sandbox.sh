@@ -105,9 +105,9 @@ unpack() {
 
 _try_key() {  # KEY DEST -> prints source=release|branch on success
   _a="$_RT_TMP/archive-$1.tar.gz"
-  if _try_release "$1" "$_a" && unpack "$_a" "$2"; then say "source=release key=$1"; return 0; fi
+  if _try_release "$1" "$_a" && unpack "$_a" "$2"; then RT_USED_KEY="$1"; say "source=release key=$1"; return 0; fi
   rm -f "$_a"
-  if _try_branch "$1" "$_a" && unpack "$_a" "$2"; then say "source=branch key=$1"; return 0; fi
+  if _try_branch "$1" "$_a" && unpack "$_a" "$2"; then RT_USED_KEY="$1"; say "source=branch key=$1"; return 0; fi
   return 1
 }
 
@@ -149,18 +149,96 @@ fetch_runtime() {
 }
 
 # --------------------------------------------------------------------------- #
-# main (Task 2: runtime fetch and the bootstrap fallback; later tasks extend it)
+# code layer: the checkout itself, always live
+# --------------------------------------------------------------------------- #
+GIT_IDENT="-c user.name=animatica-sandbox -c user.email=sandbox@localhost"
+
+_exclude_runtime_files() {  # ROOT: keep `git status` clean
+  [ -d "$1/.git" ] || return 0
+  mkdir -p "$1/.git/info"
+  for _e in ".animatica-runtime/" ".animatica-env" ".tex/" ".tex.log" ".superpowers/"; do
+    grep -qxF "$_e" "$1/.git/info/exclude" 2>/dev/null || printf '%s\n' "$_e" >> "$1/.git/info/exclude"
+  done
+}
+
+# fetch_code ROOT: ROOT already holds the extracted tree. Never touches its files.
+fetch_code() {
+  command -v git >/dev/null 2>&1 || { say "code: git not found; using the extracted tree as is"; return 0; }
+  if [ -e "$1/.git" ]; then _exclude_runtime_files "$1"; say "code: existing git checkout kept as is"; return 0; fi
+  _url="${ANIMATICA_GIT_URL:-https://github.com/$GH_REPO.git}"
+  _gt="$(mktemp -d)" || return 0
+  if GIT_TERMINAL_PROMPT=0 GIT_HTTP_LOW_SPEED_LIMIT=1000 GIT_HTTP_LOW_SPEED_TIME=15 \
+       git clone -q --depth 1 --branch "$GH_REF" "$_url" "$_gt/c" >/dev/null 2>&1; then
+    mv "$_gt/c/.git" "$1/.git"
+    git -C "$1" reset -q >/dev/null 2>&1
+    say "code: cloned $GH_REF with history; files left untouched"
+  else
+    git -C "$1" init -q -b "$GH_REF" >/dev/null 2>&1 || git -C "$1" init -q >/dev/null 2>&1
+    git -C "$1" remote add origin "$_url" >/dev/null 2>&1
+    _exclude_runtime_files "$1"
+    git -C "$1" add -A >/dev/null 2>&1
+    git -C "$1" $GIT_IDENT commit -q -m "sandbox snapshot of $GH_REF" >/dev/null 2>&1
+    say "code: no git access; local repository created with one snapshot commit"
+  fi
+  _exclude_runtime_files "$1"
+  rm -rf "$_gt"
+}
+
+# --------------------------------------------------------------------------- #
+# activation
+# --------------------------------------------------------------------------- #
+shq() { printf "'"; printf '%s' "$1" | sed "s/'/'\\\\''/g"; printf "'"; }
+
+# write_env ROOT: .pth into the runtime's site-packages, the shim, and .animatica-env.
+write_env() {
+  _rt="$1/.animatica-runtime"
+  _sp="$(ls -d "$_rt"/python/lib/python3.*/site-packages 2>/dev/null | head -n 1)"
+  [ -n "$_sp" ] || { say "activation: no site-packages in the runtime"; return 1; }
+  printf '%s\n' "$1/src" > "$_sp/animatica-src.pth"
+  mkdir -p "$_rt/bin"
+  {
+    printf '#!/bin/sh\nexec '; shq "$_rt/python/bin/python3"; printf ' -m animatica "$@"\n'
+  } > "$_rt/bin/animatica"
+  chmod +x "$_rt/bin/animatica"
+  {
+    printf 'export ANIMATICA_HOME=%s\n' "$(shq "$1")"
+    printf 'export ANIMATICA_NATIVE_DIR=%s\n' "$(shq "$_rt/native/lib")"
+    printf 'export PATH=%s:%s:"$PATH"\n' "$(shq "$_rt/bin")" "$(shq "$_rt/python/bin")"
+    printf 'export LD_LIBRARY_PATH=%s${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}\n' "$(shq "$_rt/native/lib")"
+  } > "$1/.animatica-env"
+}
+
+# --------------------------------------------------------------------------- #
+# main
 # --------------------------------------------------------------------------- #
 main() {
+  RUNTIME_ONLY=0
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      --runtime-only) RUNTIME_ONLY=1 ;;
+      --ref) shift; GH_REF="${1:-$GH_REF}" ;;
+      *) ;;
+    esac
+    shift
+  done
   ROOT="$(cd "$HERE/.." && pwd)"
+  RT="$ROOT/.animatica-runtime"
+  [ "$RUNTIME_ONLY" = "1" ] || fetch_code "$ROOT"
   KEY="$(sh "$HERE/runtime_key.sh" "$ROOT/pyproject.toml")" || return 1
   say "runtime key: $KEY"
-  if fetch_runtime "$KEY" "$ROOT/.animatica-runtime"; then
-    return 0
+  if [ -f "$RT/KEY" ] && [ "$(cat "$RT/KEY")" = "$KEY" ]; then
+    say "runtime up to date ($KEY)"
+  elif RT_USED_KEY=""; fetch_runtime "$KEY" "$RT"; then
+    printf '%s\n' "$RT_USED_KEY" > "$RT/KEY"
+  elif [ -d "$RT/python" ]; then
+    warn "could not fetch runtime $KEY; keeping the one already installed"
+  else
+    say "no runtime reachable; falling back to scripts/bootstrap.sh"
+    BOOT="${ANIMATICA_BOOTSTRAP:-$ROOT/scripts/bootstrap.sh}"
+    exec sh "$BOOT"
   fi
-  say "no runtime reachable; falling back to scripts/bootstrap.sh"
-  BOOT="${ANIMATICA_BOOTSTRAP:-$ROOT/scripts/bootstrap.sh}"
-  exec sh "$BOOT"
+  write_env "$ROOT" || return 1
+  say "activate with: . $(shq "$ROOT/.animatica-env")"
 }
 
 if [ "${ANIMATICA_SANDBOX_SOURCE_ONLY:-0}" != "1" ]; then main "$@"; fi
