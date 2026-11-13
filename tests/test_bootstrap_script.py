@@ -150,17 +150,36 @@ def test_both_installers_are_referenced_in_the_readme():
     assert "scripts/bootstrap.ps1" in readme
 
 
-@pytest.mark.skipif(sys.platform == "win32", reason="the stand-in shell is a POSIX script")
-def test_a_shell_that_cannot_open_the_script_is_not_chosen(tmp_path):
-    """Regression (Windows): the WSL launcher answers `--version` but cannot read a Windows
-    path ("No such file or directory", exit 127). It must not be picked over a working bash."""
-    fake_wsl = tmp_path / "wsl-bash"
-    fake_wsl.write_text(
+def _fake_wsl_launcher(tmp_path: Path) -> Path:
+    """A shell that answers `--version` like bash but cannot open any script (the WSL launcher).
+
+    A POSIX script on Linux and macOS; a .cmd file on Windows, so the test runs everywhere."""
+    if sys.platform == "win32":
+        fake = tmp_path / "wsl-bash.cmd"
+        fake.write_bytes(
+            b'@echo off\r\n'
+            b'if "%~1"=="--version" (\r\n'
+            b'  echo GNU bash, version 5\r\n'
+            b'  exit /b 0\r\n'
+            b')\r\n'
+            b'echo No such file or directory 1>&2\r\n'
+            b'exit /b 127\r\n'
+        )
+        return fake
+    fake = tmp_path / "wsl-bash"
+    fake.write_text(
         '#!/bin/sh\n[ "$1" = "--version" ] && { echo "GNU bash, version 5"; exit 0; }\n'
         'echo "No such file or directory" >&2; exit 127\n'
     )
-    fake_wsl.chmod(0o755)
-    real = shutil.which("bash")
-    assert real is not None
+    fake.chmod(0o755)
+    return fake
+
+
+def test_a_shell_that_cannot_open_the_script_is_not_chosen(tmp_path):
+    """Regression (Windows): the WSL launcher answers `--version` but cannot read a Windows
+    path ("No such file or directory", exit 127). It must not be picked over a working bash."""
+    fake_wsl = _fake_wsl_launcher(tmp_path)
+    real = _usable_bash()
+    assert real is not None, "no bash that can run scripts/bootstrap.sh"
     assert _usable_bash([str(fake_wsl)]) is None
     assert _usable_bash([str(fake_wsl), real]) == real
