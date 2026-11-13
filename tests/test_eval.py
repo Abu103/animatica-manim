@@ -153,3 +153,37 @@ def test_eval_table_shows_retry_valid():
     assert "retry" in text.lower()
     assert "first-try valid" in text
     assert "eventual valid" in text
+
+
+# --- --save-dir: keep raw outputs so a live run can become offline fixtures ----------------------
+def test_save_dir_records_raw_responses_for_ok_and_failed_prompts(tmp_path):
+    ok = run_eval(["good one"], FlakyProvider(), max_retries=2, save_dir=tmp_path)
+    bad = run_eval(["bad one"], BadProvider(), max_retries=1, save_dir=tmp_path)
+    assert ok[0].eventual_success and not bad[0].eventual_success
+    files = sorted(tmp_path.glob("*.json"))
+    assert len(files) == 2
+    recs = {json.loads(f.read_text(encoding="utf-8"))["prompt"]: json.loads(f.read_text(encoding="utf-8")) for f in files}
+    good = recs["good one"]
+    assert good["ok"] and good["calls"] == 2 and good["responses"][0] == "nope"
+    assert good["storyboard"]["title"] == "T"
+    failed = recs["bad one"]
+    assert not failed["ok"] and failed["errors"] and len(failed["responses"]) == 2
+
+
+def test_save_dir_unset_writes_nothing(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    run_eval(["x"], GoodProvider(), max_retries=0)
+    assert list(tmp_path.iterdir()) == []
+
+
+def test_eval_cli_accepts_save_dir(tmp_path, monkeypatch):
+    from typer.testing import CliRunner
+    from animatica.cli import app
+    import animatica.ai.router as router
+    monkeypatch.setattr(router, "get_provider", lambda *a, **k: GoodProvider())
+    prompts = tmp_path / "p.txt"
+    prompts.write_text("one\ntwo\n", encoding="utf-8")
+    out = tmp_path / "rec"
+    r = CliRunner().invoke(app, ["eval", "--prompts", str(prompts), "--max-retries", "0", "--save-dir", str(out)])
+    assert r.exit_code == 0, r.output
+    assert len(list(out.glob("*.json"))) == 2

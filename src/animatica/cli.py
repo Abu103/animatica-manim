@@ -191,6 +191,11 @@ def eval_cmd(
     ),
     prompts_file: Path = typer.Option(Path("tests/reference_prompts.txt"), "--prompts", help="One prompt per line"),
     max_retries: int = typer.Option(2, "--max-retries"),
+    save_dir: Path = typer.Option(
+        None,
+        "--save-dir",
+        help="Write each prompt's raw model responses, errors and storyboard here as JSON (replayable offline)",
+    ),
 ) -> None:
     """Run reference prompts through storyboard generation and print a score table."""
     from animatica.ai.router import get_provider
@@ -224,7 +229,7 @@ def eval_cmd(
                 typer.echo(f"Error: no AI provider available for {name!r}; run 'animatica setup' or check the provider name")
                 raise typer.Exit(code=1)
             providers.append(prov)
-        summary = run_eval_multi(prompts, providers, registry, max_retries=max_retries)
+        summary = run_eval_multi(prompts, providers, registry, max_retries=max_retries, save_dir=save_dir)
         typer.echo(format_multi_table(summary))
     else:
         # P1.2: single-provider eval
@@ -236,7 +241,7 @@ def eval_cmd(
         if prov is None:
             typer.echo("Error: no AI provider available; run 'animatica setup' or pass --provider")
             raise typer.Exit(code=1)
-        typer.echo(run_eval(prompts, prov, registry, max_retries=max_retries, as_table=True))
+        typer.echo(run_eval(prompts, prov, registry, max_retries=max_retries, as_table=True, save_dir=save_dir))
 
 
 @app.command("list-components")

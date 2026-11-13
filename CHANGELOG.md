@@ -8,6 +8,7 @@
 - New: `animatica bootstrap` one-command setup; `animatica doctor --fix` now auto-installs ffmpeg and TinyTeX + required TeX packages (standalone preview babel-english amsmath amsfonts dvisvgm).
 - New: `table` component (max 6x6, rows fade in one by one) -- task card T4.
 - New: `number_line` component (line, ticks, jumping arrows) -- task card T1.
+- New: `animatica eval --save-dir DIR` writes each prompt's raw model responses, failure reasons and storyboard as one JSON file, so a live run can be replayed offline (groundwork for T17).
 - New: `animatica eval` -- deterministic eval harness over reference prompts (P1.2).
 - New: `--two-stage` on `animatica make` -- P1.1 two-stage generation (scene outline, then params filled per scene with individual retries).
 - New: `animatica new-component NAME` scaffolds a component (module, registry entry, COMPONENTS.md row, test, conformance JSON) -- task card T9 for Hermes/Nemotron.
