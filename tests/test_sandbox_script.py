@@ -380,6 +380,9 @@ def _run_main(co: Path, remote: Remote, *args: str, extra_env: dict | None = Non
         **os.environ, **remote.env(),
         "ANIMATICA_GIT_URL": "file:///nonexistent/repo.git",
         "ANIMATICA_PYPI_URL": f"file:///nonexistent/pypi",
+        "ANIMATICA_DOCTOR_CMD": "true",
+        "ANIMATICA_SMOKE_CMD": "true",
+        "ANIMATICA_TEX_FETCH": "true",
         **(extra_env or {}),
     }
     return subprocess.run([SH, str(co / "scripts" / "sandbox.sh"), *args], capture_output=True, text=True, env=env, timeout=180, cwd=co.parent)
@@ -508,3 +511,179 @@ def test_degraded_runtime_is_retried_on_the_next_run(tmp_path):
     assert _run_main(co, remote).returncode == 0
     assert (co / ".animatica-runtime" / "MARKER").read_text() == "new"
     assert (co / ".animatica-runtime" / "KEY").read_text().strip() == key
+
+
+# --------------------------------------------------------------------------- #
+# Task 4: verify, timings, TeX in the background
+# --------------------------------------------------------------------------- #
+import time
+
+
+def _final_line(r: subprocess.CompletedProcess) -> str:
+    lines = [ln for ln in r.stdout.splitlines() if ln.strip()]
+    return lines[-1] if lines else ""
+
+
+def _ready_setup(tmp_path: Path):
+    remote, co = Remote(tmp_path), _checkout(tmp_path)
+    _publish_for_checkout(remote, co, tmp_path)
+    return remote, co
+
+
+@pytest.mark.skipif(GIT is None, reason="needs git")
+def test_final_line_is_ready_with_seconds(tmp_path):
+    remote, co = _ready_setup(tmp_path)
+    r = _run_main(co, remote)
+    assert r.returncode == 0, r.stdout + r.stderr
+    assert re.fullmatch(r"READY \d+s", _final_line(r)), r.stdout
+
+
+@pytest.mark.skipif(GIT is None, reason="needs git")
+def test_per_phase_timings_are_printed(tmp_path):
+    remote, co = _ready_setup(tmp_path)
+    r = _run_main(co, remote)
+    for name in ("code", "runtime", "env", "verify"):
+        assert re.search(rf"^phase {name}: \d+s$", r.stdout, re.M), (name, r.stdout)
+    assert re.search(r"^timings: .*total \d+s$", r.stdout, re.M), r.stdout
+
+
+@pytest.mark.skipif(GIT is None, reason="needs git")
+def test_degraded_when_latest_runtime_substituted(tmp_path):
+    remote, co = Remote(tmp_path), _checkout(tmp_path)
+    remote.publish_release(OLD_KEY, _make_runtime_archive(tmp_path, marker="old"))
+    remote.publish_latest(OLD_KEY)
+    r = _run_main(co, remote)
+    assert r.returncode == 0, r.stdout + r.stderr
+    assert _final_line(r).startswith("DEGRADED "), r.stdout
+    assert OLD_KEY in _final_line(r)
+
+
+@pytest.mark.skipif(GIT is None, reason="needs git")
+def test_exit_nonzero_when_doctor_fails(tmp_path):
+    remote, co = _ready_setup(tmp_path)
+    r = _run_main(co, remote, extra_env={"ANIMATICA_DOCTOR_CMD": "echo cairo manim; exit 1"})
+    assert r.returncode != 0
+    assert _final_line(r).startswith("FAILED doctor"), r.stdout
+    assert "cairo manim" in _final_line(r)
+
+
+@pytest.mark.skipif(GIT is None, reason="needs git")
+def test_exit_nonzero_when_the_smoke_render_fails(tmp_path):
+    remote, co = _ready_setup(tmp_path)
+    r = _run_main(co, remote, extra_env={"ANIMATICA_SMOKE_CMD": "exit 1"})
+    assert r.returncode != 0
+    assert _final_line(r).startswith("FAILED smoke render"), r.stdout
+
+
+@pytest.mark.skipif(GIT is None, reason="needs git")
+def test_exit_nonzero_over_budget(tmp_path):
+    remote, co = _ready_setup(tmp_path)
+    r = _run_main(co, remote, extra_env={"ANIMATICA_SMOKE_CMD": "sleep 3", "ANIMATICA_BUDGET_S": "1"})
+    assert r.returncode != 0
+    assert _final_line(r).startswith("FAILED over budget"), r.stdout
+
+
+@pytest.mark.skipif(GIT is None, reason="needs git")
+def test_tex_start_does_not_block(tmp_path):
+    remote, co = _ready_setup(tmp_path)
+    marker = tmp_path / "tex-done"
+    t0 = time.time()
+    r = _run_main(co, remote, extra_env={"ANIMATICA_TEX_FETCH": f'sleep 4; echo done > "{marker}"', "PATH": _path_without(tmp_path, "latex")})
+    assert time.time() - t0 < 3.5, "main waited for the TeX download"
+    assert r.returncode == 0, r.stdout + r.stderr
+    assert "tex: downloading in the background" in r.stdout
+    assert re.fullmatch(r"READY \d+s", _final_line(r)), r.stdout
+    for _ in range(30):
+        if marker.exists():
+            break
+        time.sleep(0.5)
+    assert marker.exists(), "the background TeX fetch never ran"
+
+
+@pytest.mark.skipif(GIT is None, reason="needs git")
+def test_no_tex_flag_skips_it(tmp_path):
+    remote, co = _ready_setup(tmp_path)
+    marker = tmp_path / "tex-ran"
+    r = _run_main(co, remote, "--no-tex", extra_env={"ANIMATICA_TEX_FETCH": f'echo x > "{marker}"'})
+    assert r.returncode == 0, r.stdout + r.stderr
+    time.sleep(1)
+    assert not marker.exists()
+    assert "tex: skipped" in r.stdout
+
+
+@pytest.mark.skipif(GIT is None, reason="needs git")
+def test_verify_only_does_not_download(tmp_path):
+    remote, co = _ready_setup(tmp_path)
+    assert _run_main(co, remote).returncode == 0
+    shutil.rmtree(remote.root)
+    r = _run_main(co, remote, "--verify-only")
+    assert r.returncode == 0, r.stdout + r.stderr
+    assert "source=" not in r.stdout
+    assert re.fullmatch(r"READY \d+s", _final_line(r)), r.stdout
+
+
+def test_verify_only_without_a_runtime_fails_clearly(tmp_path):
+    remote, co = Remote(tmp_path), _checkout(tmp_path)
+    r = _run_main(co, remote, "--verify-only")
+    assert r.returncode != 0
+    assert _final_line(r).startswith("FAILED no runtime"), r.stdout
+
+
+@pytest.mark.skipif(GIT is None, reason="needs git")
+def test_runtime_only_skips_verification_and_tex(tmp_path):
+    remote, co = _ready_setup(tmp_path)
+    r = _run_main(co, remote, "--runtime-only", extra_env={"ANIMATICA_DOCTOR_CMD": "exit 1"})
+    assert r.returncode == 0, r.stdout + r.stderr
+
+
+def _tex_bundle(tmp: Path) -> Path:
+    src = tmp / "tex-src"
+    (src / "bin" / "x86_64-linux").mkdir(parents=True)
+    (src / "bin" / "x86_64-linux" / "latex").write_text("#!/bin/sh\n")
+    out = tmp / "animatica-tex.tar.xz"
+    with tarfile.open(out, "w:xz") as t:
+        t.add(src / "bin", arcname="bin")
+    return out
+
+
+def _wait_for(path: Path, seconds: int = 20) -> bool:
+    for _ in range(seconds * 2):
+        if path.exists():
+            return True
+        time.sleep(0.5)
+    return False
+
+
+@pytest.mark.skipif(GIT is None, reason="needs git")
+def test_default_tex_fetcher_unpacks_the_release_bundle(tmp_path):
+    remote, co = _ready_setup(tmp_path)
+    bundle = _tex_bundle(tmp_path)
+    r = _run_main(co, remote, extra_env={"ANIMATICA_TEX_FETCH": "", "ANIMATICA_TEX_URL": f"file://{bundle}", "PATH": _path_without(tmp_path, "latex")})
+    assert r.returncode == 0, r.stdout + r.stderr
+    assert _wait_for(co / ".tex" / "bin" / "x86_64-linux" / "latex")
+
+
+@pytest.mark.skipif(GIT is None, reason="needs git")
+def test_default_tex_fetcher_falls_back_to_the_codeload_artifacts_branch(tmp_path):
+    remote, co = _ready_setup(tmp_path)
+    bundle = _tex_bundle(tmp_path)
+    inner = tmp_path / "art" / "repo-artifacts" / "native"
+    inner.mkdir(parents=True)
+    shutil.copy(bundle, inner / "animatica-tex.tar.xz")
+    with tarfile.open(remote.codeload / "artifacts", "w:gz") as t:
+        t.add(tmp_path / "art" / "repo-artifacts", arcname="repo-artifacts")
+    r = _run_main(co, remote, extra_env={"ANIMATICA_TEX_FETCH": "", "ANIMATICA_TEX_URL": f"file://{tmp_path / 'nope.tar.xz'}", "PATH": _path_without(tmp_path, "latex")})
+    assert r.returncode == 0, r.stdout + r.stderr
+    assert _wait_for(co / ".tex" / "bin" / "x86_64-linux" / "latex")
+
+
+@pytest.mark.skipif(GIT is None, reason="needs git")
+def test_tex_already_present_is_not_fetched_again(tmp_path):
+    remote, co = _ready_setup(tmp_path)
+    (co / ".tex" / "bin").mkdir(parents=True)
+    marker = tmp_path / "tex-ran"
+    r = _run_main(co, remote, extra_env={"ANIMATICA_TEX_FETCH": f'echo x > "{marker}"', "PATH": _path_without(tmp_path, "latex")})
+    assert r.returncode == 0, r.stdout + r.stderr
+    assert "tex: ready" in r.stdout
+    time.sleep(1)
+    assert not marker.exists()

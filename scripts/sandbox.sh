@@ -209,36 +209,170 @@ write_env() {
 }
 
 # --------------------------------------------------------------------------- #
+# timing
+# --------------------------------------------------------------------------- #
+PH_LOG=""
+phase() {  # NAME: print and record the seconds since the previous phase
+  _pn="$(date +%s)"; _pd=$((_pn - PH_LAST)); PH_LAST="$_pn"
+  say "phase $1: ${_pd}s"
+  PH_LOG="${PH_LOG}${PH_LOG:+, }$1 ${_pd}s"
+}
+
+# --------------------------------------------------------------------------- #
+# verify: the core must work. LaTeX is optional and arrives later, so a missing
+# `latex` check is not a failure here (bootstrap.sh makes the same call).
+# --------------------------------------------------------------------------- #
+_doctor_core() {  # ROOT
+  if [ -n "${ANIMATICA_DOCTOR_CMD:-}" ]; then eval "$ANIMATICA_DOCTOR_CMD"; return $?; fi
+  _py="$1/.animatica-runtime/python/bin/python3"
+  "$_py" -m animatica doctor --json 2>/dev/null | "$_py" -c '
+import json, sys
+try:
+    checks = json.load(sys.stdin)
+except Exception:
+    print("doctor produced no readable output"); sys.exit(1)
+bad = [c["name"] for c in checks if not c["ok"] and c["name"] != "latex"]
+print(" ".join(bad))
+sys.exit(1 if bad else 0)'
+}
+
+_smoke_render() {  # ROOT
+  if [ -n "${ANIMATICA_SMOKE_CMD:-}" ]; then eval "$ANIMATICA_SMOKE_CMD"; return $?; fi
+  _so="$(mktemp -d)"
+  if animatica make "bar chart of sales by quarter" -o "$_so/out" --preview >"$_so/log" 2>&1 && [ -s "$_so/out/video.mp4" ]; then
+    rm -rf "$_so"; return 0
+  fi
+  tail -n 5 "$_so/log" 2>/dev/null; rm -rf "$_so"; return 1
+}
+
+# verify ROOT: 0 when the core works; otherwise 1 with VERIFY_REASON set.
+verify() {
+  VERIFY_REASON=""
+  _vo="$( ( . "$1/.animatica-env" && _doctor_core "$1" ) 2>&1 )" || {
+    VERIFY_REASON="doctor: $(printf '%s' "$_vo" | tr '\n' ' ')"; return 1; }
+  _vo="$( ( . "$1/.animatica-env" && _smoke_render "$1" ) 2>&1 )" || {
+    VERIFY_REASON="smoke render: $(printf '%s' "$_vo" | tr '\n' ' ')"; return 1; }
+  return 0
+}
+
+# --------------------------------------------------------------------------- #
+# TeX layer: fetched in the background, never part of the time budget
+# --------------------------------------------------------------------------- #
+_untar_xz() {  # ARCHIVE DEST: system tar first, then the runtime's python (no xz needed)
+  tar xf "$1" -C "$2" 2>/dev/null && return 0
+  [ -x "${_py:-}" ] && "$_py" -m tarfile -e "$1" "$2" 2>/dev/null
+}
+
+tex_fetch_default() {  # ROOT
+  CURL_TIMEOUT="${ANIMATICA_TEX_TIMEOUT:-600}"
+  _td="$1/.tex"; _tt="$(mktemp -d)"; mkdir -p "$_td"
+  _py="$1/.animatica-runtime/python/bin/python3"
+  _turl="${ANIMATICA_TEX_URL:-https://github.com/$GH_REPO/releases/latest/download/animatica-tex.tar.xz}"
+  if fetch "$_turl" "$_tt/tex.tar.xz"; then _untar_xz "$_tt/tex.tar.xz" "$_td"; fi
+  if [ ! -d "$_td/bin" ]; then  # codeload-only hosts: the same bundle on the artifacts branch
+    mkdir -p "$_tt/art"
+    if fetch "$CODELOAD_BASE/tar.gz/refs/heads/${ANIMATICA_ARTIFACT_BRANCH:-artifacts}" "$_tt/art.tgz" \
+       && tar xzf "$_tt/art.tgz" -C "$_tt/art" 2>/dev/null; then
+      _found="$(find "$_tt/art" -name animatica-tex.tar.xz -type f 2>/dev/null | head -n 1)"
+      [ -n "$_found" ] && _untar_xz "$_found" "$_td"
+    fi
+  fi
+  if [ -d "$_td/bin" ]; then
+    say "tex: unpacked in $_td"
+    for _tl in "$_td"/bin/*/tlmgr; do  # best effort: the packages Manim needs beyond the bundle
+      [ -x "$_tl" ] || continue
+      _pk="$("$_py" -c 'from animatica.doctor import TEX_PACKAGES; print(" ".join(TEX_PACKAGES))' 2>/dev/null)"
+      [ -n "$_pk" ] && "$_tl" install $_pk >/dev/null 2>&1
+      break
+    done
+  else
+    say "tex: unavailable here; equations will warn, everything else renders"
+  fi
+  rm -rf "$_tt"
+}
+
+start_tex() {  # ROOT
+  if [ -d "$1/.tex/bin" ] || command -v latex >/dev/null 2>&1; then say "tex: ready"; return 0; fi
+  (
+    ROOT="$1"
+    if [ -n "${ANIMATICA_TEX_FETCH:-}" ]; then eval "$ANIMATICA_TEX_FETCH"; else tex_fetch_default "$1"; fi
+  ) </dev/null >"$1/.tex.log" 2>&1 &
+  say "tex: downloading in the background (log: $1/.tex.log); equation scenes work once it finishes"
+}
+
+# --------------------------------------------------------------------------- #
 # main
 # --------------------------------------------------------------------------- #
+finish() {  # STATUS REASON
+  _total=$(( $(date +%s) - START ))
+  say "timings: ${PH_LOG}${PH_LOG:+, }total ${_total}s"
+  case "$1" in
+    READY) say "READY ${_total}s" ;;
+    DEGRADED) say "DEGRADED $2 (${_total}s)" ;;
+    *) say "FAILED $2" ;;
+  esac
+}
+
 main() {
-  RUNTIME_ONLY=0
+  RUNTIME_ONLY=0; NO_TEX=0; VERIFY_ONLY=0
   while [ $# -gt 0 ]; do
     case "$1" in
       --runtime-only) RUNTIME_ONLY=1 ;;
+      --no-tex) NO_TEX=1 ;;
+      --verify-only) VERIFY_ONLY=1 ;;
       --ref) shift; GH_REF="${1:-$GH_REF}" ;;
       *) ;;
     esac
     shift
   done
+  START="$(date +%s)"; PH_LAST="$START"
+  BUDGET="${ANIMATICA_BUDGET_S:-60}"
   ROOT="$(cd "$HERE/.." && pwd)"
   RT="$ROOT/.animatica-runtime"
-  [ "$RUNTIME_ONLY" = "1" ] || fetch_code "$ROOT"
-  KEY="$(sh "$HERE/runtime_key.sh" "$ROOT/pyproject.toml")" || return 1
-  say "runtime key: $KEY"
-  if [ -f "$RT/KEY" ] && [ "$(cat "$RT/KEY")" = "$KEY" ]; then
-    say "runtime up to date ($KEY)"
-  elif RT_USED_KEY=""; fetch_runtime "$KEY" "$RT"; then
-    printf '%s\n' "$RT_USED_KEY" > "$RT/KEY"
-  elif [ -d "$RT/python" ]; then
-    warn "could not fetch runtime $KEY; keeping the one already installed"
+  DEGRADED_REASON=""
+
+  if [ "$VERIFY_ONLY" = "1" ]; then
+    [ -d "$RT/python" ] || { finish FAILED "no runtime installed here; run without --verify-only first"; return 1; }
+    [ -f "$ROOT/.animatica-env" ] || write_env "$ROOT" || { finish FAILED "activation could not be written"; return 1; }
   else
-    say "no runtime reachable; falling back to scripts/bootstrap.sh"
-    BOOT="${ANIMATICA_BOOTSTRAP:-$ROOT/scripts/bootstrap.sh}"
-    exec sh "$BOOT"
+    [ "$RUNTIME_ONLY" = "1" ] || fetch_code "$ROOT"
+    phase code
+    KEY="$(sh "$HERE/runtime_key.sh" "$ROOT/pyproject.toml")" || { finish FAILED "could not compute the runtime key"; return 1; }
+    say "runtime key: $KEY"
+    if [ -f "$RT/KEY" ] && [ "$(cat "$RT/KEY")" = "$KEY" ]; then
+      say "runtime up to date ($KEY)"
+    elif RT_USED_KEY=""; RT_DEGRADED=0; fetch_runtime "$KEY" "$RT"; then
+      printf '%s\n' "$RT_USED_KEY" > "$RT/KEY"
+      [ "$RT_DEGRADED" = "1" ] && DEGRADED_REASON="runtime $RT_USED_KEY substituted for $KEY; dependencies may differ"
+    elif [ -d "$RT/python" ]; then
+      warn "could not fetch runtime $KEY; keeping the one already installed"
+      DEGRADED_REASON="runtime $KEY could not be fetched; kept the installed one"
+    else
+      say "no runtime reachable; falling back to scripts/bootstrap.sh"
+      BOOT="${ANIMATICA_BOOTSTRAP:-$ROOT/scripts/bootstrap.sh}"
+      exec sh "$BOOT"
+    fi
+    phase runtime
+    write_env "$ROOT" || { finish FAILED "activation could not be written"; return 1; }
+    phase env
   fi
-  write_env "$ROOT" || return 1
+
+  if [ "$RUNTIME_ONLY" = "1" ]; then
+    say "note: --runtime-only skipped verification and TeX"
+  else
+    if ! verify "$ROOT"; then finish FAILED "$VERIFY_REASON"; return 1; fi
+    phase verify
+  fi
+
+  _elapsed=$(( $(date +%s) - START ))
+  if [ "$_elapsed" -gt "$BUDGET" ]; then
+    finish FAILED "over budget: ${_elapsed}s > ${BUDGET}s (the install works; see the timings above)"; return 1
+  fi
+
+  if [ "$NO_TEX" = "1" ] || [ "$RUNTIME_ONLY" = "1" ] || [ "$VERIFY_ONLY" = "1" ]; then say "tex: skipped"
+  else start_tex "$ROOT"; fi
   say "activate with: . $(shq "$ROOT/.animatica-env")"
+  if [ -n "$DEGRADED_REASON" ]; then finish DEGRADED "$DEGRADED_REASON"; else finish READY; fi
 }
 
 if [ "${ANIMATICA_SANDBOX_SOURCE_ONLY:-0}" != "1" ]; then main "$@"; fi
