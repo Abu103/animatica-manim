@@ -1,6 +1,34 @@
 # Animatica session log (live, edit as you go)
 Updated: 2026-11-11. Newest status on top. Any Claude session can resume from here.
 
+## Status (2026-11-13, Claude session, card "parametric_graph: a circle is a circle, and labels stay readable")
+- Branch: `hermes/parametric-shape`, stacked on `hermes/eval-model-flag`. **Not pushed.**
+- Changed: `src/animatica/components/parametric_graph.py`, `tests/test_parametric_graph.py`, `docs/SESSION_TASKS.md`.
+- **Problem (noticed while fixing #32)**: the axes were always 10 x 5 units, so one unit along x was twice as long as one along y; `cos t, sin t` was drawn as an ellipse (measured curve width/height = 2.00). The circle also passes through the axis numbers at +-1, and the curve was drawn over them.
+- **Fix**: `_axes_lengths()` gives the largest equal-scale plot that fits the 10 x 5 box; if that would leave a side under 2.0 units (a very wide, flat curve) the axes fill the box with independent scales as before. Axis numbers get a higher z-index than the curve and a background-colour halo (stroke width 6), so a curve crossing a label does not hide it.
+- Tests (6 new, 34 in the file): `_axes_lengths` keeps equal scales and stays inside the box (4 cases), falls back for a flat curve; render tests: the circle's width/height is 1.00 +- 0.02, and every label the curve really crosses is above the curve and has a halo (the test first checks that a crossing exists). RED on the old source: width/height 2.000 and `label -1.0 is under the curve`. GREEN: 34 passed.
+- Frame checked by eye (`animatica make --from` the Parametric Circle storyboard, preview quality): a round circle, the crossed `1.0` / `-1.0` labels legible.
+- Verified on Linux with dvisvgm: `test_caption_room.py`, `test_conformance.py`, `test_parametric_graph.py`, `test_ci_gate.py`, `test_graph.py` -> 178 passed.
+- **The price**: an equal-scale circle is 5 x 5 units, so on the slide it is smaller than the old 10 x 5 ellipse.
+- NOT verified: `ci_render_gate.py` and the full suite were not run on this branch; nothing was run on Windows.
+
+## Status (2026-11-13, Claude session, card "eval: a model per provider, and defaults that still exist")
+- Branch: `hermes/eval-model-flag`, stacked on `hermes/windows-test-env`. **Not pushed.**
+- Changed: `src/animatica/cli.py`, `src/animatica/ai/router.py`, `src/animatica/ai/groq.py`, `src/animatica/ai/openrouter.py`, `src/animatica/ai/providers.toml`, `tests/test_provider_defaults.py` (new), `docs/SESSION_TASKS.md`.
+- **Problem (found in T16)**: `animatica eval` had no way to give two providers two model ids (one `ANIMATICA_MODEL` for the process), and two defaults were retired: Groq shut `llama-3.1-8b-instant` down for free and developer keys on 2026-08-16 (Groq's deprecation page names `openai/gpt-oss-20b` as the replacement), and the OpenRouter default `meta-llama/llama-3.1-8b-instruct:free` was unavailable.
+- **Fix**: `get_provider(name, config, model=None)`; `animatica eval --provider X --model M`; `--models nim,groq:openai/gpt-oss-20b` (`provider:model`, split on the first `:` so `:free` ids work); the same provider listed twice is an error (the table has one column per provider); an unknown provider is a clean `Error:` line, not a traceback. New defaults: groq `openai/gpt-oss-20b`; openrouter `nvidia/nemotron-3.5-super-vl:free` (id as shown on openrouter.ai; the free list changes every few days, so `--model` is the way to override).
+- Tests: `tests/test_provider_defaults.py`, 12 tests. RED on the old source: 7 failed; GREEN on the new source: 12 passed. Code defaults equal `providers.toml`, no default is a retired id, the OpenRouter default ends in `:free`.
+- Verified on Linux: `-m "not render"` run stopped at 2 failures in `test_caption_room.py` / `test_graph.py` that also fail on unmodified `main` in this sandbox (no `dvisvgm`, so no axis numbers); they are not in files this change touches.
+- NOT verified: no live call to Groq or OpenRouter (no keys here), so the two new default ids are checked against the providers' published pages only, not by a request.
+
+## Status (2026-11-13, Claude session, card "the four Windows-only test failures")
+- Branch: `hermes/windows-test-env`, off `main` = `ff7cc06`. **Not pushed.**
+- Changed: `tests/test_bootstrap_script.py`, `tests/test_tex_path.py`, `docs/SESSION_TASKS.md`. **No source change.**
+- **Cause, from the owner's Windows run**: (1) `bash` on PATH was `C:\Windows\system32\bash.EXE`, the WSL launcher; it answers `--version` but cannot open a `C:\...` script path (`No such file or directory`, exit 127), so 3 tests in `test_bootstrap_script.py` failed. (2) `test_dir_without_latex_is_not_accepted` found the machine's real `C:/tools/tinytex/bin/windows` (a fixed candidate in `tinytex_bin_dirs`) and returned it instead of `None`.
+- **Fix**: `_usable_bash()` now tries Git for Windows' bash first (next to the `git` found on PATH, then the default folders), and accepts a candidate only if it also parses the real script (`bash -n <script>`). The tex test patches `tinytex_bin_dirs` to the temp dir only, so no installed TinyTeX can decide it. New test: a shell that answers `--version` but cannot open the script is rejected.
+- Verified on Linux: `tests/test_bootstrap_script.py` + `tests/test_tex_path.py` -> 49 passed (was 48 + the new test).
+- NOT verified: on Windows. The failure itself cannot be reproduced on Linux (no WSL launcher, no `C:/tools/tinytex`); the owner's run is the evidence. Run `python scripts/ci_tests.py` on Windows: the expected result is 0 failed.
+
 ## Status (2026-11-11, Hermes session, card "dynamic worker count for pytest (-n) and the render gate")
 - Branch: `hermes/m2-eval-baseline` (current, off `main` = `88652e2`). **Not pushed.** No new branch created; this completes the owner's in-progress worker-count rework left in the working tree.
 - Changed: `src/animatica/backends/scheduler.py`, `scripts/ci_tests.py`, `scripts/ci_render_gate.py`, `tests/test_scheduler.py`, `docs/SETUP.md`.

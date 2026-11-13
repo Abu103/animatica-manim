@@ -244,3 +244,45 @@ def test_prompt_allows_no_title_card():
     assert "must start with title_card" not in text.lower()
     assert "require title_card" not in text.lower()
 
+
+
+# --- components whose params hold free-form dicts need their keys spelled out ----------------------
+def _loose_object_fields(schema: dict) -> list[str]:
+    """Fields whose JSON schema is an object (or list of objects) with no named keys."""
+
+    def loose(node: dict) -> bool:
+        if node.get("type") != "object":
+            return False
+        extra = node.get("additionalProperties", True)
+        return "properties" not in node and extra in (True, {})
+
+    found = []
+    for key, node in schema.get("properties", {}).items():
+        if loose(node) or loose(node.get("items", {})):
+            found.append(key)
+    return found
+
+
+def test_components_with_free_form_dict_params_have_a_hint_that_names_the_keys():
+    from animatica.ai.prompt import _HINTS
+    from animatica.components.registry import default_registry
+
+    for name, schema in default_registry().json_schema().items():
+        if _loose_object_fields(schema):
+            assert name in _HINTS, f"{name} has free-form dict params the model cannot see; add a _HINTS entry"
+
+
+def test_compare_and_timeline_hints_name_the_keys_models_got_wrong():
+    from animatica.ai.prompt import _HINTS
+
+    assert "heading" in _HINTS["compare"] and "bullets" in _HINTS["compare"]
+    assert "label" in _HINTS["timeline"] and "text" in _HINTS["timeline"]
+
+
+def test_prompt_catalog_shows_the_compare_and_timeline_keys():
+    from animatica.ai.prompt import build_prompt
+    from animatica.components.registry import default_registry
+
+    text = build_prompt("anything", default_registry())
+    assert '{"heading": "...", "bullets"' in text
+    assert '{"label": "1969", "text"' in text

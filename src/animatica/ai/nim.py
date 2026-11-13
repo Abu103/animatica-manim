@@ -20,8 +20,7 @@ class NIMProvider(BaseProvider):
             "temperature": 0.2,
             "max_tokens": 4096,
         }
-        resp = self._post(
+        return self._chat_text(
             "https://integrate.api.nvidia.com/v1/chat/completions", headers, payload
         )
-        return resp.json()["choices"][0]["message"]["content"]
 

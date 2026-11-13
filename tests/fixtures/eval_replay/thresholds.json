@@ -1,0 +1,96 @@
+{
+  "02-explain-the-pythagorean-theorem-a-2-b-2-.json": {
+    "components": [
+      "title_card",
+      "equation",
+      "steps_list"
+    ],
+    "max_warnings": 0,
+    "min_duration": 5,
+    "max_duration": 16
+  },
+  "04-explain-taylor-series.json": {
+    "components": [
+      "title_card",
+      "equation",
+      "graph",
+      "steps_list"
+    ],
+    "max_warnings": 0,
+    "min_duration": 8,
+    "max_duration": 24
+  },
+  "05-bar-chart-of-sales-by-quarter.json": {
+    "components": [
+      "bar_chart"
+    ],
+    "max_warnings": 0,
+    "min_duration": 1.0,
+    "max_duration": 5
+  },
+  "08-flow-diagram-from-water-to-steam-to-turb.json": {
+    "components": [
+      "flow"
+    ],
+    "max_warnings": 0,
+    "min_duration": 1.0,
+    "max_duration": 5
+  },
+  "10-explain-this-python-function-line-by-lin.json": {
+    "components": [
+      "title_card",
+      "code_walkthrough"
+    ],
+    "max_warnings": 0,
+    "min_duration": 5,
+    "max_duration": 17
+  },
+  "13-array-visualization-of-the-values-5-3-8-.json": {
+    "components": [
+      "array_viz"
+    ],
+    "max_warnings": 0,
+    "min_duration": 2,
+    "max_duration": 8
+  },
+  "15-table-of-planets-with-diameter-and-mass.json": {
+    "components": [
+      "table"
+    ],
+    "max_warnings": 0,
+    "min_duration": 2,
+    "max_duration": 8
+  },
+  "16-number-line-from-0-to-20-with-jumps-at-0.json": {
+    "components": [
+      "number_line"
+    ],
+    "max_warnings": 0,
+    "min_duration": 1.0,
+    "max_duration": 6
+  },
+  "18-stat-callout-that-42-percent-of-students.json": {
+    "components": [
+      "stat_callout"
+    ],
+    "max_warnings": 0,
+    "min_duration": 1.0,
+    "max_duration": 5
+  },
+  "19-derive-the-quadratic-formula-step-by-ste.json": {
+    "components": [
+      "formula_derivation"
+    ],
+    "max_warnings": 0,
+    "min_duration": 4,
+    "max_duration": 12
+  },
+  "20-parametric-graph-of-a-circle-with-x-equa.json": {
+    "components": [
+      "parametric_graph"
+    ],
+    "max_warnings": 0,
+    "min_duration": 2,
+    "max_duration": 6
+  }
+}

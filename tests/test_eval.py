@@ -153,3 +153,104 @@ def test_eval_table_shows_retry_valid():
     assert "retry" in text.lower()
     assert "first-try valid" in text
     assert "eventual valid" in text
+
+
+# --- --save-dir: keep raw outputs so a live run can become offline fixtures ----------------------
+def test_save_dir_records_raw_responses_for_ok_and_failed_prompts(tmp_path):
+    ok = run_eval(["good one"], FlakyProvider(), max_retries=2, save_dir=tmp_path)
+    bad = run_eval(["bad one"], BadProvider(), max_retries=1, save_dir=tmp_path)
+    assert ok[0].eventual_success and not bad[0].eventual_success
+    files = sorted(tmp_path.glob("*.json"))
+    assert len(files) == 2
+    recs = {json.loads(f.read_text(encoding="utf-8"))["prompt"]: json.loads(f.read_text(encoding="utf-8")) for f in files}
+    good = recs["good one"]
+    assert good["ok"] and good["calls"] == 2 and good["responses"][0] == "nope"
+    assert good["storyboard"]["title"] == "T"
+    failed = recs["bad one"]
+    assert not failed["ok"] and failed["errors"] and len(failed["responses"]) == 2
+
+
+def test_save_dir_unset_writes_nothing(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    run_eval(["x"], GoodProvider(), max_retries=0)
+    assert list(tmp_path.iterdir()) == []
+
+
+def test_eval_cli_accepts_save_dir(tmp_path, monkeypatch):
+    from typer.testing import CliRunner
+    from animatica.cli import app
+    import animatica.ai.router as router
+    monkeypatch.setattr(router, "get_provider", lambda *a, **k: GoodProvider())
+    prompts = tmp_path / "p.txt"
+    prompts.write_text("one\ntwo\n", encoding="utf-8")
+    out = tmp_path / "rec"
+    r = CliRunner().invoke(app, ["eval", "--prompts", str(prompts), "--max-retries", "0", "--save-dir", str(out)])
+    assert r.exit_code == 0, r.output
+    assert len(list(out.glob("*.json"))) == 2
+
+
+def test_empty_completion_fails_that_prompt_and_the_run_goes_on(tmp_path):
+    from animatica.ai.base import EmptyCompletion
+
+    class EmptyThenGood:
+        name = "empty"
+        model = "empty-model"
+
+        def __init__(self):
+            self.calls = 0
+
+        def generate(self, prompt, schema):
+            self.calls += 1
+            if self.calls == 1:  # the provider's own retry already happened inside it
+                raise EmptyCompletion("empty: empty reply after 2 attempt(s) (finish_reason='length')")
+            return json.dumps(GOOD)
+
+    results = run_eval(["first", "second"], EmptyThenGood(), max_retries=0, save_dir=tmp_path)
+    assert [r.eventual_success for r in results] == [False, True]
+    assert "finish_reason='length'" in results[0].error
+    saved = json.loads(next(tmp_path.glob("*01-*.json")).read_text(encoding="utf-8"))
+    assert saved["ok"] is False and saved["errors"] == []
+
+
+def test_network_blip_fails_that_prompt_and_the_run_goes_on():
+    from animatica.ai.base import ProviderUnreachable
+
+    class BlipThenGood:
+        name = "blip"
+        model = "blip-model"
+
+        def __init__(self):
+            self.calls = 0
+
+        def generate(self, prompt, schema):
+            self.calls += 1
+            if self.calls == 1:
+                raise ProviderUnreachable("blip: request failed: [Errno 11001] getaddrinfo failed")
+            return json.dumps(GOOD)
+
+    results = run_eval(["first", "second"], BlipThenGood(), max_retries=0)
+    assert [r.eventual_success for r in results] == [False, True]
+    assert "getaddrinfo" in results[0].error
+
+
+def test_eval_cli_prints_one_line_for_a_provider_error_not_a_traceback(tmp_path, monkeypatch):
+    from typer.testing import CliRunner
+    from animatica.ai.base import ProviderError
+    from animatica.cli import app
+    import animatica.ai.router as router
+
+    class NoKey:
+        name = "nokey"
+        model = "m"
+
+        def generate(self, prompt, schema):
+            raise ProviderError("nokey: no API key configured; run 'animatica setup'")
+
+    monkeypatch.setattr(router, "get_provider", lambda *a, **k: NoKey())
+    prompts = tmp_path / "p.txt"
+    prompts.write_text("one\n", encoding="utf-8")
+    for extra in ([], ["--models", "nokey"]):
+        r = CliRunner().invoke(app, ["eval", "--prompts", str(prompts), "--max-retries", "0", *extra])
+        assert r.exit_code == 1
+        assert "Error: nokey: no API key configured" in r.output
+        assert "Traceback" not in r.output

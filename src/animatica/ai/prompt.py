@@ -20,6 +20,12 @@ _HINTS = {
     "shape_morph": "one shape transforming into another",
     "diagram": "boxes (nodes) joined by arrows (edges)",
     "code_highlight": "code snippet with optional highlighted lines",
+    "compare": "two columns side by side; params are title, left and right, and each of left/right is exactly "
+               '{"heading": "...", "bullets": ["...", ...]} with 1 to 6 short bullets and no other keys',
+    "timeline": "dots on a line; params are title and events (1 to 8), and each event is exactly "
+                '{"label": "1969", "text": "short description"}: use the keys label and text, not year, date or event',
+    "array_viz": "row of boxes holding values; steps (up to 12) each carry highlight[] indices, a swap pair of two "
+                 "indices, or binary-search low/high/mid indices",
     "bounce_sequence": "a ball hops along a number sequence, one pad per term (pad height = value); "
                        "use it whenever the request mentions a ball, bouncing or hopping over terms "
                        "(Fibonacci, powers of 2, squares...). values are the terms in order, up to 20; ONE scene holds the whole sequence, never split it",

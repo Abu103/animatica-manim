@@ -11,24 +11,43 @@ import pytest
 ROOT = Path(__file__).resolve().parent.parent
 SCRIPT = ROOT / "scripts" / "bootstrap.sh"
 
-def _usable_bash() -> str | None:
-    """A bash that can run the script. On Windows, System32\\bash.exe is the WSL
-    launcher, which fails with "no installed distributions", so Git's bash is used."""
-    candidates = [shutil.which("bash")]
-    if sys.platform == "win32":
-        candidates += [
-            r"C:\Program Files\Git\bin\bash.exe",
-            r"C:\Program Files\Git\usr\bin\bash.exe",
-            r"C:\Program Files (x86)\Git\bin\bash.exe",
-        ]
-    for candidate in candidates:
+def _bash_candidates() -> list[str | None]:
+    """Where a bash may live, most trustworthy first.
+
+    On Windows `bash` on PATH is often System32\\bash.exe, the WSL launcher. It starts a Linux
+    shell that cannot read a `C:\\...` script path, so Git for Windows' bash is tried first,
+    found from the default folders and from wherever `git` itself is installed."""
+    if sys.platform != "win32":
+        return [shutil.which("bash")]
+    candidates: list[str | None] = []
+    git = shutil.which("git")
+    if git:  # <Git>/cmd/git.exe -> <Git>/bin/bash.exe
+        candidates.append(str(Path(git).resolve().parent.parent / "bin" / "bash.exe"))
+    candidates += [
+        r"C:\Program Files\Git\bin\bash.exe",
+        r"C:\Program Files\Git\usr\bin\bash.exe",
+        r"C:\Program Files (x86)\Git\bin\bash.exe",
+        shutil.which("bash"),
+    ]
+    return candidates
+
+
+def _usable_bash(candidates: list[str | None] | None = None) -> str | None:
+    """A bash that can run the script.
+
+    A candidate must answer `--version` and also parse the real script path: a shell that
+    starts but cannot open the file (the WSL launcher on Windows) is not usable."""
+    for candidate in _bash_candidates() if candidates is None else candidates:
         if not candidate:
             continue
         try:
             probe = subprocess.run([candidate, "--version"], capture_output=True, text=True, timeout=30)
+            if probe.returncode != 0 or "bash" not in probe.stdout.lower():
+                continue
+            parses = subprocess.run([candidate, "-n", str(SCRIPT)], capture_output=True, text=True, timeout=30)
         except Exception:
             continue
-        if probe.returncode == 0 and "bash" in probe.stdout.lower():
+        if parses.returncode == 0:
             return candidate
     return None
 
@@ -129,3 +148,38 @@ def test_both_installers_are_referenced_in_the_readme():
     readme = (ROOT / "README.md").read_text(encoding="utf-8")
     assert "scripts/bootstrap.sh" in readme
     assert "scripts/bootstrap.ps1" in readme
+
+
+def _fake_wsl_launcher(tmp_path: Path) -> Path:
+    """A shell that answers `--version` like bash but cannot open any script (the WSL launcher).
+
+    A POSIX script on Linux and macOS; a .cmd file on Windows, so the test runs everywhere."""
+    if sys.platform == "win32":
+        fake = tmp_path / "wsl-bash.cmd"
+        fake.write_bytes(
+            b'@echo off\r\n'
+            b'if "%~1"=="--version" (\r\n'
+            b'  echo GNU bash, version 5\r\n'
+            b'  exit /b 0\r\n'
+            b')\r\n'
+            b'echo No such file or directory 1>&2\r\n'
+            b'exit /b 127\r\n'
+        )
+        return fake
+    fake = tmp_path / "wsl-bash"
+    fake.write_text(
+        '#!/bin/sh\n[ "$1" = "--version" ] && { echo "GNU bash, version 5"; exit 0; }\n'
+        'echo "No such file or directory" >&2; exit 127\n'
+    )
+    fake.chmod(0o755)
+    return fake
+
+
+def test_a_shell_that_cannot_open_the_script_is_not_chosen(tmp_path):
+    """Regression (Windows): the WSL launcher answers `--version` but cannot read a Windows
+    path ("No such file or directory", exit 127). It must not be picked over a working bash."""
+    fake_wsl = _fake_wsl_launcher(tmp_path)
+    real = _usable_bash()
+    assert real is not None, "no bash that can run scripts/bootstrap.sh"
+    assert _usable_bash([str(fake_wsl)]) is None
+    assert _usable_bash([str(fake_wsl), real]) == real

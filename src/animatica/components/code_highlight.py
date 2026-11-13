@@ -4,9 +4,9 @@ from __future__ import annotations
 
 from typing import ClassVar
 
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
-from animatica.components._draw import Clock, fit, prepare, wrap
+from animatica.components._draw import Clock, fit, prepare, unescape_code, wrap
 from animatica.components.base import Component
 from animatica.components.theme import ThemeColors
 from animatica.storyboard.models import MAX_TEXT
@@ -19,6 +19,8 @@ class CodeHighlight(Component):
         code: str = Field(max_length=1200)
         language: str = "python"
         lines: list[int] = Field(default_factory=list)
+
+        _unescape = field_validator("code", mode="before")(unescape_code)
 
         @model_validator(mode="after")
         def _check_lines(self):

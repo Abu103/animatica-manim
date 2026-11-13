@@ -1,8 +1,8 @@
 [groq]
-model = "llama-3.1-8b-instant"
+model = "openai/gpt-oss-20b"
 
 [openrouter]
-model = "meta-llama/llama-3.1-8b-instruct:free"
+model = "nvidia/nemotron-3.5-super-vl:free"
 allow_paid = false
 
 [nim]

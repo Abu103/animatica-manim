@@ -1,0 +1,6 @@
+{
+  "prompt": "explain taylor series",
+  "provider": "nim",
+  "model": "nvidia/nemotron-3.5-super-vl-120b-a12b",
+  "response": "{\"version\":\"1\",\"title\":\"Taylor Series\",\"scenes\":[{\"beats\":[{\"component\":\"title_card\",\"params\":{\"title\":\"Taylor Series\",\"subtitle\":\"Approximating functions with polynomials\"},\"caption\":\"A Taylor series builds a polynomial that tracks a function near a chosen point.\"},{\"component\":\"equation\",\"params\":{\"mode\":\"reveal\",\"latex\":[\"f(x) \\\\approx f(a) + f'(a)(x-a) + \\\\frac{f''(a)}{2!}(x-a)^2 + \\\\cdots\"]},\"caption\":\"Derivatives at the center point shape each term of the polynomial.\"}]},{\"beats\":[{\"component\":\"graph\",\"params\":{\"fn\":\"exp(x)\",\"approx_fn\":\"1 + x + x**2/2 + x**3/6\",\"x_range\":[-1,1],\"y_range\":[0,3],\"label\":\"e^x\",\"approx_label\":\"3rd-order Taylor at 0\"},\"caption\":\"The polynomial follows the curve closely near zero but drifts farther away.\"}]},{\"beats\":[{\"component\":\"steps_list\",\"params\":{\"items\":[\"Pick a center point a.\",\"Use derivatives of f at a.\",\"Add terms to improve the local fit.\",\"More terms usually fit better nearby.\"]},\"caption\":\"Build the series term by term around a center point.\"}]}]}"
+}

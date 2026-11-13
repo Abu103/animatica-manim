@@ -404,3 +404,71 @@ def test_circle_axis_numbers_are_round_and_do_not_overlap():
         assert value == pytest.approx(round(value, 2)), f"axis number {value!r} is not round"
         assert n.num_decimal_places <= 2, n.num_decimal_places
     assert_no_text_overlap(beat)
+
+
+# ---------------------------------------------------------------------------#
+# A parametric curve is a shape: equal scales on both axes, readable labels   #
+# ---------------------------------------------------------------------------#
+
+
+@pytest.mark.parametrize(
+    "x_span, y_span",
+    [(3.0, 3.0), (8.0, 3.0), (4.0, 8.0), (20.0, 5.0)],
+)
+def test_axes_lengths_keep_one_unit_the_same_length_on_both_axes(x_span, y_span):
+    from animatica.components.parametric_graph import AXES_BOX, _axes_lengths
+
+    x_len, y_len = _axes_lengths(x_span, y_span)
+    assert math.isclose(x_len / x_span, y_len / y_span, rel_tol=1e-9)
+    assert x_len <= AXES_BOX[0] + 1e-9 and y_len <= AXES_BOX[1] + 1e-9
+    assert math.isclose(max(x_len / AXES_BOX[0], y_len / AXES_BOX[1]), 1.0)  # as big as fits
+
+
+def test_axes_lengths_fall_back_to_the_full_box_for_a_very_flat_curve():
+    from animatica.components.parametric_graph import AXES_BOX, _axes_lengths
+
+    assert _axes_lengths(100.0, 0.02) == AXES_BOX  # equal scales would draw a line
+
+
+def _plot_curves(beat):
+    return [m for m in beat.mobjects if m.__class__.__name__ == "VMobject" and m.width > 0]
+
+
+def _circle_beat():
+    import sys
+    from pathlib import Path
+
+    sys.path.insert(0, str(Path(__file__).parent))
+    from geometry import play_component
+
+    p = ParametricGraph.Params(
+        title="Parametric Circle", x_expr="cos(t)", y_expr="sin(t)", t_range=(0.0, 6.28), label="Circle"
+    )
+    return play_component(ParametricGraph(), p, 1280, 720)
+
+
+@pytest.mark.render
+def test_a_circle_is_drawn_as_a_circle_not_an_ellipse():
+    (curve,) = _plot_curves(_circle_beat())
+    assert curve.width / curve.height == pytest.approx(1.0, abs=0.02)
+
+
+@pytest.mark.render
+def test_a_curve_through_a_tick_label_does_not_hide_it():
+    """The circle passes through the axis numbers at +-1: those numbers must be drawn above
+    the curve and carry a background-colour halo."""
+    beat = _circle_beat()
+    (curve,) = _plot_curves(beat)
+    numbers = [t for t in beat.texts if t.__class__.__name__ == "DecimalNumber"]
+    assert numbers
+
+    def crossed(n):
+        left, right, bottom, top = n.get_left()[0], n.get_right()[0], n.get_bottom()[1], n.get_top()[1]
+        return any(left <= x <= right and bottom <= y <= top for x, y, *_ in curve.points)
+
+    hit = [n for n in numbers if crossed(n)]
+    assert hit, "the test is only meaningful if the curve really crosses a label"
+    for n in hit:
+        assert n.z_index > curve.z_index, f"label {n.get_value()} is under the curve"
+        glyphs = n.family_members_with_points()
+        assert all(g.get_stroke_width(background=True) > 0 for g in glyphs), f"label {n.get_value()} has no halo"

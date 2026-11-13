@@ -1,0 +1,6 @@
+{
+  "prompt": "table of planets with diameter and mass",
+  "provider": "nim",
+  "model": "nvidia/nemotron-3.5-super-vl-120b-a12b",
+  "response": "{\"version\":\"1\",\"title\":\"Planets: Diameter and Mass\",\"scenes\":[{\"beats\":[{\"component\":\"table\",\"params\":{\"title\":\"Planets: Diameter and Mass\",\"columns\":[\"Planet\",\"Diameter (km)\",\"Mass (kg)\"],\"rows\":[[\"Mercury\",\"4,879\",\"3.30e23\"],[\"Venus\",\"12,104\",\"4.87e24\"],[\"Earth\",\"12,742\",\"5.97e24\"],[\"Mars\",\"6,779\",\"6.42e23\"],[\"Jupiter\",\"139,820\",\"1.90e27\"],[\"Saturn\",\"116,460\",\"5.68e26\"]]},\"caption\":\"A table lists six planets with their diameters and masses.\"}]}]}"
+}

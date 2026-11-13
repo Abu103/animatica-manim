@@ -2,6 +2,14 @@
 
 Describe something, get an explainer video. Built on Manim; works with free AI models.
 
+## What you get
+
+- A video from a description or from a storyboard file, using the built-in components (equations, graphs, charts, tables, timelines, code walkthroughs and more; see [`docs/COMPONENTS.md`](docs/COMPONENTS.md)).
+- Offline rendering of a storyboard with no AI key: `animatica make --from docs/gallery/fibonacci.json`.
+- Free AI providers for turning a prompt into a storyboard, and a repeatable score of how well they do it: [`docs/EVAL_BASELINE.md`](docs/EVAL_BASELINE.md).
+- The example storyboards and how each one rendered on the last recorded run: [`docs/GALLERY.md`](docs/GALLERY.md).
+- Install results from real clean-machine runs: [`docs/VERIFIED_INSTALLS.md`](docs/VERIFIED_INSTALLS.md).
+
 ## Install (Windows / Mac / Linux)
 
 One command, same result on Linux, macOS and Windows. It installs Python, manim,
@@ -115,12 +123,11 @@ Also in `docs/gallery/`: five **model outputs** from the eval baseline (`eval_*.
 
 The prompts, the numbers and the provider they came from are in [`docs/EVAL_BASELINE.md`](docs/EVAL_BASELINE.md).
 
-The rendered MP4s are not committed (they're large binary artifacts). To regenerate them all:
+The rendered MP4s are not committed (they're large binary artifacts). To regenerate them all, with a pass/fail table:
 ```
-for f in docs/gallery/*.json; do
-  animatica make --from "$f" -o "out/$(basename "$f" .json)" --preview
-done
+python scripts/render_gallery.py
 ```
+See [`docs/GALLERY.md`](docs/GALLERY.md) for the results of the last recorded run.
 
 ## Useful flags
 `--quality preview` (fast), `--from storyboard.json` (re-render without calling a model), `--no-captions`, `--debug`.

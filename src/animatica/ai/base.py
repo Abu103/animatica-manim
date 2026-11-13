@@ -31,30 +31,97 @@ class StoryboardGenerationError(Exception):
 _FENCE = re.compile(r"```(?:json)?\s*\n?(.*?)\n?\s*```", re.DOTALL | re.IGNORECASE)
 
 
+def _close_open_brackets(text: str) -> str | None:
+    """Return `text` plus the closers it is missing, or None if it is not a cut-off object.
+
+    Models sometimes stop one `}` or `]` short (or hit their token limit right after a value).
+    Brackets inside strings do not count. Text that ends inside a string cannot be repaired.
+    """
+    stack: list[str] = []
+    in_string = escaped = False
+    for ch in text:
+        if in_string:
+            if escaped:
+                escaped = False
+            elif ch == "\\":
+                escaped = True
+            elif ch == '"':
+                in_string = False
+        elif ch == '"':
+            in_string = True
+        elif ch in "{[":
+            stack.append("}" if ch == "{" else "]")
+        elif ch in "}]":
+            if not stack or stack.pop() != ch:
+                return None
+    if in_string or not stack:
+        return None
+    return text + "".join(reversed(stack))
+
+
+def _balanced_end(text: str, start: int) -> int | None:
+    """Index just past the object that opens at `start`, ignoring brackets inside strings."""
+    depth = 0
+    in_string = escaped = False
+    for i in range(start, len(text)):
+        ch = text[i]
+        if in_string:
+            if escaped:
+                escaped = False
+            elif ch == "\\":
+                escaped = True
+            elif ch == '"':
+                in_string = False
+        elif ch == '"':
+            in_string = True
+        elif ch == "{":
+            depth += 1
+        elif ch == "}":
+            depth -= 1
+            if depth == 0:
+                return i + 1
+    return None
+
+
+def _loads_object(text: str) -> dict:
+    """json.loads for one object, finishing it when the model left closing brackets off."""
+    try:
+        return json.loads(text)
+    except json.JSONDecodeError as exc:
+        closed = _close_open_brackets(text)
+        if closed is None:
+            raise
+        try:
+            return json.loads(closed)
+        except json.JSONDecodeError:
+            raise exc from None
+
+
 def extract_json(text: str) -> dict:
     """Extract the first JSON object from `text`.
 
     Handles markdown fences (with or without the ``json`` tag), leading/trailing
-    prose, and the first balanced `{...}` block. Raises `ValueError` if none.
+    prose, and the first balanced `{...}` block. If the object is cut off, with
+    only closing brackets missing, they are added. Raises `ValueError` if none.
     """
     if not isinstance(text, str):
         raise ValueError(f"provider output must be a string, got {type(text).__name__}")
     m = _FENCE.search(text)
     if m:
-        return json.loads(m.group(1))
+        return _loads_object(m.group(1))
     start = text.find("{")
     if start == -1:
         raise ValueError("no JSON object found in provider output")
-    depth = 0
-    for i in range(start, len(text)):
-        ch = text[i]
-        if ch == "{":
-            depth += 1
-        elif ch == "}":
-            depth -= 1
-            if depth == 0:
-                return json.loads(text[start : i + 1])
-    raise ValueError("no balanced JSON object found in provider output")
+    end = _balanced_end(text, start)
+    if end is not None:
+        return _loads_object(text[start:end])
+    closed = _close_open_brackets(text[start:].rstrip())
+    if closed is not None:
+        try:
+            return json.loads(closed)
+        except json.JSONDecodeError:
+            pass
+    raise ValueError("JSON object is cut off or has unbalanced brackets (end of output reached before it was closed)")
 
 
 class RateLimited(Exception):
@@ -68,6 +135,14 @@ class RateLimited(Exception):
 
 class ProviderError(Exception):
     """Raised when a provider request fails for a clear, nameable reason."""
+
+
+class ProviderUnreachable(ProviderError):
+    """The request never got an answer (DNS failure, refused connection, timeout)."""
+
+
+class EmptyCompletion(ProviderError):
+    """The provider answered HTTP 200 but the message had no text in it."""
 
 
 class BaseProvider:
@@ -84,7 +159,7 @@ class BaseProvider:
         try:
             resp = self._client.post(url, headers=headers, json=payload)
         except httpx.RequestError as exc:  # pragma: no cover - network
-            raise ProviderError(f"{self.name}: request failed: {exc}") from exc
+            raise ProviderUnreachable(f"{self.name}: request failed: {exc}") from exc
         if resp.status_code == 429:
             retry_after = None
             raw = resp.headers.get("retry-after")
@@ -105,6 +180,57 @@ class BaseProvider:
                 f"{self.name}: HTTP {resp.status_code}: {(resp.text or '')[:200]}{hint}"
             )
         return resp
+
+    def _chat_text(self, url: str, headers: dict, payload: dict, attempts: int = 2) -> str:
+        """POST a chat completion and return the reply text.
+
+        An empty reply is retried once, because it is usually a one-off. If it
+        is still empty, raises `EmptyCompletion` saying why.
+        """
+        reason = ""
+        for _ in range(attempts):
+            data = self._post(url, headers, payload).json()
+            try:
+                text = _message_text(data["choices"][0]["message"])
+            except (KeyError, IndexError, TypeError):
+                text = ""
+            if text.strip():
+                return text
+            reason = _empty_reason(data)
+        raise EmptyCompletion(
+            f"{self.name}: empty reply after {attempts} attempt(s) ({reason}; model: {self.model!r})"
+        )
+
+
+def _message_text(message: object) -> str:
+    """Text of one chat-completion message; "" when it has none.
+
+    `content` is null when a reasoning model spends its whole token budget
+    thinking, or when the answer is filtered. Some servers send a list of parts.
+    """
+    if not isinstance(message, dict):
+        return ""
+    content = message.get("content")
+    if isinstance(content, str):
+        return content
+    if isinstance(content, list):
+        return "".join(
+            part.get("text", "") for part in content
+            if isinstance(part, dict) and isinstance(part.get("text"), str)
+        )
+    return ""
+
+
+def _empty_reason(data: object) -> str:
+    try:
+        choice = data["choices"][0]  # type: ignore[index]
+    except (KeyError, IndexError, TypeError):
+        return "no choices in the response"
+    bits = [f"finish_reason={choice.get('finish_reason')!r}"]
+    message = choice.get("message") or {}
+    if message.get("reasoning_content") or message.get("reasoning"):
+        bits.append("the model returned reasoning but no answer, so it likely ran out of max_tokens")
+    return ", ".join(bits)
 
 
 def _openrouter_allow_paid() -> bool:

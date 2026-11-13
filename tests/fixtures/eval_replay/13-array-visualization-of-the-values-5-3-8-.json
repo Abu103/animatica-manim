@@ -1,0 +1,6 @@
+{
+  "prompt": "array visualization of the values 5 3 8 1 with a binary search for 8",
+  "provider": "nim",
+  "model": "nvidia/nemotron-3.5-super-vl-120b-a12b",
+  "response": "{\"version\":\"1\",\"title\":\"Binary Search for 8\",\"scenes\":[{\"beats\":[{\"component\":\"array_viz\",\"params\":{\"title\":\"Binary Search for 8\",\"values\":[5,3,8,1],\"steps\":[{\"action\":\"sort\",\"result\":[1,3,5,8]},{\"action\":\"compare\",\"index\":1,\"value\":3,\"target\":8},{\"action\":\"compare\",\"index\":2,\"value\":5,\"target\":8},{\"action\":\"found\",\"index\":3,\"value\":8}]},\"caption\":\"The array 5, 3, 8, 1 is sorted to 1, 3, 5, 8, then binary search finds 8 at index 3.\"}]}]}"
+}

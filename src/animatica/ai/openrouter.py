@@ -7,7 +7,7 @@ from animatica.config import load_key
 
 class OpenRouterProvider(BaseProvider):
     name = "openrouter"
-    default_model = "meta-llama/llama-3.1-8b-instruct:free"
+    default_model = "nvidia/nemotron-3.5-super-vl:free"
 
     def __init__(self, client=None, model=None):
         super().__init__(client=client, model=model)
@@ -31,8 +31,7 @@ class OpenRouterProvider(BaseProvider):
             "temperature": 0.2,
             "max_tokens": 4096,
         }
-        resp = self._post(
+        return self._chat_text(
             "https://openrouter.ai/api/v1/chat/completions", headers, payload
         )
-        return resp.json()["choices"][0]["message"]["content"]
 

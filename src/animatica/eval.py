@@ -6,9 +6,12 @@ Supports single-provider (P1.2) and multi-provider comparison (Phase 2.1).
 """
 from __future__ import annotations
 
+import json
+import re
 from dataclasses import dataclass, field
+from pathlib import Path
 
-from animatica.ai.base import StoryboardGenerationError
+from animatica.ai.base import EmptyCompletion, ProviderUnreachable, StoryboardGenerationError
 from animatica.ai.repair import generate_storyboard
 from animatica.components.registry import ComponentRegistry, default_registry
 from animatica.storyboard.lint import lint_storyboard
@@ -66,11 +69,23 @@ def _duration(sb: Storyboard, registry: ComponentRegistry) -> float:
     return total
 
 
+def _slug(text: str) -> str:
+    return re.sub(r"[^a-z0-9]+", "-", text.lower()).strip("-")[:40] or "prompt"
+
+
+def _record(save_dir: Path, index: int, record: dict) -> None:
+    """Write one prompt's raw outputs so a run can be replayed offline (T17 fixtures)."""
+    save_dir.mkdir(parents=True, exist_ok=True)
+    name = f"{_slug(record['provider'])}__{index:02d}-{_slug(record['prompt'])}.json"
+    (save_dir / name).write_text(json.dumps(record, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+
+
 def _eval_one(
     prompts: list[str],
     provider,
     registry: ComponentRegistry,
     max_retries: int,
+    save_dir: Path | None = None,
 ) -> list[EvalResult]:
     """Generate a storyboard per prompt with a single provider and score it."""
 
@@ -80,18 +95,22 @@ def _eval_one(
             self.name = getattr(inner, "name", "provider")
             self.model = getattr(inner, "model", "unknown")
             self.calls = 0
+            self.responses: list[str] = []
 
         def generate(self, prompt, schema):
             self.calls += 1
-            return self._inner.generate(prompt, schema)
+            text = self._inner.generate(prompt, schema)
+            self.responses.append(text)
+            return text
 
     prov_name = getattr(provider, "name", "provider")
     prov_model = getattr(provider, "model", "unknown")
     results: list[EvalResult] = []
-    for prompt in prompts:
+    for index, prompt in enumerate(prompts, start=1):
         prov = _Counting(provider)
         try:
             sb = generate_storyboard(prompt, prov, registry, max_retries=max_retries)
+            raw_sb = sb.model_dump(mode="json")
             sb, notes = lint_storyboard(sb)
             results.append(EvalResult(
                 prompt=prompt,
@@ -103,7 +122,12 @@ def _eval_one(
                 warnings=notes,
                 duration=_duration(sb, registry),
             ))
-        except StoryboardGenerationError as exc:
+            if save_dir is not None:
+                _record(save_dir, index, {
+                    "prompt": prompt, "provider": prov_name, "model": prov_model, "ok": True,
+                    "calls": prov.calls, "storyboard": raw_sb, "responses": prov.responses,
+                })
+        except (StoryboardGenerationError, EmptyCompletion, ProviderUnreachable) as exc:
             results.append(EvalResult(
                 prompt=prompt,
                 provider=prov_name,
@@ -113,6 +137,12 @@ def _eval_one(
                 retries=prov.calls - 1,
                 error=str(exc),
             ))
+            if save_dir is not None:
+                _record(save_dir, index, {
+                    "prompt": prompt, "provider": prov_name, "model": prov_model, "ok": False,
+                    "calls": prov.calls, "error": str(exc), "errors": list(getattr(exc, "errors", [])),
+                    "responses": prov.responses,
+                })
     return results
 
 
@@ -122,10 +152,11 @@ def run_eval(
     registry: ComponentRegistry | None = None,
     max_retries: int = 2,
     as_table: bool = False,
+    save_dir: Path | None = None,
 ) -> list[EvalResult] | str:
     """Generate a storyboard per prompt and score it. Returns results (or a table)."""
     registry = registry or default_registry()
-    results = _eval_one(prompts, provider, registry, max_retries)
+    results = _eval_one(prompts, provider, registry, max_retries, save_dir)
     if as_table:
         return format_table(results)
     return results
@@ -136,12 +167,13 @@ def run_eval_multi(
     providers: list,
     registry: ComponentRegistry | None = None,
     max_retries: int = 2,
+    save_dir: Path | None = None,
 ) -> EvalSummary:
     """Run the same prompts through multiple providers and return a combined summary."""
     registry = registry or default_registry()
     all_results: list[EvalResult] = []
     for provider in providers:
-        all_results.extend(_eval_one(prompts, provider, registry, max_retries))
+        all_results.extend(_eval_one(prompts, provider, registry, max_retries, save_dir))
     return EvalSummary(results=all_results)
 
 
