@@ -100,7 +100,7 @@ def _sha(path: Path) -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
-def _make_runtime_archive(tmp: Path, name: str = "rt", marker: str = "v1") -> Path:
+def _make_runtime_archive(tmp: Path, name: str = "rt", marker: str = "v1", fonts: bool = False) -> Path:
     """A tiny runtime: python/bin/python3 stub, native/lib/libfake.so, a marker file."""
     src = tmp / f"{name}-src"
     shutil.rmtree(src, ignore_errors=True)
@@ -111,6 +111,9 @@ def _make_runtime_archive(tmp: Path, name: str = "rt", marker: str = "v1") -> Pa
     (src / "python" / "bin" / "python3").chmod(0o755)
     (src / "native" / "lib" / "libfake.so").write_text("x")
     (src / "MARKER").write_text(marker)
+    if fonts:
+        (src / "native" / "etc").mkdir(parents=True)
+        (src / "native" / "etc" / "fonts.conf").write_text("<fontconfig/>")
     archive = tmp / f"{name}.tar.gz"
     archive.unlink(missing_ok=True)
     with tarfile.open(archive, "w:gz") as t:
@@ -389,9 +392,9 @@ def _git(cwd: Path, *args: str) -> str:
     return r.stdout.strip()
 
 
-def _publish_for_checkout(remote: Remote, co: Path, tmp: Path, marker: str = "v1") -> str:
+def _publish_for_checkout(remote: Remote, co: Path, tmp: Path, marker: str = "v1", fonts: bool = False) -> str:
     key = subprocess.run([SH, str(co / "scripts" / "runtime_key.sh"), str(co / "pyproject.toml")], capture_output=True, text=True).stdout.strip()
-    remote.publish_release(key, _make_runtime_archive(tmp, marker=marker))
+    remote.publish_release(key, _make_runtime_archive(tmp, marker=marker, fonts=fonts))
     return key
 
 
@@ -827,3 +830,75 @@ def test_build_script_compiles_extensions_with_gcc_not_the_pinned_pythons_clang(
     assert re.search(r'CC="\$\{CC:-gcc\}"', text) and re.search(r'CXX="\$\{CXX:-g\+\+\}"', text)
     pip_line = next(ln for ln in text.splitlines() if "pip install" in ln)
     assert "CC=" in pip_line, "the compiler override must apply to the pip install that builds pycairo/manimpango"
+
+
+# --------------------------------------------------------------------------- #
+# Task 5b: a truly bare machine has no glib, fontconfig, freetype, X libs or fonts
+# --------------------------------------------------------------------------- #
+FONTS_CONF = ROOT / "scripts" / "sandbox_fonts.conf"
+
+
+def _seed_library() -> Path:
+    for d in ("/usr/lib/x86_64-linux-gnu", "/lib/x86_64-linux-gnu", "/usr/lib64", "/usr/lib"):
+        for name in ("libpng16.so.16", "libfreetype.so.6"):
+            if (Path(d) / name).exists():
+                return Path(d) / name
+    raise AssertionError("no libpng16 or libfreetype on this machine to seed the closure test")
+
+
+def test_closure_bundles_the_non_glibc_dependencies(tmp_path):
+    stage = _stage(tmp_path)
+    seed = _seed_library()
+    shutil.copy(seed, stage / "native" / "lib" / seed.name, follow_symlinks=True)
+    r = subprocess.run([SH, str(BUILD_SH), "--closure", str(stage)], capture_output=True, text=True, timeout=120)
+    assert r.returncode == 0, r.stdout + r.stderr
+    names = {p.name for p in (stage / "native" / "lib").iterdir()}
+    assert any(n.startswith("libz.so") for n in names), names
+    core = {"libc.so.6", "libm.so.6", "libpthread.so.0", "libdl.so.2", "ld-linux-x86-64.so.2", "libgcc_s.so.1", "libstdc++.so.6"}
+    assert not (names & core), names & core
+
+
+def test_closure_is_idempotent(tmp_path):
+    stage = _stage(tmp_path)
+    seed = _seed_library()
+    shutil.copy(seed, stage / "native" / "lib" / seed.name, follow_symlinks=True)
+    for _ in range(2):
+        assert subprocess.run([SH, str(BUILD_SH), "--closure", str(stage)], capture_output=True, timeout=120).returncode == 0
+    first = sorted(p.name for p in (stage / "native" / "lib").iterdir())
+    assert subprocess.run([SH, str(BUILD_SH), "--closure", str(stage)], capture_output=True, timeout=120).returncode == 0
+    assert sorted(p.name for p in (stage / "native" / "lib").iterdir()) == first
+
+
+def test_fonts_conf_is_well_formed_and_only_uses_the_bundled_fonts():
+    import xml.etree.ElementTree as ET
+
+    root = ET.parse(FONTS_CONF).getroot()
+    assert root.tag == "fontconfig"
+    dirs = [(d.get("prefix"), (d.text or "").strip()) for d in root.findall("dir")]
+    assert dirs == [("relative", "../fonts")], dirs  # relative to native/etc: native/fonts
+    assert not root.findall("include"), "system fonts would make renders differ between sandboxes"
+
+
+def test_env_exports_fontconfig_only_when_the_runtime_ships_fonts(tmp_path):
+    remote, co = Remote(tmp_path), _checkout(tmp_path)
+    _publish_for_checkout(remote, co, tmp_path, fonts=True)
+    assert _run_main(co, remote).returncode == 0
+    out = subprocess.run([SH, "-c", '. ./.animatica-env && printf "%s" "$FONTCONFIG_FILE"'], cwd=co, capture_output=True, text=True).stdout
+    assert out == str(co / ".animatica-runtime" / "native" / "etc" / "fonts.conf")
+
+
+def test_env_leaves_fontconfig_alone_without_bundled_fonts(tmp_path):
+    remote, co = Remote(tmp_path), _checkout(tmp_path)
+    _publish_for_checkout(remote, co, tmp_path)
+    assert _run_main(co, remote).returncode == 0
+    out = subprocess.run([SH, "-c", 'unset FONTCONFIG_FILE; . ./.animatica-env && printf "%s" "${FONTCONFIG_FILE-unset}"'], cwd=co, capture_output=True, text=True).stdout
+    assert out == "unset"
+
+
+def test_build_ships_fonts_and_checks_a_real_render():
+    text = BUILD_SH.read_text()
+    assert "sandbox_fonts.conf" in text and "DejaVu" in text
+    assert "--closure" in text
+    assert "animatica make" in text or "-m animatica make" in text  # the build proves a render works on the bundled fonts alone
+    wf = RUNTIME_WORKFLOW.read_text()
+    assert "fonts-dejavu-core" in wf

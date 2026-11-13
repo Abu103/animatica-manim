@@ -205,6 +205,8 @@ write_env() {
     printf 'export ANIMATICA_NATIVE_DIR=%s\n' "$(shq "$_rt/native/lib")"
     printf 'export PATH=%s:%s:"$PATH"\n' "$(shq "$_rt/bin")" "$(shq "$_rt/python/bin")"
     printf 'export LD_LIBRARY_PATH=%s${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}\n' "$(shq "$_rt/native/lib")"
+    # A bare machine has no fonts: when the runtime ships its own, fontconfig uses only those.
+    if [ -f "$_rt/native/etc/fonts.conf" ]; then printf 'export FONTCONFIG_FILE=%s\n' "$(shq "$_rt/native/etc/fonts.conf")"; fi
   } > "$1/.animatica-env"
 }
 

@@ -3,11 +3,14 @@
 #
 #   sh scripts/build_runtime.sh OUTDIR                 full build (CI: Debian 12 container)
 #   sh scripts/build_runtime.sh --pack-only STAGE OUTDIR   pack an existing stage dir (tests)
+#   sh scripts/build_runtime.sh --closure STAGE            bundle the shared libraries the native libs need
 #
 # The runtime is a standalone CPython (python-build-standalone) with every
 # dependency from pyproject.toml (including the test and TUI extras, the same
 # list runtime_key.sh hashes) installed into it, plus the cairo/pango shared
-# libraries, laid out as   python/   native/lib/ .
+# libraries (with everything they link against except glibc's own), the DejaVu
+# fonts and a fontconfig file that uses only those, laid out as
+#   python/   native/lib/   native/fonts/   native/etc/fonts.conf
 # OUTDIR receives animatica-runtime-<key>.tar.gz, part-NN (each below
 # ANIMATICA_PART_BYTES, GitHub's file limit is 100 MB) and SHA256SUMS.
 #
@@ -28,6 +31,36 @@ NATIVE_LIBS="cairo pixman-1 png16 Xrender Xext Xau Xdmcp lzo2 pango-1.0 pangoft2
 
 die() { echo "build_runtime: $*" >&2; exit 1; }
 
+# closure STAGE: copy into native/lib every shared library the bundled native libs and the
+# cairo/pango Python extensions resolve from the host (glib, fontconfig, freetype, libX11, zlib...),
+# so a machine with only curl, tar and sh can load them. glibc and the compiler runtime stay with
+# the host: they are the platform the runtime targets (glibc >= 2.36). Safe to run twice.
+CORE_LIBS='^(libc\.so|libm\.so|libpthread|libdl|librt|libutil|libresolv|ld-linux|linux-vdso|libgcc_s|libstdc\+\+)'
+closure() {
+  command -v ldd >/dev/null 2>&1 || die "ldd is needed to compute the library closure"
+  lib="$1/native/lib"
+  [ -d "$lib" ] || die "stage has no native/lib: $1"
+  list="$(mktemp)"
+  pass=0; total=0
+  while [ "$pass" -lt 3 ]; do
+    pass=$((pass + 1)); added=0
+    { find "$lib" -maxdepth 1 -name '*.so*' ; \
+      find "$1/python" \( -name '*cairo*.so' -o -name '*manimpango*.so' -o -name 'libpango*.so*' \) -type f 2>/dev/null; } > "$list"
+    while IFS= read -r f; do
+      LD_LIBRARY_PATH="$lib" ldd "$f" 2>/dev/null | awk '$3 ~ /^\// { print $1, $3 }'
+    done < "$list" | sort -u | while read -r name path; do
+      printf '%s\n' "$name" | grep -Eq "$CORE_LIBS" && continue
+      [ -e "$lib/$name" ] && continue
+      cp -aL "$path" "$lib/$name" && echo "closure: $name"
+    done > "$list.new"
+    if [ -s "$list.new" ]; then added=1; total=$((total + $(wc -l < "$list.new"))); fi
+    rm -f "$list.new"
+    [ "$added" = "1" ] || break
+  done
+  rm -f "$list"
+  echo "closure: $total librar$([ "$total" = 1 ] && echo y || echo ies) added to native/lib"
+}
+
 pack() {  # STAGE OUTDIR
   [ -x "$1/python/bin/python3" ] || die "stage has no python/bin/python3: $1"
   [ -d "$1/native" ] || die "stage has no native/ directory: $1"
@@ -42,6 +75,12 @@ pack() {  # STAGE OUTDIR
   ( cd "$2" && sha256sum part-* "$name" > SHA256SUMS )
   echo "packed $name: $(ls "$2"/part-* | wc -l | tr -d ' ') part(s), key $key"
 }
+
+if [ "${1:-}" = "--closure" ]; then
+  [ $# -eq 2 ] || die "usage: build_runtime.sh --closure STAGE"
+  closure "$2"
+  exit 0
+fi
 
 if [ "${1:-}" = "--pack-only" ]; then
   [ $# -eq 3 ] || die "usage: build_runtime.sh --pack-only STAGE OUTDIR"
@@ -77,6 +116,18 @@ done
 [ -e "$stage/native/lib/libcairo.so.2" ] || die "libcairo.so.2 is missing from $libdir"
 [ -e "$stage/native/lib/libpango-1.0.so.0" ] || die "libpango-1.0.so.0 is missing from $libdir"
 
+echo "== shared libraries the native libs link against (glib, fontconfig, freetype, X, zlib, ...)"
+closure "$stage"
+
+echo "== DejaVu fonts and a fontconfig file that uses only them"
+fontdir="${ANIMATICA_FONT_SRC:-/usr/share/fonts/truetype/dejavu}"
+mkdir -p "$stage/native/fonts" "$stage/native/etc"
+for f in DejaVuSans.ttf DejaVuSans-Bold.ttf DejaVuSans-Oblique.ttf DejaVuSans-BoldOblique.ttf DejaVuSansMono.ttf DejaVuSansMono-Bold.ttf DejaVuSerif.ttf DejaVuSerif-Bold.ttf; do
+  [ -f "$fontdir/$f" ] && cp "$fontdir/$f" "$stage/native/fonts/"
+done
+[ -f "$stage/native/fonts/DejaVuSans.ttf" ] || die "DejaVuSans.ttf is missing from $fontdir (apt: fonts-dejavu-core)"
+cp "$here/sandbox_fonts.conf" "$stage/native/etc/fonts.conf"
+
 echo "== making the tree relocatable and smaller"
 # pip writes absolute shebangs into console scripts; point them at whichever python is first on PATH
 for f in "$stage"/python/bin/*; do
@@ -90,5 +141,14 @@ find "$stage/python/lib" -type d \( -name tests -o -name test \) -prune -exec rm
 
 echo "== import check"
 LD_LIBRARY_PATH="$stage/native/lib" "$py" -c "import manim, cairo, manimpango, av, numpy, pydantic, typer, httpx, mcp, pytest, textual; print('imports ok')"
+
+echo "== a real render on the bundled libraries and fonts alone"
+# Environment cleared: no system fontconfig, no host library path, only what ships in the runtime.
+smoke="$work/smoke"; mkdir -p "$smoke"
+env -i HOME="$smoke" PATH="$stage/python/bin:/usr/bin:/bin" LD_LIBRARY_PATH="$stage/native/lib" \
+  FONTCONFIG_FILE="$stage/native/etc/fonts.conf" PYTHONPATH="$here/../src" \
+  "$py" -m animatica make "bar chart of sales by quarter" -o "$smoke/out" --preview >"$smoke/log" 2>&1 \
+  && [ -s "$smoke/out/video.mp4" ] || { tail -n 15 "$smoke/log" >&2; die "the smoke render failed on the bundled runtime"; }
+echo "render ok"
 
 pack "$stage" "$out"

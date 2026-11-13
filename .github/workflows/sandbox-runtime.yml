@@ -62,7 +62,7 @@ jobs:
               libcairo2 libpixman-1-0 libpng16-16 libxrender1 libxext6 liblzo2-2 \
               libpango-1.0-0 libpangoft2-1.0-0 libpangocairo-1.0-0 \
               libharfbuzz0b libfribidi0 libthai0 libdatrie1 libgraphite2-3 \
-              libxcb-render0 libxcb-shm0
+              libxcb-render0 libxcb-shm0 fonts-dejavu-core
             sh scripts/build_runtime.sh /out
           '
           ls -lh out
