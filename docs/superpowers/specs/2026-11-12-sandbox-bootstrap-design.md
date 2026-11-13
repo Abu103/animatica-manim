@@ -32,7 +32,7 @@ they are), GPU rendering, changing any component or render behavior.
 | --- | --- | --- |
 | Best | GitHub, PyPI | release asset; PyPI available for repair |
 | Average | GitHub incl. release CDN, no PyPI | release asset |
-| Worst | `codeload.github.com` only | `artifacts` branch via codeload, in parts |
+| Worst | `codeload.github.com` only | `runtime-<key>` branch via codeload, in parts |
 
 All tiers fetch the same bytes. Only hosting differs.
 
@@ -70,11 +70,12 @@ needs.
 
 Each step has its own timeout; failure moves to the next step.
 
-1. **Release asset** `animatica-runtime-<key>.tar.zst` (fastest).
-2. **`artifacts` branch via codeload**: `runtime/<key>/part-NN` files, each under
-   95 MB (GitHub file limit is 100 MB), joined and checked against
-   `SHA256SUMS`. This reuses the existing `artifacts` branch convention from
-   `native-deps.yml`.
+1. **Release asset** `animatica-runtime-<key>.tar.gz` (fastest). Gzip, because a bare sandbox cannot be assumed to have zstd.
+2. **`runtime-<key>` branch via codeload**: `part-NN` files, each under 95 MB
+   (GitHub file limit is 100 MB), joined and checked against `SHA256SUMS`. One
+   branch per runtime, because a codeload branch tarball downloads the whole
+   branch: a shared branch would pull every kept runtime. A tiny `runtime-latest`
+   branch holds a `KEY` file naming the newest key.
 3. **Key not published yet** (dependencies just changed, CI not finished): take
    the newest published runtime and, if PyPI is reachable, `pip install` only
    the difference.
@@ -95,9 +96,9 @@ New workflow `.github/workflows/sandbox-runtime.yml`:
 - Computes the key; skips if that release asset already exists.
 - Builds the runtime in a `python:3.12-slim-bookworm` container (glibc 2.36),
   reusing the native build already in `native-deps.yml`, packs it, uploads the
-  release asset, and force-pushes parts and `SHA256SUMS` to the `artifacts`
-  branch (single commit, so history does not grow).
-- Keeps only the last 3 runtimes on the branch.
+  release asset, and force-pushes parts and `SHA256SUMS` to a fresh
+  `runtime-<key>` branch (single commit) and updates `runtime-latest`.
+- Keeps only the last 3 `runtime-*` branches.
 
 Gate in `ci.yml`: a job fails the PR if the runtime key for the PR's
 `pyproject.toml` has no published runtime **and** the PR does not trigger the
@@ -146,7 +147,7 @@ The existing rules in `AGENTS.md` are unchanged.
 
 - Runtime size is an estimate (about 150 to 250 MB compressed, unmeasured).
 - glibc older than 2.36 sandboxes fall to fallback 5.
-- The `artifacts` branch is force-pushed; nothing else may live on it.
+- The `runtime-*` branches are force-pushed; nothing else may live on them.
 - python-build-standalone adds a third-party artifact; it is pinned by version
   and checksum in the workflow.
 - A sandbox that blocks even `codeload` has no fast path; fallback 5 also fails
