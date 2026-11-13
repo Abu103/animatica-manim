@@ -87,3 +87,26 @@ def test_code_walkthrough_render_no_lines(run_component):
     scene, warnings = run_component(CodeWalkthrough(), p)
     error_warnings = [w for w in warnings if "error" in w.lower()]
     assert len(error_warnings) == 0, f"Unexpected errors: {error_warnings}"
+
+
+@pytest.mark.parametrize(
+    "extra",
+    [
+        {"lines": [1, 2, 3, 4], "variables": {"n": "5", "result": "8"}},  # docs/gallery/code_walkthrough.json
+        {"lines": [1, 2, 3, 4]},  # no variable panel: one fade-in fewer
+        {"lines": [2, 4]},  # a subset of the lines
+        {},  # every line
+    ],
+    ids=["with-variables", "no-variables", "line-subset", "all-lines"],
+)
+def test_code_walkthrough_beat_is_not_longer_than_its_declared_duration(run_component, extra):
+    """The line holds used the whole duration and left no room for the 0.4s fade-out."""
+    p = CodeWalkthrough.Params(
+        title="Walk through",
+        code="def fib(n):\n    if n <= 1:\n        return n\n    return fib(n-1) + fib(n-2)",
+        language="python",
+        **extra,
+    )
+    scene, warnings = run_component(CodeWalkthrough(), p)
+    timing = [w for w in warnings if w.startswith("timing:")]
+    assert not timing, timing

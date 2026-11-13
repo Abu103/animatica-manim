@@ -64,3 +64,32 @@ def test_empty_caption_not_flagged():
     ])
     notes = check_generation_guidance(sb)
     assert notes == [], f"expected no notes, got: {notes}"
+
+
+def test_the_word_before_alone_is_not_a_comparison():
+    """fibonacci.json: 'the sum of the two before it' was flagged as a comparison."""
+    sb = _sb([{"component": "title_card", "params": {"title": "Fib"}, "caption": "Each number is the sum of the two before it."}])
+    assert check_generation_guidance(sb) == []
+
+
+def test_before_and_after_without_a_visual_is_still_flagged():
+    sb = _sb([{"component": "title_card", "params": {"title": "Fix"}, "caption": "Look at the before and after."}])
+    assert any("visual comparison" in n for n in check_generation_guidance(sb))
+
+
+def test_comparison_words_match_whole_words_only():
+    sb = _sb([{"component": "title_card", "params": {"title": "T"}, "caption": "Beforehand, prepare the originality check."}])
+    assert check_generation_guidance(sb) == []
+
+
+def test_stat_callout_delta_counts_as_a_visual_comparison():
+    """stat_callout.json: a delta of '+12% vs last year' is drawn next to the number."""
+    sb = _sb([{"component": "stat_callout", "params": {"value": "98%", "label": "pass rate", "delta": "+12% vs last year"},
+               "caption": "Nearly all students pass, up 12% from last year."}])
+    assert check_generation_guidance(sb) == []
+
+
+def test_stat_callout_without_a_delta_does_not_hide_a_missing_comparison():
+    sb = _sb([{"component": "stat_callout", "params": {"value": "98%", "label": "pass rate vs the original goal"},
+               "caption": "Nearly all students pass."}])
+    assert any("visual comparison" in n for n in check_generation_guidance(sb))

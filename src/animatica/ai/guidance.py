@@ -10,6 +10,8 @@ alone and only report.
 
 from __future__ import annotations
 
+import re
+
 from animatica.storyboard.models import Storyboard
 
 # ---------------------------------------------------------------------------
@@ -80,6 +82,12 @@ def caption_teaches_not_describes(sb: Storyboard) -> list[str]:
     return flags
 
 
+#: Comparison language, as whole words: "the two before it" and "beforehand" are not comparisons.
+_COMPARISON = re.compile(
+    r"\b(compare[sd]?|comparison|versus|vs|original|approximations?|approximates?|side by side|before and after)\b"
+)
+
+
 def comparison_has_visual(sb: Storyboard) -> list[str]:
     """Flag storyboards that mention a comparison but show only one side.
 
@@ -87,18 +95,20 @@ def comparison_has_visual(sb: Storyboard) -> list[str]:
     graph with approx_fn, a bar_chart, or a compare component is present.
     """
     flags: list[str] = []
-    comparison_words = ("compare", "versus", "vs ", "original", "approximation",
-                        "approximates", "before", "after", "side by side")
     for si, scene in enumerate(sb.scenes, 1):
         for beat in scene.beats:
             text = (beat.caption + " " + str(beat.params)).lower()
-            if not any(w in text for w in comparison_words):
+            if not _COMPARISON.search(text):
                 continue
             # Is there a visual comparison in this or a neighboring scene?
             has_visual = any(
                 b.component == "graph" and b.params.get("approx_fn", "").strip()
                 for s in sb.scenes for b in s.beats
-            ) or any(b.component in ("bar_chart", "compare") for s in sb.scenes for b in s.beats)
+            ) or any(b.component in ("bar_chart", "compare") for s in sb.scenes for b in s.beats) or any(
+                # a stat_callout draws its delta ("+12% vs last year") next to the number
+                b.component == "stat_callout" and str(b.params.get("delta", "")).strip()
+                for s in sb.scenes for b in s.beats
+            )
             if not has_visual:
                 flags.append(
                     f"scene {si}: caption mentions a comparison "

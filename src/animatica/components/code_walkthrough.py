@@ -12,7 +12,7 @@ from typing import ClassVar
 
 from pydantic import BaseModel, Field, model_validator
 
-from animatica.components._draw import Clock, fit, fit_in_room, prepare, text_card, warn
+from animatica.components._draw import FADE_OUT, Clock, fit, fit_in_room, prepare, text_card, warn
 from animatica.components.base import Component
 from animatica.storyboard.models import MAX_TEXT
 
@@ -102,8 +102,10 @@ class CodeWalkthrough(Component):
         # Step through lines: highlight each one in order with hold time
         n_lines = len(lines_to_show)
         if n_lines > 0:
-            # Budget: total duration minus title + code + vars fade-in time
-            hold_time = max(0.2, (self.duration(p) - 1.8) / n_lines)
+            # Budget: what is left after the fade-ins and the closing fade-out, in whole video
+            # frames (rounded down), so the beat is not longer than the duration it declared.
+            left = self.duration(p) - FADE_OUT - clock.used
+            hold_time = max(0.2, clock.seconds(int(left / n_lines * clock.fps)))
             for line_num in lines_to_show:
                 line_idx = line_num - 1  # convert to 0-based index
                 line_mob = rendered_lines[line_idx]
