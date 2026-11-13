@@ -13,6 +13,7 @@ plot is sized so the axis numbers stay clear of the caption.
 """
 from __future__ import annotations
 
+import functools
 import math
 from typing import ClassVar
 
@@ -50,9 +51,28 @@ BLOCK_BUFF = 0.3
 #: wraps instead of growing past the safe area.
 LEGEND_WRAP = 26
 
+#: Width a legend row keeps for its colour swatch, the gap after it and some slack.
+LEGEND_SWATCH_ROOM = 1.2
+
 #: Slack left between the band and the content, so rounding never pushes
 #: the plot past the safe area.
 LAYOUT_SLACK = 0.08
+
+@functools.lru_cache(maxsize=None)
+def math_scale(font_size: float) -> float:
+    """How much to scale a ``MathTex`` set at ``font_size`` so that its letters
+    are as tall as the letters of a ``Text`` set at the same size.
+
+    Manim sizes the two differently: at the same ``font_size`` a typeset letter
+    draws about 1.6x smaller than a sans-serif one, so a legend with one
+    typeset entry and one prose entry showed two type sizes side by side. The
+    ratio is measured on the real fonts (the sans font differs per platform),
+    never assumed.
+    """
+    from manim import MathTex, Text
+
+    return Text("x", font_size=font_size).height / MathTex("x", font_size=font_size).height
+
 
 def make_label(scene, text: str, colors):
     """MathTex label for math text, plain Text otherwise; on any LaTeX failure,
@@ -190,13 +210,17 @@ class Graph(Component):
         written as prose stays prose, and wraps instead of growing past the
         safe area.
         """
-        from manim import LEFT, RIGHT, Line, MathTex, Text, VGroup
+        from manim import LEFT, RIGHT, Line, MathTex, Text, VGroup, config
 
         swatch = Line(LEFT * 0.35, RIGHT * 0.35, stroke_color=color, stroke_width=stroke_width)
         if expression or looks_like_math(name):
             source = latex_expression(name)
             try:
                 label = MathTex(source, font_size=MIN_FONT_SIZE, color=colors.text)
+                label.scale(math_scale(MIN_FONT_SIZE))  # as big as the prose entries
+                room = config.frame_width * (1 - 2 * SAFE_AREA_MARGIN) - LEGEND_SWATCH_ROOM
+                if label.width > room:  # a long expression shrinks, it never leaves the frame
+                    label.scale_to_fit_width(room)
             except Exception as exc:  # LaTeX missing/broken: readable fallback, never abort
                 warn(scene, f"graph legend: LaTeX failed for {name!r} ({explain_latex_failure(exc)})")
                 label = Text(latex_to_plain(source), font_size=MIN_FONT_SIZE, color=colors.text)

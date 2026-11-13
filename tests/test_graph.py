@@ -23,7 +23,7 @@ from animatica.components._draw import (
     make_caption,
 )
 from animatica.components._latex import latex_to_plain
-from animatica.components.graph import Graph, latex_expression
+from animatica.components.graph import Graph, latex_expression, math_scale
 from animatica.components.theme import PALETTES
 from geometry import (
     RESOLUTIONS,
@@ -473,8 +473,12 @@ def test_the_legend_rows_share_one_text_size_on_one_baseline(width, height, name
             f"{name}: the swatch is at y={swatch.get_center()[1]:.3f}, the label's "
             f"middle is y={label.get_center()[1]:.3f}"
         )
-        assert label.font_size == pytest.approx(MIN_FONT_SIZE, abs=0.5), (
-            f"{name}: one entry is set at {label.font_size}, another at {MIN_FONT_SIZE}"
+        # A typeset label is scaled up to match the letters of a prose one (issue
+        # #27), so its font_size attribute is MIN_FONT_SIZE times that correction.
+        # Undo the correction and every entry is set at MIN_FONT_SIZE.
+        correction = math_scale(MIN_FONT_SIZE) if label.__class__.__name__ == "MathTex" else 1.0
+        assert label.font_size / correction == pytest.approx(MIN_FONT_SIZE, rel=0.02), (
+            f"{name}: one entry is set at {label.font_size / correction:.1f}, another at {MIN_FONT_SIZE}"
         )
 
 # ---------------------------------------------------------------------------
@@ -503,3 +507,72 @@ def test_the_legend_typesets_math_labels(width, height):
     ]
     assert entries, "the curves are named by expressions but the legend is plain text"
     assert any("e^{x}" in e.tex_string for e in entries), [e.tex_string for e in entries]
+
+# ---------------------------------------------------------------------------
+# Issue #27: the legend and the curves it names
+# ---------------------------------------------------------------------------
+
+#: The shapes the issue names: a rising curve, a falling one, an oscillating
+#: one and a parabola. The legend used to sit in a corner of the axes, which
+#: only suited the rising one.
+LEGEND_SHAPES = {
+    "rising": dict(fn="exp(x)", approx_fn="1 + x", x_range=(-2, 2), y_range=(-1.5, 8)),
+    "falling": dict(fn="exp(-x)", approx_fn="1 - x", x_range=(-2, 2), y_range=(-1.5, 8)),
+    "oscillating": dict(fn="sin(x)", approx_fn="x - x**3/6", x_range=(-6, 6), y_range=(-2, 2)),
+    "parabola": dict(fn="x**2", approx_fn="2*x - 1", x_range=(-3, 3), y_range=(-1, 9)),
+}
+
+
+@pytest.mark.parametrize("width,height", RESOLUTIONS)
+@pytest.mark.parametrize("shape", sorted(LEGEND_SHAPES))
+def test_the_legend_is_clear_of_every_curve_shape(shape, width, height):
+    """No curve of any shape may reach the legend, and no text overlaps it."""
+    comp = Graph()
+    with resolution(width, height):
+        beat = play_component(
+            comp,
+            Graph.Params(**LEGEND_SHAPES[shape], label="f", approx_label="approximation"),
+            width,
+            height,
+        )
+
+    legend = comp.last_legend
+    assert legend is not None
+    in_legend = {id(m) for m in legend.get_family()}
+    plot_top = max(
+        m.get_top()[1]
+        for m in beat.mobjects
+        if id(m) not in in_legend and m.__class__.__name__ in ("Axes", "VMobject")
+        and m.get_top()[1] != m.get_bottom()[1]
+    )
+    assert legend.get_bottom()[1] >= plot_top + 0.1, (
+        f"{shape}: the legend's bottom y={legend.get_bottom()[1]:.3f} is not above the plot's "
+        f"top y={plot_top:.3f}, so a curve can run through it"
+    )
+    assert_no_text_overlap(beat)
+
+
+@pytest.mark.parametrize("name", ["e", "x", "o"])
+def test_a_typeset_legend_entry_is_as_big_as_a_prose_one(name):
+    """The legend mixed two sizes: the same letter, typeset, drew much smaller.
+
+    `MathTex` at a font size draws about 1.6x smaller than `Text` at the same
+    size, so a legend with one typeset entry and one prose entry looked like
+    two different type sizes ("e^x" beside "1st-order Taylor").
+    """
+    from geometry import RecordingScene
+
+    comp = Graph()
+    scene = RecordingScene()
+    colors = PALETTES["dark-blue"]
+    typeset = comp._legend_entry(scene, name, colors.accent, 5, colors, expression=True)
+    prose = comp._legend_entry(scene, name, colors.accent, 5, colors, expression=False)
+
+    def label_height(entry):
+        return [m for m in entry.submobjects if m.__class__.__name__ in ("Text", "MathTex")][0].height
+
+    ratio = label_height(typeset) / label_height(prose)
+    assert 0.9 <= ratio <= 1.1, (
+        f"the typeset {name!r} is {ratio:.2f}x the height of the prose {name!r}: "
+        "the legend entries are set in different sizes"
+    )

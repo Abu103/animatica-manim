@@ -70,5 +70,9 @@
   "graph_taylor.json": {
     "scenes": 1,
     "duration": 12.0
+  },
+  "graph_legend_shapes.json": {
+    "scenes": 1,
+    "duration": 12.0
   }
 }

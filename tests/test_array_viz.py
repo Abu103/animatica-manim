@@ -212,3 +212,78 @@ def test_array_viz_title_is_centred_above_the_boxes(width, height):
     )
     assert_inside_safe_area(beat)
     assert_no_text_overlap(beat)
+
+
+# ---------------------------------------------------------------------------
+# Issue #28: a beat with steps takes exactly the duration it declares
+# ---------------------------------------------------------------------------
+
+#: The binary-search beat of issue #28: three range steps, each with a midpoint.
+BINARY_SEARCH = dict(
+    title="Sorted array with binary search",
+    values=[1, 3, 5, 8],
+    steps=[
+        {"low": 0, "high": 3, "mid": 1},
+        {"low": 2, "high": 3, "mid": 2},
+        {"low": 3, "high": 3, "mid": 3},
+    ],
+)
+
+STEP_KINDS = {
+    "binary_search": BINARY_SEARCH,
+    "swaps": dict(title="Bubble sort", values=[5, 2, 9, 1],
+                  steps=[{"swap": [0, 1]}, {"swap": [2, 3]}, {"swap": [1, 2]}]),
+    "highlights": dict(title="Scan", values=[4, 7, 1, 9, 3],
+                       steps=[{"highlight": [0, 1]}, {"highlight": [2, 3, 4]}]),
+    "mixed": dict(title="Mixed", values=[4, 7, 1, 9, 3],
+                  steps=[{"low": 1, "high": 4, "mid": 2, "highlight": [2]}, {"swap": [0, 4]}]),
+    "twelve_steps": dict(title="Twelve", values=list(range(12)),
+                         steps=[{"highlight": [i]} for i in range(12)]),
+}
+
+
+@pytest.mark.parametrize("width,height", RESOLUTIONS)
+@pytest.mark.parametrize("kind", sorted(STEP_KINDS))
+def test_array_viz_with_steps_takes_exactly_its_declared_duration(kind, width, height):
+    """`duration()` is 2.0 + 0.8 * steps; the animations are carved out of it.
+
+    play() spent 0.6 + 0.9 s on the intro and 1.6 s on every binary-search
+    step, so the issue's beat ran 6.7 s for a declared 4.4 s and the
+    captions drifted.
+    """
+    beat = play_component(ArrayViz(), ArrayViz.Params(**STEP_KINDS[kind]), width, height)
+
+    assert_beat_timing(beat)
+
+
+@pytest.mark.parametrize("kind", sorted(STEP_KINDS))
+def test_array_viz_beat_has_no_timing_warning(kind):
+    """The renderer's own `timing:` warning must stay silent."""
+    beat = play_component(ArrayViz(), ArrayViz.Params(**STEP_KINDS[kind]), 1280, 720)
+
+    assert not [w for w in beat.scene.warnings if w.startswith("timing:")], beat.scene.warnings
+
+
+@pytest.mark.parametrize("fps", [15, 24, 30, 60])
+@pytest.mark.parametrize("kind", sorted(STEP_KINDS))
+def test_array_viz_video_is_not_longer_than_its_beat(kind, fps):
+    """Manim rounds every animation up to a whole frame: budget in frames.
+
+    The video, counted in whole frames, may not be longer than the beat
+    declares, at any frame rate.
+    """
+    import math
+
+    from manim import tempconfig
+
+    with tempconfig({"frame_rate": fps}):
+        beat = play_component(ArrayViz(), ArrayViz.Params(**STEP_KINDS[kind]), 1280, 720)
+
+    frames = sum(math.ceil(rt * fps - 1e-9) for rt in beat.scene.played_run_times)
+    frames += sum(math.ceil(w * fps - 1e-9) for w in beat.scene.waited_seconds)
+    allowed = math.ceil(beat.duration * fps)
+
+    assert frames <= allowed, (
+        f"at {fps} fps the video is {frames / fps:.3f}s long ({frames} frames) "
+        f"but the beat declares {beat.duration}s ({allowed} frames allowed)"
+    )

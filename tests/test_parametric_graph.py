@@ -346,3 +346,61 @@ def test_parametric_graph_cli_render_discontinuity(tmp_path):
     warnings = report.get("warnings", [])
     pg_warnings = [w for w in warnings if "parametric_graph" in str(w).lower()]
     assert pg_warnings == [], f"parametric_graph fallback warnings: {pg_warnings}"
+
+
+# ---------------------------------------------------------------------------#
+# Issue #32: the axis numbers are round numbers, and they do not overlap     #
+# ---------------------------------------------------------------------------#
+
+def _is_nice_step(step: float) -> bool:
+    mantissa = step / 10 ** math.floor(math.log10(step))
+    return any(math.isclose(mantissa, m, rel_tol=1e-9) for m in (1, 2, 5, 10))
+
+
+@pytest.mark.parametrize(
+    "lo, hi",
+    [
+        (-0.9999900318453959, 0.9999900318453959),   # cos(t) / sin(t) over 0..6.28
+        (0.0, 6.28),                                 # t itself
+        (-12.7, 340.2),                              # a wide range
+        (0.00031, 0.00092),                          # a tiny range
+        (5.0, 5.0),                                  # a constant curve
+    ],
+)
+def test_nice_axis_gives_a_round_step_and_round_ends(lo, hi):
+    from animatica.components.parametric_graph import _nice_axis
+
+    a, b, step = _nice_axis(lo, hi)
+    assert a <= lo and b >= hi, "the axis must still contain every sampled point"
+    assert _is_nice_step(step), step
+    for end in (a, b):
+        assert math.isclose(end / step, round(end / step), abs_tol=1e-9), (end, step)
+    assert 3 <= round((b - a) / step) + 1 <= 14, "readable number of ticks"
+    # the numbers manim prints come from these floats: no long tails
+    for v in (a, b, step):
+        assert v == round(v, 10)
+
+
+@pytest.mark.render
+def test_circle_axis_numbers_are_round_and_do_not_overlap():
+    import sys
+    from pathlib import Path
+
+    sys.path.insert(0, str(Path(__file__).parent))
+    from geometry import assert_no_text_overlap, play_component
+
+    p = ParametricGraph.Params(
+        title="Parametric Circle",
+        x_expr="cos(t)",
+        y_expr="sin(t)",
+        t_range=(0.0, 6.28),
+        label="Circle",
+    )
+    beat = play_component(ParametricGraph(), p, 1280, 720)
+    numbers = [t for t in beat.texts if t.__class__.__name__ == "DecimalNumber"]
+    assert numbers, "the parametric graph drew no axis numbers"
+    for n in numbers:
+        value = n.get_value()
+        assert value == pytest.approx(round(value, 2)), f"axis number {value!r} is not round"
+        assert n.num_decimal_places <= 2, n.num_decimal_places
+    assert_no_text_overlap(beat)

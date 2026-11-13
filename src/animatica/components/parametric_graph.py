@@ -19,6 +19,28 @@ from animatica.storyboard.safety import parse_function, UnsafeInput
 SAMPLES = 400
 
 
+def _nice_axis(lo: float, hi: float) -> tuple[float, float, float]:
+    """Round a sampled range to ``(start, stop, step)`` the viewer can read.
+
+    ``lo`` and ``hi`` come from sampling the curve, so they are floats like
+    -0.9999900318453959; Manim prints axis numbers straight from the range
+    and the step. The step is a "nice" one (1, 2 or 5 times a power of ten,
+    the way ``graph`` picks it), and both ends are multiples of it, so every
+    tick is a round number. The result always contains ``[lo, hi]``.
+    """
+    from animatica.components.graph import nice_step
+
+    span = hi - lo
+    if span <= 0:  # a constant curve: give the axis some room around the value
+        span = max(abs(lo), 1.0)
+        lo, hi = lo - span / 2, hi + span / 2
+        span = hi - lo
+    step = nice_step(span)
+    start = math.floor(round(lo / step, 9)) * step
+    stop = math.ceil(round(hi / step, 9)) * step
+    return round(start, 10), round(stop, 10), round(step, 10)
+
+
 def _sample_and_segment(
     fx, fy, t0: float, t1: float, samples: int = SAMPLES
 ) -> tuple[list[list[tuple[float, float]]], float]:
@@ -156,11 +178,13 @@ class ParametricGraph(Component):
         x_lo, x_hi = min(xs), max(xs)
         y_lo, y_hi = min(ys), max(ys)
         pad = 0.05 * data_range
+        x_start, x_stop, x_step = _nice_axis(x_lo - pad, x_hi + pad)
+        y_start, y_stop, y_step = _nice_axis(y_lo - pad, y_hi + pad)
 
         try:
             axes = Axes(
-                x_range=[x_lo - pad, x_hi + pad, max((x_hi - x_lo) / 5, 0.1)],
-                y_range=[y_lo - pad, y_hi + pad, max((y_hi - y_lo) / 5, 0.1)],
+                x_range=[x_start, x_stop, x_step],
+                y_range=[y_start, y_stop, y_step],
                 x_length=10.0,
                 y_length=5.0,
                 axis_config={"color": colors.muted, "include_numbers": True},
