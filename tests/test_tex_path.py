@@ -126,9 +126,11 @@ def test_fresh_tinytex_without_dvisvgm_is_still_found(tmp_path):
     assert env["PATH"].split(os.pathsep)[0] == str(bin_dir)
 
 
-def test_dir_without_latex_is_not_accepted(tmp_path):
+def test_dir_without_latex_is_not_accepted(tmp_path, monkeypatch):
     bin_dir = tmp_path / "AppData" / "TinyTeX" / "bin" / "windows"
     bin_dir.mkdir(parents=True)
+    # Hermetic: a real TinyTeX in a fixed place (C:/tools/tinytex) must not decide this test.
+    monkeypatch.setattr("animatica.doctor.tinytex_bin_dirs", lambda platform=None, env=None: [bin_dir])
     env = {"PATH": "/nonexistent", "APPDATA": str(tmp_path / "AppData")}
     assert ensure_tex_on_path("win32", env) is None
 

@@ -1,6 +1,14 @@
 # Animatica session log (live, edit as you go)
 Updated: 2026-11-11. Newest status on top. Any Claude session can resume from here.
 
+## Status (2026-11-13, Claude session, card "the four Windows-only test failures")
+- Branch: `hermes/windows-test-env`, off `main` = `ff7cc06`. **Not pushed.**
+- Changed: `tests/test_bootstrap_script.py`, `tests/test_tex_path.py`, `docs/SESSION_TASKS.md`. **No source change.**
+- **Cause, from the owner's Windows run**: (1) `bash` on PATH was `C:\Windows\system32\bash.EXE`, the WSL launcher; it answers `--version` but cannot open a `C:\...` script path (`No such file or directory`, exit 127), so 3 tests in `test_bootstrap_script.py` failed. (2) `test_dir_without_latex_is_not_accepted` found the machine's real `C:/tools/tinytex/bin/windows` (a fixed candidate in `tinytex_bin_dirs`) and returned it instead of `None`.
+- **Fix**: `_usable_bash()` now tries Git for Windows' bash first (next to the `git` found on PATH, then the default folders), and accepts a candidate only if it also parses the real script (`bash -n <script>`). The tex test patches `tinytex_bin_dirs` to the temp dir only, so no installed TinyTeX can decide it. New test: a shell that answers `--version` but cannot open the script is rejected.
+- Verified on Linux: `tests/test_bootstrap_script.py` + `tests/test_tex_path.py` -> 49 passed (was 48 + the new test).
+- NOT verified: on Windows. The failure itself cannot be reproduced on Linux (no WSL launcher, no `C:/tools/tinytex`); the owner's run is the evidence. Run `python scripts/ci_tests.py` on Windows: the expected result is 0 failed.
+
 ## Status (2026-11-11, Hermes session, card "dynamic worker count for pytest (-n) and the render gate")
 - Branch: `hermes/m2-eval-baseline` (current, off `main` = `88652e2`). **Not pushed.** No new branch created; this completes the owner's in-progress worker-count rework left in the working tree.
 - Changed: `src/animatica/backends/scheduler.py`, `scripts/ci_tests.py`, `scripts/ci_render_gate.py`, `tests/test_scheduler.py`, `docs/SETUP.md`.
