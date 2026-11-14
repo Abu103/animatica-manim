@@ -1,6 +1,6 @@
 # Narration: offline TTS timed to captions
 
-Date: 2026-11-14 · Base: `main` @ `a54a93b` · Status: proposed (not approved) · Path: architectural
+Date: 2026-11-14 · Base: `main` @ `a54a93b` · Status: **approved** (owner, 2026-11-14) · Path: architectural
 
 ## 1. Problem and success criteria
 
@@ -109,13 +109,20 @@ render pipeline's timing math doesn't change; it gets one more input.
 - `report.json`: records which voice was used and its license, so a user who
   ships the output video knows what they're bound by without re-deriving it.
 
-## 5. What's not decided here (owner input needed)
+## 5. Decided (owner, 2026-11-14)
 
-- Is a ~60MB default voice model an acceptable addition to a "one command,
-  under a minute" install promise (section 1 of the sandbox spec), or does it
-  need to be fetched lazily only when `--narrate` is first used?
-- `--voice` exposed in 0.3, or default-only until there's a second
-  verified-license voice worth offering?
+- **Lazy-fetch, not bundled.** The default voice is fetched on first
+  `--narrate` use (or `doctor --fix`), not installed by `sandbox.sh`/
+  `bootstrap.*`. A 60MB add to the "under a minute, any network tier" install
+  promise is not worth it for a feature most installs won't touch on day one.
+  Same fail-closed, pinned-sha256 posture as the Windows TeX bundle: fetched
+  and verified once, cached after that; `--narrate` without network and
+  without a cached voice fails with a clear message, it does not fall back
+  to no narration silently.
+- **`--voice` ships in 0.3**, default-only allowlist (`en_US-ljspeech-medium`)
+  until a second voice's MODEL_CARD is checked. The flag exists now so later
+  additions are a data change (one more allowlist entry + its checked
+  license), not a CLI change.
 
 ## 6. Non-goals, restated
 

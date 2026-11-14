@@ -318,9 +318,17 @@ Files: README.md. Add a short "what you get" section linking docs/GALLERY.md and
 Use skill `animatica-release`. Cards: T21 changelog, T22 version bump, T23 release notes draft. The owner performs the tag and release.
 
 ---
-## v0.3 (PROPOSALS, need owner approval and a Claude-written spec first)
-- Narration: offline text-to-speech timed to captions (candidate: Piper; UNVERIFIED current licensing/availability). New `--narrate` flag; captions already exist as timing source.
-- Components batch 2: choose 6-9 with the owner (examples: probability tree, venn, pie/donut, code diff, network/graph traversal, unit-circle). Each is one card using `animatica new-component`.
-- Agent surface: publish `skills/animatica` to the Hermes skills hub path; MCP tool polish.
-- HyperFrames: decide promote or keep experimental after seeing real demand.
-- Not before 0.3: web UI, doc-to-video, research-backed prompts.
+## v0.3 (APPROVED by the owner, 2026-11-14)
+- **Narration: approved.** Spec: `docs/superpowers/specs/2026-11-14-narration-design.md`
+  (licensing resolved, sync strategy = extend beat to `max(visual, narration)`,
+  default voice lazy-fetched, `--voice` ships in 0.3 default-only). Next: T26
+  implementation card off this spec.
+- **Components batch 2: approved, all 6 of the listed examples** (no new ones
+  substituted): probability tree, venn, pie/donut, code diff, network/graph
+  traversal, unit-circle. One card per component via `animatica new-component`,
+  cards T27-T32.
+- **Agent surface: approved.** Publish `skills/animatica` to the Hermes skills
+  hub path; MCP tool polish. Card T33.
+- **HyperFrames: keep experimental.** No real-demand signal yet to promote it;
+  revisit when one shows up rather than on a schedule. Not a card.
+- Not before 0.3 (unchanged): web UI, doc-to-video, research-backed prompts.
