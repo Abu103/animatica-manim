@@ -10,7 +10,6 @@ import shutil
 import subprocess
 from pathlib import Path
 
-import pytest
 
 ROOT = Path(__file__).resolve().parent.parent
 KEY_SH = ROOT / "scripts" / "runtime_key.sh"
@@ -253,7 +252,7 @@ def test_unpublished_key_uses_latest_with_a_warning(tmp_path):
     r, dest = _fetch(tmp_path, remote, key=KEY)
     assert r.returncode == 0, r.stdout + r.stderr
     assert "source=latest" in r.stdout
-    assert f"WARN" in r.stdout + r.stderr and OLD_KEY in r.stdout + r.stderr
+    assert "WARN" in r.stdout + r.stderr and OLD_KEY in r.stdout + r.stderr
     assert (dest / "MARKER").read_text() == "old"
 
 
@@ -402,7 +401,7 @@ def _run_main(co: Path, remote: Remote, *args: str, extra_env: dict | None = Non
     env = {
         **os.environ, **remote.env(),
         "ANIMATICA_GIT_URL": "file:///nonexistent/repo.git",
-        "ANIMATICA_PYPI_URL": f"file:///nonexistent/pypi",
+        "ANIMATICA_PYPI_URL": "file:///nonexistent/pypi",
         "ANIMATICA_DOCTOR_CMD": "true",
         "ANIMATICA_SMOKE_CMD": "true",
         "ANIMATICA_TEX_FETCH": "true",

@@ -1,6 +1,22 @@
 # Animatica session log (live, edit as you go)
 Updated: 2026-11-11. Newest status on top. Any Claude session can resume from here.
 
+## Status (2026-11-14, Claude session, card C1 "a lint gate for real defects")
+- Branch: `hermes/c1-lint-defects`, off `main` = `7e231ae`. **Not pushed** (no GitHub link in the session; delivered as a patch).
+- Changed: `pyproject.toml` (ruff config, `ruff` in the `dev` extra), `.github/workflows/ci.yml` (one lint step in `linux-tests`), 51 source, test and script files for the fixes below (20 in `src`, 30 in `tests`, 1 in `scripts`), `docs/SESSION_TASKS.md`. This is far over the 5-file card limit because most of those files are one-line unused-import removals.
+- **Evidence (RED)**: `ruff check src scripts tests --select F,E9` found **110 defects** on `main`: 88 unused imports, 12 unused variables, 4 f-strings without placeholders, 4 undefined names, 2 redefinitions. (`experiments/` has 11 more; it is excluded on purpose, the pilots are self-contained.)
+- **Fix**: the 110 are gone, and CI now fails on any new one (`python -m ruff check src scripts tests`, rules `F` and `E9` only; no style rules).
+  - `ai/repair.py`: `Scene` was used in annotations and never imported; the mid-file imports moved to the top and the `_VE` alias is gone.
+  - `tui.py`: `ComposeResult` is a `TYPE_CHECKING` import now, not a lazily-built dict entry.
+  - `cli.py edit`: five locals "snapshotting originals for rollback" were never read (the comment described a rollback that works on files, not on these); removed with the comment.
+  - `manim_backend.py` `colors`, `bar_chart.py`/`bounce_sequence.py` `top`, `eval.py` `eventual`: assigned, never used; removed.
+  - **Four tests in `test_pipeline.py` guarded nothing**: they patched `pipeline.ManimBackend`, a name production code no longer reads (backends come from `default_backends()`). Autofix removing that dead import exposed it. They now patch `animatica.backends.ManimBackend`, where it is really instantiated.
+  - `test_capability.py::test_compatible_capabilities_pass` was `assert True` ("placeholder"); deleted, the registry-based test after it is the real one. Two unused assignments in `test_doctor_fix.py` / `test_eval.py` dropped.
+- Verified (this session, Linux sandbox from `scripts/sandbox.sh`): `ruff check src scripts tests` -> All checks passed. `pytest -n 4` on the branch: **13 failed, 1283 passed, 40 skipped, 2 errors**; on untouched `main`: 13 failed, 1284 passed, 2 errors. The failed/error set is **identical** (diffed); the one fewer pass is the deleted placeholder. `ANIMATICA_NO_RENDER_CACHE=1 python scripts/ci_render_gate.py` -> `CLEAN: 20 storyboard(s) rendered within the allowlist`.
+- The 15 failures are the sandbox, not the code: no `dvisvgm` (graph and caption-room tests, 10 of them), a 2-CPU box where `test_system_info_cpus_and_memory` expects 3, and the system ffmpeg at an absolute path (2 `test_backend_base` errors, 1 `test_doctor_fix`).
+- **FOUND, not fixed (next card)**: `scripts/sandbox.sh` writes `LD_LIBRARY_PATH=<runtime>/native/lib` into `.animatica-env`, and every child process inherits it. The system `ffmpeg` then dies with `symbol lookup error: libgdk_pixbuf-2.0.so.0: undefined symbol: g_task_set_static_name`, so a two-scene render fails at the concat step with exit 127 inside the sandbox. Proof: the same binary runs with `env -u LD_LIBRARY_PATH`. The render gate was run through a wrapper that unsets it.
+- NOT verified: the 40 render-marked tests did not run (no `dvisvgm`); the lint step in `ci.yml` has not run on GitHub; nothing was run on Windows.
+
 ## Status (2026-11-13, Claude session, card "parametric_graph: a circle is a circle, and labels stay readable")
 - Branch: `hermes/parametric-shape`, stacked on `hermes/eval-model-flag`. **Not pushed.**
 - Changed: `src/animatica/components/parametric_graph.py`, `tests/test_parametric_graph.py`, `docs/SESSION_TASKS.md`.

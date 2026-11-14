@@ -11,7 +11,7 @@ from typing import ClassVar
 
 from pydantic import BaseModel, Field, model_validator
 
-from animatica.components._draw import Clock, fit, fit_in_room, prepare, text_card, warn
+from animatica.components._draw import Clock, fit_in_room, prepare
 from animatica.components.base import Component
 from animatica.storyboard.models import MAX_TEXT
 

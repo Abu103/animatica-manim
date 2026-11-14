@@ -19,7 +19,6 @@ import json
 import os
 import platform
 import resource
-import subprocess
 import sys
 import time
 from pathlib import Path
@@ -276,7 +275,7 @@ def main() -> None:
     )
     args = parser.parse_args()
 
-    print(f"Animatica Performance Benchmark")
+    print("Animatica Performance Benchmark")
     print(f"  Quality: {args.quality}")
     print(f"  Runs per storyboard: {args.runs}")
     print(f"  Output directory: {args.output}")

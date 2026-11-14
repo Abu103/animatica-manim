@@ -11,10 +11,9 @@ import threading
 from typing import ClassVar
 from pathlib import Path
 
-from animatica.backends.base import RenderBackend, RenderOptions, RenderResult
+from animatica.backends.base import RenderOptions, RenderResult
 from animatica.backends.scheduler import concat_videos, render_scenes_parallel
 from animatica.components.registry import default_registry
-from animatica.components.theme import get_colors
 from animatica.paths import check_tex_safe, long_path
 from animatica.report import StageTimer
 from animatica.storyboard.models import Storyboard, dump_storyboard
@@ -66,7 +65,6 @@ class ManimBackend:
             dump_storyboard(sb, sb_path)
 
         registry = default_registry()
-        colors = get_colors(sb.theme)
 
         # Durations are pure functions of the storyboard: compute them serially so
         # the list stays in scene index order regardless of render parallelism.

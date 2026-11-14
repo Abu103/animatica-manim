@@ -49,7 +49,6 @@ class BarChart(Component):
         total = self.duration(p)
         slot = 11.0 / n
         width = min(1.4, slot * 0.7)
-        top = max(p.values) or 1.0
         xs = [(-5.5 + slot * (i + 0.5)) for i in range(n)]
         heights, used_scale = scaled_heights(list(p.values), MAX_BAR_HEIGHT, 0.12, p.scale)
         bars, vals, cats = [], [], []

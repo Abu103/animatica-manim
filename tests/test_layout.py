@@ -1,4 +1,3 @@
-import pytest
 
 from animatica.native.layout import layout_graph
 

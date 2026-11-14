@@ -1,11 +1,8 @@
 """Tests for transactional `animatica edit`: originals preserved on failure."""
 from __future__ import annotations
 
-import json
 from pathlib import Path
-from unittest.mock import MagicMock
 
-import pytest
 from typer.testing import CliRunner
 
 from animatica.ai.base import StoryboardGenerationError
@@ -526,4 +523,4 @@ def test_replace_rollback_removes_new_media_directory(tmp_path: Path, monkeypatc
     # Backup dir preserved for manual recovery
     import glob as _glob
     backup_dirs = _glob.glob(str(out_dir.parent / "*.edit-backup-*"))
-    assert len(backup_dirs) >= 1, f"expected backup dir"
+    assert len(backup_dirs) >= 1, "expected backup dir"

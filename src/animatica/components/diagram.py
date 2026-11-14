@@ -6,7 +6,7 @@ from typing import ClassVar
 
 from pydantic import BaseModel, Field, model_validator
 
-from animatica.components._draw import Clock, fit, prepare, warn
+from animatica.components._draw import Clock, prepare
 from animatica.components.base import Component
 from animatica.components.theme import ThemeColors
 from animatica.native import layout_graph

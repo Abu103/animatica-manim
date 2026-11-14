@@ -1,9 +1,8 @@
 import json
 
 import pytest
-from pydantic import BaseModel, Field
 
-from animatica.ai.base import StoryboardGenerationError, extract_json
+from animatica.ai.base import StoryboardGenerationError
 from animatica.ai.repair import generate_storyboard_two_stage
 from animatica.components.registry import default_registry
 
