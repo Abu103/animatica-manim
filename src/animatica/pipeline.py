@@ -49,22 +49,37 @@ def _vtt_timestamp(seconds: float) -> str:
     return f"{h:02d}:{m:02d}:{s:02d}.{ms:03d}"
 
 
-def _beat_durations(sb: Storyboard, registry) -> list[list[float]]:
+def _beat_durations(
+    sb: Storyboard, registry, narration_durations: list[list[float]] | None = None
+) -> list[list[float]]:
     """How long each beat of each scene runs, in the storyboard's order.
 
     The frame lint judges a beat as a whole: a beat that fades in must not
     be condemned by its first frame, and a beat that never showed anything
     must still be reported.
+
+    ``narration_durations``, when given, is a per-beat floor in the same
+    nested shape (see ``narration.narrate_storyboard``): each beat's duration
+    becomes ``max(visual, narration)``, holding the component's resting frame
+    for the difference rather than speeding up either side (spec section 3).
+    A scene or beat with no corresponding entry -- narration wasn't
+    synthesized for it, or the list is simply shorter -- keeps its visual
+    duration unchanged. With ``narration_durations=None`` (the default, no
+    ``--narrate``) this is exactly what it always was.
     """
     out: list[list[float]] = []
-    for scene in sb.scenes:
+    for s_idx, scene in enumerate(sb.scenes):
         durations: list[float] = []
-        for beat in scene.beats:
+        scene_narration = narration_durations[s_idx] if narration_durations and s_idx < len(narration_durations) else []
+        for b_idx, beat in enumerate(scene.beats):
             try:
                 comp = registry.get(beat.component)
-                durations.append(comp.duration(comp.Params.model_validate(beat.params)))
+                duration = comp.duration(comp.Params.model_validate(beat.params))
             except Exception:  # pragma: no cover - the storyboard is validated earlier
-                durations.append(0.0)
+                duration = 0.0
+            if b_idx < len(scene_narration):
+                duration = max(duration, scene_narration[b_idx])
+            durations.append(duration)
         out.append(durations)
     return out
 

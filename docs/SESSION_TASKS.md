@@ -1,6 +1,14 @@
 # Animatica session log (live, edit as you go)
 Updated: 2026-11-14. Newest status on top. "Not pushed" in an entry means as of when it was written; `gh pr list --state all` is the source of truth for what merged. Any Claude session can resume from here.
 
+## Status (2026-11-14, Claude session, card T26b "narration duration sync")
+- Branch: `hermes/t26b-narration-sync` off `main` @ `4e8fa29` (T26, #54, already merged). **Not pushed**; delivered as a patch.
+- `narration.py`: `wav_duration_seconds(path)` -- reads a WAV's real frame count and rate via the stdlib `wave` module, never assumed.
+- `pipeline.py`: `_beat_durations()` takes an optional `narration_durations` (same nested per-scene-per-beat shape as `narrate_storyboard`'s output) and takes `max(visual, narration)` per beat, per the spec's section 3 decision. A beat with no corresponding narration entry, or a shorter list, keeps its visual duration -- and with `narration_durations=None` (the default) the function's output is unchanged from before this card.
+- Still not wired into `make_video` or the CLI -- that's T26c (doctor check + lazy voice-model fetch) and T26d (`--narrate`/`--voice` flag + the actual synthesize-then-render-then-mux sequence + ffmpeg mux). This card only gives `_beat_durations` the capability; nothing calls it with real narration data yet.
+- Verified: `pytest tests/test_beat_durations.py` (5 passed); together with `test_narration.py`, `test_pipeline.py`, `test_caption.py`, `test_cache.py`, `test_frame_lint.py`: 96 passed, 8 skipped (all 8 skips are the pre-existing "needs manim + latex + dvisvgm + ffmpeg" sandbox gap from T26's session, unrelated to this change); `ruff check` on all three changed files, clean. Patch applies clean and its tests pass against the real pushed `main` (checked by cloning fresh).
+- NOT run: the full `scripts/ci_tests.py` gate, same `dvisvgm`-missing reason as T26.
+
 ## Status (2026-11-14, Claude session, card T26 "narration core module")
 - Branch: `hermes/t26-narration-core` off `hermes/t25-v03-approvals`. **Not pushed**; delivered as a patch.
 - Scope, deliberately narrowed from the full narration spec (AGENTS.md rule 10): just the core module, no pipeline wiring, no mux, no doctor check, no CLI flag. Those are separate cards (T26b sync wiring, T26c doctor check + voice fetch, T26d CLI flag + ffmpeg mux) so each stays reviewable on its own.

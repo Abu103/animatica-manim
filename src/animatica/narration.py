@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import shutil
 import subprocess
+import wave
 from pathlib import Path
 
 from animatica.pipeline import beat_text
@@ -70,6 +71,17 @@ def synthesize(
         reason = lines[-1][:200] if lines else f"piper exited {proc.returncode}"
         raise NarrationUnavailable(f"piper failed to synthesize: {reason}")
     return out_path
+
+
+def wav_duration_seconds(path: Path) -> float:
+    """How long a WAV file plays, from its own frame count and rate.
+
+    Used to turn each beat's synthesized narration into a duration floor for
+    ``pipeline._beat_durations`` (spec section 3) -- never assumed, always
+    read back from the file Piper actually wrote.
+    """
+    with wave.open(str(path), "rb") as w:
+        return w.getnframes() / float(w.getframerate())
 
 
 def narrate_storyboard(
