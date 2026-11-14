@@ -1,6 +1,13 @@
 # Animatica session log (live, edit as you go)
 Updated: 2026-11-14. Newest status on top. "Not pushed" in an entry means as of when it was written; `gh pr list --state all` is the source of truth for what merged. Any Claude session can resume from here.
 
+## Status (2026-11-14, Claude session, card C4 "PR triage and branch cleanup")
+- Branch: `hermes/c4-windows-tex-cache`. **Not pushed**; delivered as a patch.
+- Done by the owner from the commands given: PRs #48 (C1 + C2) and #49 (C3) merged; 23 remote branches whose PRs were merged deleted (every one from `gh pr list --state merged`, none with an open PR). That list included `hermes/c31-caption-duplicate`, so the C3 note that its PR was unidentified is now settled: it was merged.
+- **#38 (`steps_list` caption room, #30): close.** `main` already has the identical code in `steps_list.py` and the `KNOWN_VIOLATORS` entry is gone (#42/#43).
+- **#40 (`ci/apt-cache-linux`): close, one change kept here.** Its apt-cache commit is #39, already merged. Its remaining change moves the Windows TinyTeX cache path from `.tex` to `%LOCALAPPDATA%\Animatica\tex`, which is where `tex_bundle.install_windows_bundle` unpacks the bundle (per-user dir first, `.tex` only as the fallback), so the job has been caching a directory that stays empty. This card applies the path fix only. #40 also changed the save condition from main-only to "not a pull request"; not taken, since every branch push would write a new cache entry per run.
+- Verified: the path against `src/animatica/tex_bundle.py` (`user_data_tex_dir`) and `scripts/bootstrap.ps1`; `ci.yml` diff is two lines. NOT verified: the cache actually saves and restores; the save step only runs on `main`, so read the first `windows` run after merge for "Cache saved" and a restore hit on the next one. The `C:\Users\runneradmin` path assumes GitHub-hosted Windows runners.
+
 ## Status (2026-11-14, Claude session, card C3 "docs cleanup")
 - Branch: `hermes/c-minor-docs` (the minor PR; C1 + C2 are in the major PR `hermes/c-major-lint-ffmpeg`, by the owner's request). **Not pushed**; delivered as a patch.
 - Changed (docs only): `CHANGELOG.md` (new Unreleased section: sandbox setup, lint gate, ffmpeg fix, caption/graph/compare fixes, CI split; later eval items that sat under v0.1.1 moved up), this log (stale "Not pushed" lines now name the PR that merged them; #46, #34, #26, #19; `c31-caption-duplicate` left unmatched), `docs/superpowers/plans/2026-11-12-sandbox-bootstrap.md` (36 boxes ticked, status note), its spec (draft -> implemented), `docs/ROADMAP.md` and `AGENTS.md` (no longer "DRAFT").

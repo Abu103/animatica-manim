@@ -372,7 +372,8 @@ jobs:
       - name: Restore TinyTeX cache
         uses: actions/cache/restore@v4
         with:
-          path: .tex
+          # where scripts/bootstrap.ps1 really unpacks it: %LOCALAPPDATA%\Animatica\tex (src/animatica/tex_bundle.py), not the repo's .tex
+          path: C:\Users\runneradmin\AppData\Local\Animatica\tex
           key: windows-tex-native-deps-v1-${{ runner.os }}-${{ github.run_id }}
           restore-keys: |
             windows-tex-native-deps-v1-${{ runner.os }}-
@@ -388,7 +389,8 @@ jobs:
         if: success() && github.ref == 'refs/heads/main'
         uses: actions/cache/save@v4
         with:
-          path: .tex
+          # where scripts/bootstrap.ps1 really unpacks it: %LOCALAPPDATA%\Animatica\tex (src/animatica/tex_bundle.py), not the repo's .tex
+          path: C:\Users\runneradmin\AppData\Local\Animatica\tex
           key: windows-tex-native-deps-v1-${{ runner.os }}-${{ github.run_id }}
 
       # --------------------------------------------------
