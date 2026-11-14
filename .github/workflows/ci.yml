@@ -339,9 +339,13 @@ jobs:
       - run: python scripts/ci_smoke.py
       - run: python scripts/ci_render_gate.py
 
-  windows:
+  # Split the same way as linux: one half runs the suite, the other does the real
+  # installer/render checks, and a cheap Linux aggregate below is what branch
+  # protection actually waits on. This is what shortened the windows wall-clock
+  # that was bottlenecking every CI run.
+  windows-tests:
     runs-on: windows-latest
-    timeout-minutes: 60
+    timeout-minutes: 45
     defaults:
       run:
         shell: pwsh
@@ -349,10 +353,6 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-
-      # --------------------------------------------------
-      # Python + uv
-      # --------------------------------------------------
 
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -365,10 +365,6 @@ jobs:
           enable-cache: true
           cache-dependency-glob: pyproject.toml
 
-      # --------------------------------------------------
-      # TinyTeX cache
-      # --------------------------------------------------
-
       - name: Restore TinyTeX cache
         uses: actions/cache/restore@v4
         with:
@@ -378,78 +374,24 @@ jobs:
           restore-keys: |
             windows-tex-native-deps-v1-${{ runner.os }}-
 
-      # --------------------------------------------------
-      # Real installer test
-      # --------------------------------------------------
-
       - name: Windows installer, end to end (PowerShell)
         run: pwsh -NoProfile -File scripts/bootstrap.ps1
 
+      # Saved from this half only: both halves restore the same key, and two
+      # jobs saving it in parallel just race for the cache-service reservation.
       - name: Save TinyTeX cache
         if: success() && github.ref == 'refs/heads/main'
         uses: actions/cache/save@v4
         with:
-          # where scripts/bootstrap.ps1 really unpacks it: %LOCALAPPDATA%\Animatica\tex (src/animatica/tex_bundle.py), not the repo's .tex
           path: C:\Users\runneradmin\AppData\Local\Animatica\tex
           key: windows-tex-native-deps-v1-${{ runner.os }}-${{ github.run_id }}
-
-      # --------------------------------------------------
-      # Installer verification
-      # --------------------------------------------------
-
-      - name: Doctor from a non-project directory (bundle visibility)
-        shell: pwsh
-        run: |
-          $d = Join-Path $env:TEMP "animatica-doctor-cwd-test"
-          New-Item -ItemType Directory -Force $d | Out-Null
-
-          $animatica = "$env:GITHUB_WORKSPACE\.venv\Scripts\animatica.exe"
-
-          if (-not (Test-Path $animatica)) {
-            Write-Host "::error::animatica.exe not found at $animatica"
-            exit 1
-          }
-
-          $latex = Get-Command latex -ErrorAction SilentlyContinue
-
-          if ($latex) {
-            Write-Host "::error::latex is on PATH ($($latex.Source)); the bundle must not be discoverable"
-            exit 1
-          }
-
-          Push-Location $d
-          try {
-            $output = & $animatica doctor 2>&1
-          } finally {
-            Pop-Location
-          }
-
-          $output | ForEach-Object { Write-Host $_ }
-
-          if ($LASTEXITCODE -ne 0) {
-            Write-Host "::error::doctor exited non-zero"
-            exit $LASTEXITCODE
-          }
-
-          if (-not (($output | Out-String) -match '\[OK \] latex:')) {
-            Write-Host "::error::latex not OK in doctor output"
-            exit 1
-          }
 
       - name: TUI dependency installed by bootstrap
         run: .\.venv\Scripts\python.exe -c "import textual; print('Textual import OK')"
 
-      # --------------------------------------------------
-      # Development and test dependencies
-      # --------------------------------------------------
-
       - name: Install development and test extras
         run: |
           uv pip install --python .\.venv\Scripts\python.exe -e ".[dev,tui]"
-
-      # --------------------------------------------------
-      # Health checks
-      # --------------------------------------------------
 
       - name: Doctor (must pass)
         run: |
@@ -470,66 +412,10 @@ jobs:
             exit $doctorExit
           }
 
-      # --------------------------------------------------
-      # Complete test suite
-      # --------------------------------------------------
-
+      # --durations surfaces the slowest tests on this runner specifically,
+      # since Windows and Linux have not shared the same timing profile.
       - name: Full test suite (zero skips allowed)
-        run: .\.venv\Scripts\python.exe scripts/ci_tests.py
-
-      # --------------------------------------------------
-      # Real rendering
-      # --------------------------------------------------
-
-      - name: Real render smoke test (space + non-ASCII output paths)
-        run: .\.venv\Scripts\python.exe scripts/ci_smoke.py
-
-      # --------------------------------------------------
-      # Persistent render cache
-      # --------------------------------------------------
-
-      - name: Restore the render cache
-        uses: actions/cache/restore@v4
-        with:
-          path: .animatica_cache/renders
-          key: render-cache-${{ runner.os }}-${{ github.run_id }}
-          restore-keys: |
-            render-cache-${{ runner.os }}-
-
-      - name: Fixture render gate (no lint/fallback/timing warnings)
-        run: .\.venv\Scripts\python.exe scripts/ci_render_gate.py
-
-      - name: Save the render cache
-        if: success() && github.ref == 'refs/heads/main'
-        uses: actions/cache/save@v4
-        with:
-          path: .animatica_cache/renders
-          key: render-cache-${{ runner.os }}-${{ github.run_id }}
-
-      # --------------------------------------------------
-      # Installer syntax validation
-      # --------------------------------------------------
-
-      - name: PowerShell installer parses
-        run: |
-          $errs = $null
-
-          [System.Management.Automation.Language.Parser]::ParseFile(
-            "$PWD\scripts\bootstrap.ps1",
-            [ref]$null,
-            [ref]$errs
-          ) | Out-Null
-
-          if ($errs) {
-            $errs | ForEach-Object { Write-Host $_ }
-            exit 1
-          }
-
-          Write-Host "bootstrap.ps1 parses cleanly"
-
-      # --------------------------------------------------
-      # Failure diagnostics
-      # --------------------------------------------------
+        run: .\.venv\Scripts\python.exe scripts/ci_tests.py --durations=25
 
       - name: TeX diagnostics (only on failure)
         if: failure()
@@ -596,6 +482,153 @@ jobs:
 
           Write-Host "TeX diagnostics complete; the original job failure remains authoritative."
           exit 0
+
+  windows-render:
+    runs-on: windows-latest
+    timeout-minutes: 45
+    defaults:
+      run:
+        shell: pwsh
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Set up uv (with dependency cache)
+        uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+          cache-dependency-glob: pyproject.toml
+
+      - name: Restore TinyTeX cache
+        uses: actions/cache/restore@v4
+        with:
+          path: C:\Users\runneradmin\AppData\Local\Animatica\tex
+          key: windows-tex-native-deps-v1-${{ runner.os }}-${{ github.run_id }}
+          restore-keys: |
+            windows-tex-native-deps-v1-${{ runner.os }}-
+
+      - name: Windows installer, end to end (PowerShell)
+        run: pwsh -NoProfile -File scripts/bootstrap.ps1
+
+      - name: Doctor from a non-project directory (bundle visibility)
+        shell: pwsh
+        run: |
+          $d = Join-Path $env:TEMP "animatica-doctor-cwd-test"
+          New-Item -ItemType Directory -Force $d | Out-Null
+
+          $animatica = "$env:GITHUB_WORKSPACE\.venv\Scripts\animatica.exe"
+
+          if (-not (Test-Path $animatica)) {
+            Write-Host "::error::animatica.exe not found at $animatica"
+            exit 1
+          }
+
+          $latex = Get-Command latex -ErrorAction SilentlyContinue
+
+          if ($latex) {
+            Write-Host "::error::latex is on PATH ($($latex.Source)); the bundle must not be discoverable"
+            exit 1
+          }
+
+          Push-Location $d
+          try {
+            $output = & $animatica doctor 2>&1
+          } finally {
+            Pop-Location
+          }
+
+          $output | ForEach-Object { Write-Host $_ }
+
+          if ($LASTEXITCODE -ne 0) {
+            Write-Host "::error::doctor exited non-zero"
+            exit $LASTEXITCODE
+          }
+
+          if (-not (($output | Out-String) -match '\[OK \] latex:')) {
+            Write-Host "::error::latex not OK in doctor output"
+            exit 1
+          }
+
+      # No [dev,tui] install here: ci_smoke.py and ci_render_gate.py only need
+      # the base deps (av, manim, ...) that bootstrap.ps1 already installs.
+      - name: Real render smoke test (space + non-ASCII output paths)
+        run: .\.venv\Scripts\python.exe scripts/ci_smoke.py
+
+      - name: Restore the render cache
+        uses: actions/cache/restore@v4
+        with:
+          path: .animatica_cache/renders
+          key: render-cache-${{ runner.os }}-${{ github.run_id }}
+          restore-keys: |
+            render-cache-${{ runner.os }}-
+
+      - name: Fixture render gate (no lint/fallback/timing warnings)
+        run: .\.venv\Scripts\python.exe scripts/ci_render_gate.py
+
+      - name: Save the render cache
+        if: success() && github.ref == 'refs/heads/main'
+        uses: actions/cache/save@v4
+        with:
+          path: .animatica_cache/renders
+          key: render-cache-${{ runner.os }}-${{ github.run_id }}
+
+      - name: PowerShell installer parses
+        run: |
+          $errs = $null
+
+          [System.Management.Automation.Language.Parser]::ParseFile(
+            "$PWD\scripts\bootstrap.ps1",
+            [ref]$null,
+            [ref]$errs
+          ) | Out-Null
+
+          if ($errs) {
+            $errs | ForEach-Object { Write-Host $_ }
+            exit 1
+          }
+
+          Write-Host "bootstrap.ps1 parses cleanly"
+
+      - name: TeX diagnostics (only on failure)
+        if: failure()
+        run: |
+          $ErrorActionPreference = "Continue"
+
+          $texBin = Join-Path $env:GITHUB_WORKSPACE ".tex\bin\windows"
+
+          if (Test-Path $texBin) {
+            $env:PATH = "$texBin;$env:PATH"
+          }
+
+          $latex = Get-Command latex -ErrorAction SilentlyContinue
+
+          if ($latex) {
+            Write-Host "latex: $($latex.Source)"
+          } else {
+            Write-Host "latex: unavailable"
+          }
+
+          Write-Host "TeX diagnostics complete; the original job failure remains authoritative."
+          exit 0
+
+  windows:
+    if: always()
+    runs-on: ubuntu-24.04
+    needs: [windows-tests, windows-render]
+    steps:
+      - name: Both windows halves must be green
+        run: |
+          if [ "${{ needs.windows-tests.result }}" != "success" ] || [ "${{ needs.windows-render.result }}" != "success" ]; then
+            echo "::error::windows is red: windows-tests=${{ needs.windows-tests.result }}, windows-render=${{ needs.windows-render.result }}"
+            exit 1
+          fi
+          echo "windows: windows-tests and windows-render both succeeded"
 
   # The HyperFrames backend has never been validated against a real browser:
   # this job gives it Node, Chrome and ffmpeg, renders a storyboard through the
