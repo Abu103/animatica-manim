@@ -17,11 +17,15 @@ from __future__ import annotations
 
 import shutil
 import subprocess
+import tarfile
+import tempfile
 import wave
 from pathlib import Path
 
+from animatica.config import config_dir
 from animatica.pipeline import beat_text
 from animatica.storyboard.models import Storyboard
+from animatica.tex_bundle import download, sha256_file
 
 #: Voices whose MODEL_CARD has been checked against the real
 #: rhasspy/piper-voices data (spec section 2), not a reseller page.
@@ -29,9 +33,118 @@ from animatica.storyboard.models import Storyboard
 DEFAULT_VOICE = "en_US-ljspeech-medium"
 ALLOWED_VOICES: tuple[str, ...] = (DEFAULT_VOICE,)
 
+#: The Piper engine (MIT) binary, pinned to a tagged release -- never
+#: "latest" -- so the URL and the hash below cannot drift apart. Fetched and
+#: hashed directly from github.com/rhasspy/piper's real release asset in
+#: this session: verified.
+PIPER_RELEASE_TAG = "v1.2.0"
+PIPER_LINUX_ASSET = "piper_amd64.tar.gz"
+PIPER_LINUX_SHA256 = "467c17935d2a22dcce9dc9e08ba07485e29be813097e7cf08c5627aa09d32e42"
+PIPER_URL = f"https://github.com/rhasspy/piper/releases/download/{PIPER_RELEASE_TAG}/{PIPER_LINUX_ASSET}"
+
+#: Voice model sha256, per voice (spec section 5: lazy-fetch, fail closed on
+#: an unknown hash -- same posture as the Windows TeX bundle). UNVERIFIED:
+#: read off the model's own Hugging Face LFS record, not hashed from a
+#: downloaded file in this sandbox (huggingface.co is not reachable here).
+#: Confirm with a real `sha256sum` on a machine that can reach it before
+#: trusting this for anything beyond a first cautious try.
+VOICE_MODEL_SHA256: dict[str, str] = {
+    DEFAULT_VOICE: "6f52a751e2349abe7a76735eb09dc1875298c77ea2342ffd2fef79ff81b87f22",
+}
+_VOICE_BASE = "https://huggingface.co/rhasspy/piper-voices/resolve/v1.0.0/en/en_US/{name}/medium/{voice}.onnx"
+
 
 class NarrationUnavailable(RuntimeError):
     """``piper``, or the requested voice model, is not installed yet."""
+
+
+def narration_dir() -> Path:
+    """Where the fetched Piper binary and voice models are cached."""
+    d = config_dir() / "narration"
+    d.mkdir(parents=True, exist_ok=True)
+    return d
+
+
+def piper_binary_path() -> Path:
+    """Where a lazily-fetched Piper binary lives, whether or not it exists yet."""
+    return narration_dir() / "piper" / "piper"
+
+
+def voice_model_file(voice: str = DEFAULT_VOICE) -> Path:
+    """Where a lazily-fetched voice model lives, whether or not it exists yet."""
+    return narration_dir() / f"{voice}.onnx"
+
+
+def fetch_piper(download_fn=download, timeout: int = 600) -> Path:
+    """Fetch and verify the Piper engine binary, cached after the first call.
+
+    Raises :class:`NarrationUnavailable` on any network failure or a hash
+    that does not match ``PIPER_LINUX_SHA256`` -- the downloaded archive is
+    never used unverified.
+    """
+    binary = piper_binary_path()
+    if binary.is_file():
+        return binary
+    with tempfile.TemporaryDirectory(prefix="animatica_piper_") as tmp:
+        tmp_path = Path(tmp)
+        archive = tmp_path / PIPER_LINUX_ASSET
+        try:
+            download_fn(PIPER_URL, archive, timeout=timeout)
+        except Exception as exc:
+            raise NarrationUnavailable(f"piper download failed: {exc}") from exc
+        got = sha256_file(archive)
+        if got != PIPER_LINUX_SHA256:
+            raise NarrationUnavailable(
+                f"piper download hash mismatch: expected {PIPER_LINUX_SHA256}, got {got} -- not installed"
+            )
+        with tarfile.open(archive) as tf:
+            tf.extractall(tmp_path)  # hash just verified above; contents are the known piper/ tree
+        dest_dir = binary.parent
+        if dest_dir.exists():
+            shutil.rmtree(dest_dir, ignore_errors=True)
+        dest_dir.parent.mkdir(parents=True, exist_ok=True)
+        shutil.move(str(tmp_path / "piper"), str(dest_dir))
+    if not binary.is_file():
+        raise NarrationUnavailable("piper archive did not contain a piper binary")
+    binary.chmod(binary.stat().st_mode | 0o111)
+    return binary
+
+
+def fetch_voice_model(voice: str = DEFAULT_VOICE, download_fn=download, timeout: int = 180) -> Path:
+    """Fetch and verify ``voice``'s model (and its config), cached after the first call.
+
+    Fails closed -- never fetched -- on a voice outside ``ALLOWED_VOICES`` or
+    with no known hash in ``VOICE_MODEL_SHA256``.
+    """
+    if voice not in ALLOWED_VOICES:
+        raise NarrationUnavailable(f"voice {voice!r} is not in the checked-license allowlist {ALLOWED_VOICES}")
+    expected = VOICE_MODEL_SHA256.get(voice)
+    if not expected:
+        raise NarrationUnavailable(f"no known sha256 for voice {voice!r}; refusing to fetch it unverified")
+    dest = voice_model_file(voice)
+    if dest.is_file() and sha256_file(dest) == expected:
+        return dest
+    name = voice.split("-")[1]  # en_US-ljspeech-medium -> ljspeech
+    model_url = _VOICE_BASE.format(name=name, voice=voice)
+    with tempfile.TemporaryDirectory(prefix="animatica_voice_") as tmp:
+        tmp_path = Path(tmp)
+        tmp_model = tmp_path / f"{voice}.onnx"
+        try:
+            download_fn(model_url, tmp_model, timeout=timeout)
+            got = sha256_file(tmp_model)
+            if got != expected:
+                raise NarrationUnavailable(
+                    f"voice model download hash mismatch: expected {expected}, got {got} -- not installed"
+                )
+            download_fn(model_url + ".json", tmp_path / f"{voice}.onnx.json", timeout=timeout)
+        except NarrationUnavailable:
+            raise
+        except Exception as exc:
+            raise NarrationUnavailable(f"voice model download failed: {exc}") from exc
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        shutil.move(str(tmp_model), str(dest))
+        shutil.move(str(tmp_path / f"{voice}.onnx.json"), str(dest.parent / f"{voice}.onnx.json"))
+    return dest
 
 
 def synthesize(
