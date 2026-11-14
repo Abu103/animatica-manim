@@ -228,7 +228,6 @@ def format_multi_table(summary: EvalSummary) -> str:
     for p in providers:
         prov_results = summary.by_provider(p)
         ok = sum(1 for r in prov_results if r.valid_first_try)
-        eventual = sum(1 for r in prov_results if r.eventual_success)
         retry_ok = sum(1 for r in prov_results if r.eventual_success and not r.valid_first_try)
         errs = sum(1 for r in prov_results if r.error is not None)
         cell = f"{ok}/{len(prov_results)}" + (f" e{errs}" if errs else "")

@@ -385,7 +385,6 @@ def test_probe_reports_a_log_excerpt_when_no_package_is_identified(tmp_path):
         stdout = ""
 
     def run(cmd, **kw):
-        import tempfile
         from pathlib import Path
 
         Path(cmd[-1], "x.log").write_text("junk\n! Emergency stop.\n<*> thing\n*** (job aborted)\n", encoding="utf-8")

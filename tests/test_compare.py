@@ -48,7 +48,6 @@ def _make_params(left_bullets: int, right_bullets: int):
 
 def test_title_above_both_columns():
     """Title bbox must be entirely above both column groups."""
-    from manim import config
 
     with _frame_dims(14.22, 8.0):
         comp = Compare()
@@ -209,7 +208,6 @@ def test_play_run_times_sum_to_duration():
 # B2e: real-geometry layout tests (RED on current branch)
 # ---------------------------------------------------------------------------
 
-import json
 from pathlib import Path
 
 from animatica.storyboard.models import load_storyboard

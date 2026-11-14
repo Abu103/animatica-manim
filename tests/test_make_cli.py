@@ -16,7 +16,6 @@ def test_make_template_prompt_zero_provider_calls(monkeypatch, tmp_path):
             calls.append(prompt)
             return "{}"
 
-    from animatica.ai.router import get_provider
     monkeypatch.setattr("animatica.pipeline.get_provider", lambda name, cfg: CountingProvider())
     runner = CliRunner()
     result = runner.invoke(app, ["make", "make a title card about hello", "-o", str(tmp_path)])
@@ -41,7 +40,6 @@ def test_make_from_storyboard_skips_ai(monkeypatch, tmp_path):
             calls.append(prompt)
             return "{}"
 
-    from animatica.ai.router import get_provider
     monkeypatch.setattr("animatica.pipeline.get_provider", lambda name, cfg: CountingProvider())
     sb_path = tmp_path / "sb.json"
     sb_path.write_text('{"version":"1","title":"T","scenes":[{"beats":[{"component":"title_card","params":{"title":"Hi"}}]}]}')
@@ -81,7 +79,6 @@ def test_make_prints_provider_and_encoder(tmp_path, monkeypatch):
             calls.append(prompt)
             return "{}"
 
-    from animatica.ai.router import get_provider
     monkeypatch.setattr("animatica.pipeline.get_provider", lambda name, cfg: CountingProvider())
     runner = CliRunner()
     result = runner.invoke(app, ["make", "make a title card about hello", "-o", str(tmp_path)])
@@ -99,7 +96,6 @@ def test_make_invalid_storyboard_exits_2(tmp_path):
 
 
 def test_make_no_debug_no_traceback(monkeypatch, tmp_path):
-    from animatica.ai.router import get_provider
     class AlwaysBad:
         name = "bad"
         def generate(self, prompt, schema):

@@ -1,7 +1,6 @@
 """AI provider router: selects groq / openrouter / nim / ollama."""
 from __future__ import annotations
 
-from animatica.ai.base import ProviderError
 from animatica.ai.groq import GroqProvider
 from animatica.ai.nim import NIMProvider
 from animatica.ai.ollama import OllamaProvider

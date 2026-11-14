@@ -9,7 +9,6 @@ from pydantic import BaseModel, Field, field_validator, model_validator
 from animatica.components._draw import Clock, fit, prepare, unescape_code, wrap
 from animatica.components.base import Component
 from animatica.components.theme import ThemeColors
-from animatica.storyboard.models import MAX_TEXT
 
 
 class CodeHighlight(Component):

@@ -12,7 +12,7 @@ from typing import ClassVar
 
 from pydantic import BaseModel, Field, field_validator, model_validator
 
-from animatica.components._draw import FADE_OUT, Clock, fit, fit_in_room, prepare, text_card, unescape_code, warn
+from animatica.components._draw import FADE_OUT, Clock, fit, fit_in_room, prepare, unescape_code
 from animatica.components.base import Component
 from animatica.storyboard.models import MAX_TEXT
 

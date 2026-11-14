@@ -1,12 +1,9 @@
-import subprocess
-from pathlib import Path
 
 import pytest
 
 import animatica.encode.probe as probe_mod
 
 from animatica.encode.probe import (
-    DeviceInfo,
     EncoderInfo,
     detect_devices,
     pick_encoder,

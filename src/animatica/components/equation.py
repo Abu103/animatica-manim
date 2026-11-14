@@ -48,7 +48,7 @@ class Equation(Component):
         clock.finish()
 
     def play(self, scene, p, colors) -> None:
-        from manim import DOWN, FadeIn, MathTex, ReplacementTransform, TransformMatchingTex, VGroup, Write, config
+        from manim import DOWN, MathTex, ReplacementTransform, TransformMatchingTex, VGroup, Write, config
         prepare(scene, colors)
         total = self.duration(p)
         try:

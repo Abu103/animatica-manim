@@ -1,4 +1,3 @@
-import sys
 
 import pytest
 
@@ -54,7 +53,7 @@ def test_a_tex_bundle_on_linux_is_repaired_with_tlmgr(monkeypatch, tmp_path):
 
     run = FakeRun()
     which = lambda name: str(latex if name == "latex" else tlmgr if name == "tlmgr" else name)
-    actions = doctor.fix_dependencies(
+    doctor.fix_dependencies(
         run=run,
         which=which,
         platform="linux",
@@ -322,7 +321,6 @@ def test_ffmpeg_check_accepts_imageio_bundled_binary():
     # imageio-ffmpeg present in this env? if not, simulate by checking the helper directly
     if importlib.util.find_spec("imageio_ffmpeg") is None:
         pytest.skip("imageio-ffmpeg not installed in test env")
-    import imageio_ffmpeg
     checks = doctor.run_checks(which=FakeWhich(), deep_latex=False)
     ff = next(c for c in checks if c.name == "ffmpeg")
     assert ff.ok and "imageio" in ff.detail

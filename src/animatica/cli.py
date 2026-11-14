@@ -201,7 +201,7 @@ def eval_cmd(
     from animatica.ai.router import get_provider
     from animatica.components.registry import default_registry
     from animatica.config import load_config
-    from animatica.eval import format_multi_table, format_table, run_eval, run_eval_multi
+    from animatica.eval import format_multi_table, run_eval, run_eval_multi
 
     prompts = [l.strip() for l in prompts_file.read_text(encoding="utf-8").splitlines() if l.strip() and not l.startswith("#")]
     registry = default_registry()
@@ -357,14 +357,12 @@ def mcp() -> None:
     Hermes (or any MCP client) connects via stdio and calls tools via JSON-RPC.
     """
     import asyncio
-    import sys
 
     from mcp.server import Server
     from mcp.server.stdio import stdio_server
     from mcp.types import (
         CallToolRequestParams,
         CallToolResult,
-        ListToolsRequest,
         ListToolsResult,
         PaginatedRequestParams,
         TextContent,
@@ -373,8 +371,7 @@ def mcp() -> None:
 
     from animatica.components.registry import default_registry
     from animatica.frame_lint import FrameLintConfig, lint_video, lint_result_to_warnings
-    from animatica.pipeline import MakeResult, make_video, preview_frame
-    from animatica.storyboard.lint import lint_storyboard
+    from animatica.pipeline import make_video, preview_frame
     from animatica.storyboard.models import load_storyboard
 
     reg = default_registry()
@@ -630,32 +627,18 @@ def edit_cmd(
     import json as _json
     import shutil
     import tempfile
-    import time
 
     from animatica.ai.base import StoryboardGenerationError
     from animatica.ai.router import get_provider
     from animatica.ai.repair import generate_storyboard
     from animatica.components.registry import default_registry
     from animatica.config import load_config
-    from animatica.pipeline import MakeResult, make_video
+    from animatica.pipeline import make_video
 
     sb_path = out_dir / "storyboard.json"
     if not sb_path.is_file():
         typer.echo(f"Error: no storyboard.json in {out_dir}")
         raise typer.Exit(code=1)
-
-    # Snapshot originals for preservation/rollback verification.
-    # NOTE: We read only the storyboard JSON into memory. Large binary
-    # artifacts (video, captions, report) are NOT loaded here to avoid
-    # risking a memory-exhaustion fault during an already failure-prone
-    # critical section. The rollback path relies on backing up the files
-    # themselves, not on holding copies in RAM.
-    original_storyboard_bytes = sb_path.read_bytes()
-    original_video_path = out_dir / "video.mp4"
-    original_report_path = out_dir / "report.json"
-    original_captions_path = out_dir / "captions.vtt"
-    original_media_path = out_dir / "media"
-    original_media_exists = original_media_path.is_dir()
 
     sb = load_storyboard(sb_path)
     reg = default_registry()

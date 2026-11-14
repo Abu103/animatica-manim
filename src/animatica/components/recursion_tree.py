@@ -9,7 +9,7 @@ from typing import ClassVar
 
 from pydantic import BaseModel, Field, field_validator
 
-from animatica.components._draw import FADE_OUT, MIN_FONT_SIZE, Clock, fit, prepare, wrap
+from animatica.components._draw import MIN_FONT_SIZE, Clock, fit, prepare, wrap
 from animatica.components._draw import caption_band_top as caption_band_top_of
 from animatica.components.base import Component
 from animatica.storyboard.models import MAX_TEXT

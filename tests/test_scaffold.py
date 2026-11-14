@@ -1,6 +1,5 @@
 import json
 import py_compile
-from pathlib import Path
 
 import pytest
 from typer.testing import CliRunner

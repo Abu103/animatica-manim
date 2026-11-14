@@ -1,5 +1,4 @@
 import pytest
-from pathlib import Path
 from typing import ClassVar
 
 from animatica.pipeline import cache_variant, make_video, resolve_backend
@@ -86,7 +85,7 @@ def test_make_video_uses_injected_backend_not_manim(monkeypatch, tmp_path):
     def fake_default_backends():
         return {"fake": FakeBackend()}
     monkeypatch.setattr("animatica.pipeline.default_backends", fake_default_backends)
-    monkeypatch.setattr(pipeline, "ManimBackend", lambda: (_ for _ in ()).throw(AssertionError("ManimBackend must not be instantiated")))
+    monkeypatch.setattr("animatica.backends.ManimBackend", lambda: (_ for _ in ()).throw(AssertionError("ManimBackend must not be instantiated")))
 
     result = pipeline.make_video("make a title card about Hello", out_dir=tmp_path, preview=True, backend="fake")
     assert result.video.exists()
@@ -134,7 +133,7 @@ def test_make_video_lints_by_default(tmp_path, monkeypatch):
             )
 
     monkeypatch.setattr("animatica.pipeline.default_backends", lambda: {"fake": FakeBackend()})
-    monkeypatch.setattr(pipeline, "ManimBackend", lambda: (_ for _ in ()).throw(AssertionError("ManimBackend must not be instantiated")))
+    monkeypatch.setattr("animatica.backends.ManimBackend", lambda: (_ for _ in ()).throw(AssertionError("ManimBackend must not be instantiated")))
 
     def fake_lint_video(video_path, durations, config, **kwargs):
         return FrameLintResult(findings=[
@@ -427,7 +426,6 @@ def test_make_video_survives_bad_stdout_fd(tmp_path, monkeypatch):
 def test_make_video_records_component_fallbacks(tmp_path, monkeypatch):
     """make_video records component names that fell back to text_card."""
     import pathlib
-    import animatica.pipeline as pipeline
     from animatica.backends.base import RenderResult
 
     class FakeBackend:
@@ -450,7 +448,7 @@ def test_make_video_records_component_fallbacks(tmp_path, monkeypatch):
             )
 
     monkeypatch.setattr("animatica.pipeline.default_backends", lambda: {"fake": FakeBackend()})
-    monkeypatch.setattr(pipeline, "ManimBackend", lambda: (_ for _ in ()).throw(AssertionError("ManimBackend must not be instantiated")))
+    monkeypatch.setattr("animatica.backends.ManimBackend", lambda: (_ for _ in ()).throw(AssertionError("ManimBackend must not be instantiated")))
 
     result = make_video("make a title card about Hello", out_dir=tmp_path, preview=True, backend="fake")
 
@@ -465,7 +463,6 @@ def test_make_video_records_component_fallbacks(tmp_path, monkeypatch):
 def _make_video_with_warning(tmp_path, monkeypatch, warning: str):
     """Run make_video over a fake backend that emits exactly `warning`."""
     import pathlib
-    import animatica.pipeline as pipeline
     from animatica.backends.base import RenderResult
 
     class FakeBackend:
@@ -488,7 +485,7 @@ def _make_video_with_warning(tmp_path, monkeypatch, warning: str):
             )
 
     monkeypatch.setattr("animatica.pipeline.default_backends", lambda: {"fake": FakeBackend()})
-    monkeypatch.setattr(pipeline, "ManimBackend", lambda: (_ for _ in ()).throw(AssertionError("ManimBackend must not be instantiated")))
+    monkeypatch.setattr("animatica.backends.ManimBackend", lambda: (_ for _ in ()).throw(AssertionError("ManimBackend must not be instantiated")))
 
     return make_video("make a title card about Hello", out_dir=tmp_path, preview=True, backend="fake")
 

@@ -13,9 +13,8 @@ import pytest
 from pydantic import BaseModel
 
 from animatica.components.base import API_VERSION, Component
-from animatica.components.registry import ComponentRegistry, default_registry
-from animatica.backends.base import RenderBackend, RenderOptions, RenderResult
-from animatica.pipeline import resolve_backend
+from animatica.components.registry import default_registry
+from animatica.backends.base import RenderResult
 from animatica.storyboard.models import Storyboard
 
 
@@ -136,22 +135,6 @@ def test_limited_backend_lacks_latex():
 # ---------------------------------------------------------------------------
 # Pipeline compatibility check tests
 # ---------------------------------------------------------------------------
-
-def test_compatible_capabilities_pass():
-    """When all component capabilities are supported, check passes."""
-    from animatica.pipeline import _check_capabilities
-
-    sb_data = {
-        "version": "1",
-        "title": "T",
-        "scenes": [{"beats": [{"component": "fake_component", "params": {"title": "T"}}]}],
-    }
-    # We can't easily construct a Storyboard with a fake component since
-    # registry validation would reject it. Instead test the check function
-    # directly with a backend that supports everything.
-    # This test is a placeholder; real validation happens via registry.
-    assert True  # placeholder replaced by registry-based test below
-
 
 def test_incompatible_capabilities_raise_actionable_error():
     """When a component requires a capability the backend lacks, raise ValueError

@@ -12,12 +12,9 @@ from pathlib import Path
 import pytest
 
 from animatica.backends.hyperframes.plan import (
-    BODY_BOTTOM,
     BODY_BOTTOM_WITH_CAPTION,
     CAPTION_AREA,
-    MARGIN,
     SAFE_AREA,
-    STAGE_H,
     STAGE_W,
     BeatPlan,
     Line,

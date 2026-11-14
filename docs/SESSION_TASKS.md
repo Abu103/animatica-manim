@@ -8,6 +8,33 @@ Updated: 2026-11-14. Newest status on top. "Not pushed" in an entry means as of 
 - Verified: every ticked step has a test in `tests/test_sandbox_script.py` or `tests/test_ci_gate.py` (Task 5 under slightly different names); `pytest tests/test_sandbox_script.py tests/test_version.py` -> 70 passed, 1 failed (the same one that fails on `main`).
 - NOT done (needs push access): C4, triaging PRs #38 and #40 and deleting merged remote branches. The PR numbers in the log came from `git log` titles, not the GitHub API (it refused this session).
 
+## Status (2026-11-14, Claude session, card C2 "ffmpeg without the bundled native libs")
+- Branch: `hermes/c-major-lint-ffmpeg` (C1 + C2 in one PR, by the owner's request), off `main` = `7e231ae`. **Not pushed**; delivered as a patch.
+- Changed: `src/animatica/_nativelibs.py` (new `system_tool_env()`), `backends/scheduler.py` (concat), `encode/transcode.py`, `encode/probe.py` (all three ffmpeg calls), `tests/test_nativelibs_env.py` (new), this log. 6 files.
+- **Bug**: `.animatica-env` and `_nativelibs.ensure()` put `<runtime>/native/lib` on `LD_LIBRARY_PATH` for the `manim` child. A system `ffmpeg` inherits it, loads the bundle's glib instead of its own and dies with a symbol lookup error (exit 127), so a two-scene render failed at the concat step.
+- **Evidence (RED)**: 10 new tests failed (`system_tool_env` missing; ffmpeg calls passed no `env`). End to end: with a broken library in the bundle dir on `LD_LIBRARY_PATH`, `concat_videos` on `main` raised `ffmpeg concat failed (exit 127)`.
+- **Fix**: `system_tool_env()` returns a copy of the environment with only the bundle directory removed from `LD_LIBRARY_PATH` (other entries kept; the variable is dropped when empty; `os.environ` untouched). Every ffmpeg call (concat, transcode, `-version`, `-encoders`, test encode) passes it as `env=`. The `manim` child still gets the bundle.
+- Verified (this session, Linux): `pytest tests/test_nativelibs_env.py tests/test_probe.py tests/test_transcode.py tests/test_scheduler.py` -> 49 passed, 1 failed (`test_system_info_cpus_and_memory`, a 2-CPU sandbox, fails the same on `main`). Same poisoned-bundle `concat_videos` call: `main` exit 127, branch succeeded (7905-byte output).
+- `tests/test_sandbox_script.py`: 66 passed, 1 failed (`test_added_module_importable_and_deleted_module_gone_without_rebuild`); the identical failure is on untouched `main` in this sandbox, cause not investigated.
+- Not fixed on purpose: `.animatica-env` still exports `LD_LIBRARY_PATH` to the user's shell, because running `manim` by hand needs it. A system `ffmpeg` typed directly in that shell can still hit the bug; the pipeline cannot.
+- NOT verified: the full suite (the sandbox had no manim/dvisvgm); Windows (`LD_LIBRARY_PATH` is a no-op there); CI on GitHub.
+
+## Status (2026-11-14, Claude session, card C1 "a lint gate for real defects")
+- Branch: `hermes/c1-lint-defects` (PR #47); folded into `hermes/c-major-lint-ffmpeg` with C2.
+- Changed: `pyproject.toml` (ruff config, `ruff` in the `dev` extra), `.github/workflows/ci.yml` (one lint step in `linux-tests`), 51 source, test and script files for the fixes below (20 in `src`, 30 in `tests`, 1 in `scripts`), `docs/SESSION_TASKS.md`. This is far over the 5-file card limit because most of those files are one-line unused-import removals.
+- **Evidence (RED)**: `ruff check src scripts tests --select F,E9` found **110 defects** on `main`: 88 unused imports, 12 unused variables, 4 f-strings without placeholders, 4 undefined names, 2 redefinitions. (`experiments/` has 11 more; it is excluded on purpose, the pilots are self-contained.)
+- **Fix**: the 110 are gone, and CI now fails on any new one (`python -m ruff check src scripts tests`, rules `F` and `E9` only; no style rules).
+  - `ai/repair.py`: `Scene` was used in annotations and never imported; the mid-file imports moved to the top and the `_VE` alias is gone.
+  - `tui.py`: `ComposeResult` is a `TYPE_CHECKING` import now, not a lazily-built dict entry.
+  - `cli.py edit`: five locals "snapshotting originals for rollback" were never read (the comment described a rollback that works on files, not on these); removed with the comment.
+  - `manim_backend.py` `colors`, `bar_chart.py`/`bounce_sequence.py` `top`, `eval.py` `eventual`: assigned, never used; removed.
+  - **Four tests in `test_pipeline.py` guarded nothing**: they patched `pipeline.ManimBackend`, a name production code no longer reads (backends come from `default_backends()`). Autofix removing that dead import exposed it. They now patch `animatica.backends.ManimBackend`, where it is really instantiated.
+  - `test_capability.py::test_compatible_capabilities_pass` was `assert True` ("placeholder"); deleted, the registry-based test after it is the real one. Two unused assignments in `test_doctor_fix.py` / `test_eval.py` dropped.
+- Verified (this session, Linux sandbox from `scripts/sandbox.sh`): `ruff check src scripts tests` -> All checks passed. `pytest -n 4` on the branch: **13 failed, 1283 passed, 40 skipped, 2 errors**; on untouched `main`: 13 failed, 1284 passed, 2 errors. The failed/error set is **identical** (diffed); the one fewer pass is the deleted placeholder. `ANIMATICA_NO_RENDER_CACHE=1 python scripts/ci_render_gate.py` -> `CLEAN: 20 storyboard(s) rendered within the allowlist`.
+- The 15 failures are the sandbox, not the code: no `dvisvgm` (graph and caption-room tests, 10 of them), a 2-CPU box where `test_system_info_cpus_and_memory` expects 3, and the system ffmpeg at an absolute path (2 `test_backend_base` errors, 1 `test_doctor_fix`).
+- **FOUND, not fixed (next card)**: `scripts/sandbox.sh` writes `LD_LIBRARY_PATH=<runtime>/native/lib` into `.animatica-env`, and every child process inherits it. The system `ffmpeg` then dies with `symbol lookup error: libgdk_pixbuf-2.0.so.0: undefined symbol: g_task_set_static_name`, so a two-scene render fails at the concat step with exit 127 inside the sandbox. Proof: the same binary runs with `env -u LD_LIBRARY_PATH`. The render gate was run through a wrapper that unsets it.
+- NOT verified: the 40 render-marked tests did not run (no `dvisvgm`); the lint step in `ci.yml` has not run on GitHub; nothing was run on Windows.
+
 ## Status (2026-11-13, Claude session, card "parametric_graph: a circle is a circle, and labels stay readable")
 - Branch: `hermes/parametric-shape`, stacked on `hermes/eval-model-flag`. Merged into `main` with PR #46 (`7e231ae`).
 - Changed: `src/animatica/components/parametric_graph.py`, `tests/test_parametric_graph.py`, `docs/SESSION_TASKS.md`.

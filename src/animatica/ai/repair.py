@@ -1,12 +1,12 @@
 """Provider-based storyboard generation with a repair loop."""
 from __future__ import annotations
 
-from pydantic import ValidationError
+from pydantic import BaseModel, Field, ValidationError
 
 from animatica.ai.base import AIProvider, StoryboardGenerationError, extract_json
-from animatica.ai.prompt import build_prompt
+from animatica.ai.prompt import build_fill_prompt, build_outline_prompt, build_prompt
 from animatica.components.registry import ComponentRegistry
-from animatica.storyboard.models import Storyboard
+from animatica.storyboard.models import Scene, Storyboard
 
 
 def generate_storyboard(
@@ -56,11 +56,7 @@ def generate_storyboard(
 
 
 # ---- P1.1: two-stage generation (outline -> per-scene fill) ----
-from typing import Any
 
-from pydantic import BaseModel, Field, ValidationError as _VE
-
-from animatica.ai.prompt import build_fill_prompt, build_outline_prompt
 
 
 class _OutlineBeat(BaseModel):
@@ -106,7 +102,7 @@ def generate_storyboard_two_stage(
         try:
             outline = _Outline.model_validate(extract_json(text))
             errs = _outline_errors(outline, registry)
-        except _VE as exc:
+        except ValidationError as exc:
             errs = [f"parse error: field '{'.'.join(str(x) for x in e['loc']) or 'outline'}': {e['msg']}" for e in exc.errors()]
         except Exception as exc:
             errs = [f"parse error: {' '.join(str(exc).split())[:200]}"]
@@ -132,7 +128,7 @@ def generate_storyboard_two_stage(
                 data = extract_json(text)
                 sb = Storyboard.model_validate(data)
                 errs = registry.validate(sb)
-            except _VE as exc:
+            except ValidationError as exc:
                 errs = [f"parse error: field '{'.'.join(str(x) for x in e['loc']) or 'storyboard'}': {e['msg']}" for e in exc.errors()]
             except Exception as exc:
                 errs = [f"parse error: {' '.join(str(exc).split())[:200]}"]

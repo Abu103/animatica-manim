@@ -119,7 +119,6 @@ def test_code_walkthrough_beat_is_not_longer_than_its_declared_duration(run_comp
 import pytest
 
 from animatica.components.code_highlight import CodeHighlight
-from animatica.components.code_walkthrough import CodeWalkthrough
 from animatica.components._draw import unescape_code
 
 ESCAPED = "def add(a, b):\\n    result = a + b\\n    return result"  # backslash-n, not a newline

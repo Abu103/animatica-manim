@@ -1,8 +1,6 @@
 import json
 
-import pytest
 
-from animatica.ai.repair import generate_storyboard
 from animatica.components.registry import default_registry
 from animatica.eval import EvalResult, EvalSummary, run_eval, run_eval_multi, format_table, format_multi_table
 
@@ -79,7 +77,6 @@ def test_eval_counts_retries_and_failures():
 
 
 def test_eval_summary_table():
-    results = run_eval(["p1", "p2"], GoodProvider(), default_registry())
     text = run_eval(["p1"], GoodProvider(), default_registry(), as_table=True)
     assert "prompt" in text
     assert "first" in text  # first-try column

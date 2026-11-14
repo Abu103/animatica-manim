@@ -88,7 +88,7 @@ def ensure() -> Path | None:
         if lib_dir is None:
             return None
         preload(lib_dir)
-        # Children (the `manim` subprocess, ffmpeg) inherit this.
+        # Children (the `manim` subprocess) inherit this; ffmpeg must not, see system_tool_env().
         current = os.environ.get("LD_LIBRARY_PATH", "")
         parts = [p for p in current.split(os.pathsep) if p]
         if str(lib_dir) not in parts:
@@ -97,6 +97,33 @@ def ensure() -> Path | None:
         return lib_dir
     except Exception:  # pragma: no cover - defensive: setup must never break startup
         return None
+
+
+def _norm(path: str) -> str:
+    return os.path.normpath(path)
+
+
+def system_tool_env(base: dict[str, str] | None = None) -> dict[str, str]:
+    """A copy of the environment for system tools such as ffmpeg, without the bundle.
+
+    The bundle's cairo/pango/glib are for the ``manim`` child. A system ``ffmpeg``
+    that inherits the bundle directory on ``LD_LIBRARY_PATH`` loads those glib
+    copies instead of its own and dies with a symbol lookup error (exit 127), so
+    every ffmpeg call gets this environment. Other entries on the variable are
+    kept; the variable itself is removed when nothing else is left. The process
+    environment is not touched.
+    """
+    env = dict(os.environ if base is None else base)
+    bundle = {_norm(d) for d in (os.environ.get(NATIVE_DIR_ENV), str(_lib_dir) if _lib_dir else None) if d}
+    current = env.get("LD_LIBRARY_PATH")
+    if not current or not bundle:
+        return env
+    kept = [p for p in current.split(os.pathsep) if p and _norm(p) not in bundle]
+    if kept:
+        env["LD_LIBRARY_PATH"] = os.pathsep.join(kept)
+    else:
+        env.pop("LD_LIBRARY_PATH", None)
+    return env
 
 
 def activated() -> bool:

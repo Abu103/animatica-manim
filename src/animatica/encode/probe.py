@@ -9,12 +9,13 @@ from __future__ import annotations
 
 import hashlib
 import json
-import os
 import subprocess
 import sys
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable
+
+from animatica._nativelibs import system_tool_env
 
 _ENCODER_CACHE: dict[str, list["EncoderInfo"]] = {}
 
@@ -126,7 +127,7 @@ def _test_encode(ffmpeg: str, name: str, run: Callable) -> tuple[bool, str]:
         proc = run([
             ffmpeg, "-y", "-f", "lavfi", "-i", "testsrc=size=256x256:rate=1:duration=1",
             "-c:v", name, "-f", "null", "-",
-        ], capture_output=True, text=True, timeout=60)
+        ], capture_output=True, text=True, timeout=60, env=system_tool_env())
         if proc.returncode == 0:
             return True, ""
         return False, (proc.stderr or proc.stdout or "").strip() or "test encode failed"
@@ -164,7 +165,7 @@ def probe_encoders(
     if ffmpeg is None:
         ffmpeg = _default_ffmpeg()
     try:
-        version_proc = run([ffmpeg, "-version"], capture_output=True, text=True, timeout=30)
+        version_proc = run([ffmpeg, "-version"], capture_output=True, text=True, timeout=30, env=system_tool_env())
         version = version_proc.stdout
     except Exception:
         return [EncoderInfo("libx264", "libx264", False, "ffmpeg not found or unusable")]
@@ -189,7 +190,7 @@ def probe_encoders(
                 pass
 
     try:
-        enc_proc = run([ffmpeg, "-encoders"], capture_output=True, text=True, timeout=30)
+        enc_proc = run([ffmpeg, "-encoders"], capture_output=True, text=True, timeout=30, env=system_tool_env())
         encoders_text = enc_proc.stdout
     except Exception:
         encoders_text = ""

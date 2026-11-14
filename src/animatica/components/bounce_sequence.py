@@ -72,7 +72,6 @@ class BounceSequence(Component):
         n = len(values)
         total = self.duration(p)
         labels = p.labels or [str(i) for i in range(n)]
-        top = max(values) or 1.0
         slot = X_SPAN / n
         pad_w = min(0.95, slot * 0.62)
         xs = [-X_SPAN / 2 + slot * (i + 0.5) for i in range(n)]
