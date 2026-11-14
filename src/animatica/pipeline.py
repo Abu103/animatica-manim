@@ -136,14 +136,15 @@ def beat_text(beat, comp, params=None) -> str:
     return beat.caption or comp.fallback_text(params)
 
 
-def _write_captions(sb: Storyboard, registry, path: Path) -> None:
+def _write_captions(sb: Storyboard, registry, path: Path, beat_durations: list[list[float]] | None = None) -> None:
+    """``beat_durations`` (``--narrate``) overrides the visual durations so cues follow the extended beats."""
     lines = ["WEBVTT", ""]
     t = 0.0
-    for scene in sb.scenes:
-        for beat in scene.beats:
+    for s_idx, scene in enumerate(sb.scenes):
+        for b_idx, beat in enumerate(scene.beats):
             comp = registry.get(beat.component)
             params = comp.Params.model_validate(beat.params)
-            dur = comp.duration(params)
+            dur = beat_durations[s_idx][b_idx] if beat_durations else comp.duration(params)
             start, end = t, t + dur
             t = end
             text = beat_text(beat, comp, params)
@@ -189,9 +190,13 @@ def make_video(
     frame_lint: bool = True,
     vertical: bool = False,
     theme: str | None = None,
+    narrate: bool = False,
+    voice: str | None = None,
     on_progress: ProgressFn | None = None,
 ) -> MakeResult:
     render_backend = resolve_backend(backend)  # fail fast: before any file write or LLM call
+    if narrate and render_backend.name != "manim":
+        raise ValueError(f"--narrate needs the manim backend (got {render_backend.name!r}): only it holds a beat for its narration")
     out_dir = Path(out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
     out_dir = long_path(out_dir)
@@ -200,7 +205,7 @@ def make_video(
 
     # One unit per post-processing step the user actually asked for; the render
     # backend contributes its own scene units and fixes the total when it starts.
-    post_units = 1 + (1 if encoder != "auto" else 0) + (1 if frame_lint else 0)
+    post_units = 1 + (1 if encoder != "auto" else 0) + (1 if frame_lint else 0) + (1 if narrate else 0)
     progress = ProgressTracker(on_progress, post_units=post_units)
 
     progress.announce("storyboard", "resolving storyboard")
@@ -265,6 +270,18 @@ def make_video(
 
     dump_storyboard(sb, out_dir / "storyboard.json")
 
+    # ---- narration (opt-in): synthesize first, so each clip's length is a beat floor ----
+    wavs = floors = None
+    narration_info: dict[str, str] | None = None
+    if narrate:
+        from animatica import narration  # noqa: PLC0415 - narration imports this module
+
+        voice = voice or narration.DEFAULT_VOICE
+        progress.announce("narration", "synthesizing narration")
+        wavs, floors = narration.narrate_for_render(sb, registry, out_dir, voice)  # fails closed, never silent
+        narration_info = {"voice": voice, "license": narration.VOICE_LICENSES.get(voice, "unknown")}
+    final_durations = _beat_durations(sb, registry, floors)
+
     # ---- render ----
     if preview:
         quality = "preview"
@@ -276,6 +293,7 @@ def make_video(
             captions=captions,
             jobs=jobs,
             vertical=vertical,
+            beat_floors=floors,
             progress=progress.backend,
         ),
     )
@@ -307,13 +325,19 @@ def make_video(
             str(video),
             render_result.durations,
             lint_config,
-            beat_durations=_beat_durations(sb, registry),
+            beat_durations=final_durations,
         )
         warnings.extend(lint_result_to_warnings(lint_result))
 
+    # ---- narration track: one WAV on the final beat timing, muxed over the finished video ----
+    if narrate:
+        progress.advance("narration", "mixing narration into the video")
+        track = narration.build_track(wavs, final_durations, out_dir / "narration" / "track.wav")
+        video = narration.mux_narration(video, track, out_dir / "video_narrated.mp4")
+
     # ---- captions + report (single writer) ----
     progress.advance("captions", "writing captions and report")
-    _write_captions(sb, registry, out_dir / "captions.vtt")
+    _write_captions(sb, registry, out_dir / "captions.vtt", final_durations if narrate else None)
 
     # Component fallbacks: warnings from scene.py are formatted as
     # "{component}: {ExceptionType}: {message}" when play() raises and the
@@ -346,6 +370,7 @@ def make_video(
         backend={"name": render_backend.name, "version": getattr(render_backend, "version", "unknown")},
         scene_durations=render_result.durations,
         fallbacks=fallbacks,
+        narration=narration_info,
     )
 
     progress.finish(f"done: {video.name}")

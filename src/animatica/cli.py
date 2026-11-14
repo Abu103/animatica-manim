@@ -11,6 +11,7 @@ from animatica import __version__
 from animatica.ai.base import ProviderError, RateLimited, StoryboardGenerationError
 from animatica.components.registry import ComponentRegistry
 from animatica.doctor import run_checks
+from animatica.narration import NarrationUnavailable
 from animatica.cli_progress import TerminalProgress
 from animatica.pipeline import MakeResult, make_video
 from animatica.setup_wizard import setup
@@ -854,6 +855,8 @@ def make(
     jobs: int = typer.Option(1, "--jobs", min=1, help="Render scenes in parallel (1 = serial; each scene is already a subprocess)"),
     frame_lint: bool = typer.Option(True, "--frame-lint/--no-frame-lint", help="Run non-fatal frame-quality checks on the rendered video"),
     vertical: bool = typer.Option(False, "--vertical", help="9:16 vertical aspect ratio for mobile/social"),
+    narrate: bool = typer.Option(False, "--narrate", help="Add offline spoken narration (Piper) of each beat's caption; fetched on first use"),
+    voice: str = typer.Option("en_US-ljspeech-medium", "--voice", help="Narration voice (only license-checked voices are accepted)"),
     theme: str = typer.Option(None, "--theme", help="Color theme: dark-blue, light, high-contrast"),
     progress: bool = typer.Option(
         True,
@@ -881,6 +884,8 @@ def make(
             frame_lint=frame_lint,
             vertical=vertical,
             theme=theme,
+            narrate=narrate,
+            voice=voice,
             on_progress=reporter,
         )
         typer.echo(f"Provider: {result.provider_used}")
@@ -898,7 +903,7 @@ def make(
             typer.echo(f"  - {line}")
         typer.echo("Tip: try again, pick another --provider/model, or use --debug for the full traceback.")
         raise typer.Exit(code=1)
-    except (ProviderError, RateLimited) as exc:
+    except (ProviderError, RateLimited, NarrationUnavailable) as exc:
         if debug:
             raise
         typer.echo(f"Error: {exc}")

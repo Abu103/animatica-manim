@@ -8,12 +8,26 @@ def test_latex_missing_fix_mentions_tinytex():
     assert "tinytex" in latex.fix.lower()
 
 
-def test_all_present_ok():
+def test_all_present_ok(tmp_path, monkeypatch):
+    from animatica import narration
+
+    monkeypatch.setattr(narration, "voice_model_file", lambda voice=narration.DEFAULT_VOICE: tmp_path / "v.onnx")
+    (tmp_path / "v.onnx").write_text("fake", encoding="utf-8")
+
     def which(cmd):
         return "/usr/bin/" + cmd
 
     checks = run_checks(which=which, deep_latex=False)
     assert all(c.ok for c in checks), [c for c in checks if not c.ok]
+
+
+def test_narration_check_reports_what_is_missing():
+    checks = run_checks(which=lambda cmd: None, deep_latex=False)
+    narration_check = next(c for c in checks if c.name == "narration")
+    # Opt-in feature: missing is a tip, not a failure (a failing check would break `animatica doctor` in CI).
+    assert narration_check.ok is True
+    assert "piper=no" in narration_check.detail and "voice=no" in narration_check.detail
+    assert "doctor --fix" in narration_check.fix
 
 
 def test_every_failed_check_has_a_fix():

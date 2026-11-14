@@ -175,7 +175,10 @@ class Clock:
     """
 
     def __init__(self, scene: Any, total: float, fps: float | None = None) -> None:
-        self.scene, self.total, self.used = scene, total, 0.0
+        # --narrate: the scene sets ``narration_hold`` when narration outlasts the beat. Adding it
+        # to the budget holds the content *before* the closing fade-out, not a blank frame after it.
+        hold = getattr(scene, "narration_hold", 0.0)
+        self.scene, self.total, self.used = scene, total + (hold if isinstance(hold, (int, float)) else 0.0), 0.0
         self.fps = float(fps) if fps else frame_rate()
 
     def frames(self, seconds: float) -> int:

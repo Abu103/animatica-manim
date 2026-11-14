@@ -15,6 +15,9 @@ class RenderOptions:
     jobs: int | None = None
     captions: bool = True  # burn each beat's caption into the video
     vertical: bool = False  # 9:16 aspect ratio for mobile/social
+    beat_floors: list[list[float]] | None = None
+    """Per-scene, per-beat minimum seconds (``--narrate``): a beat shorter than its
+    narration holds its resting frame. ``None`` leaves every duration as it was."""
     progress: BackendProgressFn | None = None
     """Optional ``(label, done, total)`` reporter. Backends should call it for
     each unit they can actually observe, and stay silent about what they cannot.

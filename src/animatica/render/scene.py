@@ -33,7 +33,9 @@ class StoryboardScene(Scene):
         colors = get_colors(sb.theme)
 
         captions_on = os.environ.get("ANIMATICA_CAPTIONS", "1") != "0"
-        for beat in scene.beats:
+        floors_file = os.environ.get("ANIMATICA_BEAT_FLOORS")  # --narrate: per-beat minimum seconds
+        floors = json.loads(Path(floors_file).read_text(encoding="utf-8"))[idx] if floors_file else []
+        for b_idx, beat in enumerate(scene.beats):
             comp = registry.get(beat.component)
             params = comp.Params.model_validate(beat.params)
             self.caption_mobject = None
@@ -44,11 +46,19 @@ class StoryboardScene(Scene):
                     self.add(self.caption_mobject)
                 except Exception as exc:  # captions are a nicety: never fail the beat over them
                     warn(self, f"caption skipped: {type(exc).__name__}: {exc}")
+            # Narration longer than the visual: the component's Clock holds its content for the
+            # difference (before its fade-out); nothing is ever sped up.
+            hold = max(0.0, (floors[b_idx] if b_idx < len(floors) else 0.0) - comp.duration(params))
+            self.narration_hold = hold
             try:
                 comp.play(self, params, colors)
             except Exception as exc:  # degrade, never abort the video
                 warn(self, f"{beat.component}: {type(exc).__name__}: {exc}")
                 text_card(self, comp.fallback_text(params), colors, comp.duration(params))
+                if hold > 1e-3:
+                    self.wait(hold)
+            finally:
+                self.narration_hold = 0.0
 
         # Persist warnings so the out-of-process backend can collect them.
         (sb_path.parent / f"warnings_{idx}.json").write_text(

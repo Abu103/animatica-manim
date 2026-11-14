@@ -150,6 +150,25 @@ def run_checks(run=subprocess.run, which=shutil.which, deep_latex: bool = True) 
         )
     )
 
+    # Narration (Piper + default voice model): lazily fetched, same
+    # "report missing, --fix installs" shape as the LaTeX check above.
+    from animatica import narration
+
+    piper_ok = bool(which("piper")) or narration.piper_binary_path().is_file()
+    voice_ok = narration.voice_model_file().is_file()
+    narration_ok = piper_ok and voice_ok
+    checks.append(
+        CheckResult(
+            "narration",
+            True,  # opt-in (`make --narrate`): not installed is a tip, never a failure, so CI/bootstrap/sandbox stay green
+            f"piper={'yes' if piper_ok else 'no'} voice={'yes' if voice_ok else 'no'}"
+            + ("" if narration_ok else " (optional, only needed for --narrate)"),
+            ""
+            if narration_ok
+            else "run `animatica doctor --fix` to fetch piper and the default voice model (~85MB, one-time)",
+        )
+    )
+
     # Configured provider + key
     cfg = load_config()
     provider = cfg.provider
@@ -583,5 +602,23 @@ def fix_dependencies(
                 _try("tlmgr repository", [tlmgr, "option", "repository"], show_output=True)
         else:
             actions.append("tlmgr not found; open a new terminal, then run: tlmgr install " + " ".join(TEX_PACKAGES))
+
+    # Narration: fetch Piper + the default voice model, lazily, each verified
+    # against a pinned sha256 before use (spec section 5's "lazy-fetch, fail
+    # closed on an unknown hash" decision -- never a silent fallback).
+    from animatica import narration
+
+    if not (which("piper") or narration.piper_binary_path().is_file()):
+        try:
+            narration.fetch_piper()
+            actions.append("done: fetch piper engine (MIT, pinned sha256)")
+        except Exception as exc:
+            actions.append(f"failed: fetch piper engine ({exc})")
+    if not narration.voice_model_file().is_file():
+        try:
+            narration.fetch_voice_model()
+            actions.append(f"done: fetch default voice model ({narration.DEFAULT_VOICE})")
+        except Exception as exc:
+            actions.append(f"failed: fetch default voice model ({exc})")
 
     return actions
