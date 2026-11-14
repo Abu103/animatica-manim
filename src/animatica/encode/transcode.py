@@ -5,6 +5,7 @@ import subprocess
 from pathlib import Path
 from typing import Callable
 
+from animatica._nativelibs import system_tool_env
 from animatica.encode.probe import EncoderInfo, TranscodeResult
 
 
@@ -29,6 +30,7 @@ def transcode(
             capture_output=True,
             text=True,
             timeout=900,
+            env=system_tool_env(),
         )
         if proc.returncode == 0 and dst.exists():
             return TranscodeResult(path=dst, encoder=enc, warning=None)

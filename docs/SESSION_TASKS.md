@@ -1,6 +1,17 @@
 # Animatica session log (live, edit as you go)
 Updated: 2026-11-11. Newest status on top. Any Claude session can resume from here.
 
+## Status (2026-11-14, Claude session, card C2 "ffmpeg without the bundled native libs")
+- Branch: `hermes/c2-ffmpeg-env`, off `main` = `7e231ae`. **Not pushed**; delivered as a patch.
+- Changed: `src/animatica/_nativelibs.py` (new `system_tool_env()`), `backends/scheduler.py` (concat), `encode/transcode.py`, `encode/probe.py` (all three ffmpeg calls), `tests/test_nativelibs_env.py` (new), this log. 6 files.
+- **Bug**: `.animatica-env` and `_nativelibs.ensure()` put `<runtime>/native/lib` on `LD_LIBRARY_PATH` for the `manim` child. A system `ffmpeg` inherits it, loads the bundle's glib instead of its own and dies with a symbol lookup error (exit 127), so a two-scene render failed at the concat step.
+- **Evidence (RED)**: 10 new tests failed (`system_tool_env` missing; ffmpeg calls passed no `env`). End to end: with a broken library in the bundle dir on `LD_LIBRARY_PATH`, `concat_videos` on `main` raised `ffmpeg concat failed (exit 127)`.
+- **Fix**: `system_tool_env()` returns a copy of the environment with only the bundle directory removed from `LD_LIBRARY_PATH` (other entries kept; the variable is dropped when empty; `os.environ` untouched). Every ffmpeg call (concat, transcode, `-version`, `-encoders`, test encode) passes it as `env=`. The `manim` child still gets the bundle.
+- Verified (this session, Linux): `pytest tests/test_nativelibs_env.py tests/test_probe.py tests/test_transcode.py tests/test_scheduler.py` -> 49 passed, 1 failed (`test_system_info_cpus_and_memory`, a 2-CPU sandbox, fails the same on `main`). Same poisoned-bundle `concat_videos` call: `main` exit 127, branch succeeded (7905-byte output).
+- `tests/test_sandbox_script.py`: 66 passed, 1 failed (`test_added_module_importable_and_deleted_module_gone_without_rebuild`); the identical failure is on untouched `main` in this sandbox, cause not investigated.
+- Not fixed on purpose: `.animatica-env` still exports `LD_LIBRARY_PATH` to the user's shell, because running `manim` by hand needs it. A system `ffmpeg` typed directly in that shell can still hit the bug; the pipeline cannot.
+- NOT verified: the full suite (the sandbox had no manim/dvisvgm); Windows (`LD_LIBRARY_PATH` is a no-op there); CI on GitHub.
+
 ## Status (2026-11-14, Claude session, card C1 "a lint gate for real defects")
 - Branch: `hermes/c1-lint-defects`, off `main` = `7e231ae`. **Not pushed** (no GitHub link in the session; delivered as a patch).
 - Changed: `pyproject.toml` (ruff config, `ruff` in the `dev` extra), `.github/workflows/ci.yml` (one lint step in `linux-tests`), 51 source, test and script files for the fixes below (20 in `src`, 30 in `tests`, 1 in `scripts`), `docs/SESSION_TASKS.md`. This is far over the 5-file card limit because most of those files are one-line unused-import removals.

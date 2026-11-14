@@ -8,6 +8,8 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 from typing import Callable, Sequence, TypeVar, cast
 
+from animatica._nativelibs import system_tool_env
+
 T = TypeVar("T")
 R = TypeVar("R")
 
@@ -423,6 +425,7 @@ def concat_videos(clips: list[Path], dst: Path, ffmpeg: str | None = None) -> No
                 [ffmpeg, "-y", "-f", "concat", "-safe", "0", "-i", str(list_file), "-c", "copy", str(dst)],
                 check=True,
                 capture_output=True,
+                env=system_tool_env(),
             )
         except subprocess.CalledProcessError as exc:
             detail = (exc.stderr or b"").decode("utf-8", "replace").strip()[-600:]
