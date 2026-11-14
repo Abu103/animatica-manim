@@ -1,6 +1,15 @@
 # Animatica session log (live, edit as you go)
 Updated: 2026-11-14. Newest status on top. "Not pushed" in an entry means as of when it was written; `gh pr list --state all` is the source of truth for what merged. Any Claude session can resume from here.
 
+## Status (2026-11-14, Claude session, card C5 "windows CI split")
+- Branch: `hermes/c5-windows-ci-split` off `hermes/c4-windows-tex-cache`. **Not pushed**; delivered as a patch.
+- Problem: the single `windows` job was taking >4 min and bottlenecking every CI run, same shape `linux` had before `linux-tests`/`linux-render` split it.
+- Split `windows` into `windows-tests` (bootstrap, doctor, the full pytest suite with `--durations=25`) and `windows-render` (bootstrap, bundle-visibility doctor, smoke test, fixture render gate, the PowerShell-parses check) that now run in parallel. `windows` itself is now a cheap `ubuntu-24.04` aggregate — same `needs: [...] / if: always()` pattern as `linux` — so branch protection still waits on one check name.
+- TinyTeX cache: both halves restore the same key; only `windows-tests` saves it, to avoid two jobs racing to save the same cache entry.
+- `windows-render` drops the `uv pip install -e ".[dev,tui]"` step: `ci_smoke.py`/`ci_render_gate.py` only touch base deps (`av`, `manim`, ...), which `bootstrap.ps1` already installs. That, plus not re-running the full suite there, is most of the expected wall-clock win.
+- Added 5 RED tests to `tests/test_ci_gate.py` (`test_windows_is_an_aggregate_of_two_halves` and friends) before the split, confirmed red, then made them pass; also re-ran `test_aggregate_linux_job_is_untouched` as a regression check.
+- Verified by hand-running the same `_ci_job()` regex logic the new tests use against the edited `ci.yml` (all 5 assertions pass) and `yaml.safe_load` on the file. **Not verified**: an actual Windows runner — `manim`'s `pangocairo` system dependency isn't installable in this container, so the real `pytest tests/test_ci_gate.py -k windows` run and the first live `windows-tests`/`windows-render` CI run after merge are still open. Read that first run for the actual wall-clock before vs after, and for "Cache saved" on `windows-tests` / a restore hit on the next run.
+
 ## Status (2026-11-14, Claude session, card C4 "PR triage and branch cleanup")
 - Branch: `hermes/c4-windows-tex-cache`. **Not pushed**; delivered as a patch.
 - Done by the owner from the commands given: PRs #48 (C1 + C2) and #49 (C3) merged; 23 remote branches whose PRs were merged deleted (every one from `gh pr list --state merged`, none with an open PR). That list included `hermes/c31-caption-duplicate`, so the C3 note that its PR was unidentified is now settled: it was merged.

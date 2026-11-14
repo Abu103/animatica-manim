@@ -274,3 +274,62 @@ def test_aggregate_linux_job_is_untouched():
     job = _ci_job("linux")
     assert "needs: [linux-tests, linux-render]" in job
     assert "sandbox" not in job
+
+
+# --- windows: two halves in parallel, one aggregate (the same shape as linux) ----------------------
+def _step_names(job: str) -> list[str]:
+    return _re.findall(r"^\s+- name: (.+)$", job, _re.M)
+
+
+def test_windows_is_an_aggregate_of_two_halves():
+    """Branch protection keeps waiting on `windows`; it must be red unless both halves are green."""
+    job = _ci_job("windows")
+    assert "needs: [windows-tests, windows-render]" in job
+    assert "if: always()" in job
+    assert "needs.windows-tests.result" in job and "needs.windows-render.result" in job
+    assert "ci_tests.py" not in job and "ci_render_gate.py" not in job  # it only judges, it runs nothing
+
+
+def test_windows_tests_half_runs_the_suite_and_only_the_suite():
+    job = _ci_job("windows-tests")
+    assert "runs-on: windows-latest" in job
+    assert "scripts/ci_tests.py" in job
+    assert "scripts/ci_render_gate.py" not in job and "scripts/ci_smoke.py" not in job
+    assert "bootstrap.ps1" in job  # the suite needs the venv and the TeX bundle the installer makes
+    assert "--durations" in job  # the next round of tuning needs the slowest tests on Windows, not a guess
+
+
+def test_windows_render_half_runs_the_renders_and_the_installer_checks():
+    job = _ci_job("windows-render")
+    assert "runs-on: windows-latest" in job
+    assert "scripts/ci_smoke.py" in job and "scripts/ci_render_gate.py" in job
+    assert "scripts/ci_tests.py" not in job
+    assert "bootstrap.ps1" in job
+    assert "bundle visibility" in job  # doctor from a non-project directory
+    assert "Parser]::ParseFile" in job  # bootstrap.ps1 still has to parse
+
+
+def test_windows_halves_share_the_tex_cache_but_only_one_saves_it():
+    """Two jobs saving the same key race for the reservation; one restores, one saves."""
+    tests, render = _ci_job("windows-tests"), _ci_job("windows-render")
+    for job in (tests, render):
+        assert "Restore TinyTeX cache" in job
+    saves = [j for j in (tests, render) if "Save TinyTeX cache" in j]
+    assert len(saves) == 1
+
+
+def test_windows_halves_lose_no_step_of_the_old_job():
+    """Everything the single windows job did is still done by one of the halves."""
+    both = _ci_job("windows-tests") + _ci_job("windows-render")
+    for needle in (
+        "scripts/bootstrap.ps1",
+        "animatica-doctor-cwd-test",
+        "import textual",
+        "animatica doctor",
+        "scripts/ci_tests.py",
+        "scripts/ci_smoke.py",
+        "scripts/ci_render_gate.py",
+        "Save the render cache",
+        "TeX diagnostics",
+    ):
+        assert needle in both, needle
