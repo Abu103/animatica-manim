@@ -1,6 +1,15 @@
 # Animatica session log (live, edit as you go)
 Updated: 2026-11-14. Newest status on top. "Not pushed" in an entry means as of when it was written; `gh pr list --state all` is the source of truth for what merged. Any Claude session can resume from here.
 
+## Status (2026-11-14, Claude session, card T26 "narration core module")
+- Branch: `hermes/t26-narration-core` off `hermes/t25-v03-approvals`. **Not pushed**; delivered as a patch.
+- Scope, deliberately narrowed from the full narration spec (AGENTS.md rule 10): just the core module, no pipeline wiring, no mux, no doctor check, no CLI flag. Those are separate cards (T26b sync wiring, T26c doctor check + voice fetch, T26d CLI flag + ffmpeg mux) so each stays reviewable on its own.
+- `src/animatica/narration.py`: `synthesize()` (Piper via injected `run`/`which`, the same DI convention as `latex_check.probe_latex`/`doctor.run_checks`; fails closed with `NarrationUnavailable` on an unchecked voice, missing `piper`, missing voice model, or a non-zero Piper exit -- never falls back to silence) and `narrate_storyboard()` (one WAV per beat, same nested shape as `pipeline._beat_durations`).
+- `pipeline.py`: extracted `beat_text()` (was inline in `_write_captions`) so the caption and the narration text can never drift apart, per the spec's section 4 instruction.
+- Over the ~150-line guideline (261 lines across 3 files) -- flagging per rule 10 rather than letting it pass quietly. Stayed at 3 files; the extra length is almost all `tests/test_narration.py` covering each fail-closed path (unchecked voice, no piper, no model file, piper non-zero exit) plus the two `beat_text` paths, which felt worth keeping together rather than splitting a 9-test file across two cards.
+- Verified: `pytest tests/test_narration.py -q` (9 passed), `pytest tests/test_narration.py tests/test_caption.py tests/test_cache.py -q` (37 passed, no regressions from the `pipeline.py` refactor), `ruff check` on all three changed files (clean), `animatica doctor` (unaffected by this change; `latex` already failed in this fresh sandbox before it -- `dvisvgm` is not installed here -- not something this card touched or can fix).
+- NOT verified / not run: `python scripts/ci_tests.py` (the strict, zero-skip full gate) -- this sandbox is missing `dvisvgm`, so the full suite cannot currently pass here regardless of this change; ran the targeted and adjacent test files instead and read their output. No real Piper binary was available or used; every `synthesize()` test injects a fake `run`/`which`.
+
 ## Status (2026-11-14, Claude session, card T25 "v0.3 owner approvals")
 - Branch: `hermes/t25-v03-approvals` off `hermes/t24-narration-spec` (429b2f3). **Not pushed**; delivered as a patch.
 - Owner approved all of `docs/TASKS_FOR_HERMES_V02.md`'s v0.3 proposals in this session: narration, components batch 2 (all 6 listed examples, no substitutions), agent surface publish. HyperFrames stays experimental (no real-demand signal to promote on).

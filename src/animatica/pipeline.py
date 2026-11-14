@@ -109,6 +109,18 @@ def _caption_strip(sb: Storyboard, vertical: bool) -> float:
         config.frame_width = old_width
 
 
+def beat_text(beat, comp, params=None) -> str:
+    """The text a beat is captioned (and, with ``--narrate``, narrated) with.
+
+    One lookup shared by ``_write_captions`` and ``narration.narrate_storyboard``
+    so the burned-in caption and the spoken narration can never drift apart:
+    narration reads the caption, it doesn't get its own script.
+    """
+    if params is None:
+        params = comp.Params.model_validate(beat.params)
+    return beat.caption or comp.fallback_text(params)
+
+
 def _write_captions(sb: Storyboard, registry, path: Path) -> None:
     lines = ["WEBVTT", ""]
     t = 0.0
@@ -119,7 +131,7 @@ def _write_captions(sb: Storyboard, registry, path: Path) -> None:
             dur = comp.duration(params)
             start, end = t, t + dur
             t = end
-            text = beat.caption or comp.fallback_text(params)
+            text = beat_text(beat, comp, params)
             lines.append(f"{_vtt_timestamp(start)} --> {_vtt_timestamp(end)}")
             lines.append(text)
             lines.append("")
