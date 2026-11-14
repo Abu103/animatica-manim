@@ -17,7 +17,7 @@ NEVER execute or generate Manim code at `animatica make` time. Component code is
 ## Where things are
 - Agent loop for components/storyboards: `skills/animatica/SKILL.md`
 - Task cards: `docs/TASKS_FOR_HERMES.md` (T1-T9, done), `docs/TASKS_FOR_HERMES_V02.md` (current)
-- Roadmap (DRAFT until owner approves): `docs/ROADMAP.md`
+- Roadmap (the working plan; P0 approved by the owner, later work follows the T-cards): `docs/ROADMAP.md`
 - Session log: `docs/SESSION_TASKS.md`  | Playbook: `docs/HERMES_PLAYBOOK.md`
 - Gate scripts: `scripts/ci_tests.py` (strict), `scripts/ci_smoke.py`, `animatica doctor`
 

@@ -1,6 +1,6 @@
 # Sandbox bootstrap: one command, under 60 seconds, any network
 
-Date: 2026-11-12 · Base: `main` @ `6329f6d` · Status: draft for owner review · Path: architectural
+Date: 2026-11-12 · Base: `main` @ `6329f6d` · Status: implemented (PR #44) · Path: architectural
 
 ## 1. Problem and success criteria
 
