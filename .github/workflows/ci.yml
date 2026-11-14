@@ -95,6 +95,8 @@ jobs:
             texlive-latex-extra texlive-fonts-recommended texlive-science dvisvgm fonts-lmodern
       - name: Python deps (including the TUI and test extras)
         run: pip install -e ".[dev,tui]"
+      - name: Lint (real defects only)
+        run: python -m ruff check src scripts tests
       - name: Doctor (must pass)
         run: python -m animatica doctor
       # Every test must run here: no skips, no warnings, no failures. The gate

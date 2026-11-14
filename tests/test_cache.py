@@ -1,4 +1,3 @@
-from pathlib import Path
 
 from animatica.storyboard.cache import StoryboardCache
 from animatica.storyboard.models import Storyboard

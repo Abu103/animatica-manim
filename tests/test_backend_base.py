@@ -3,7 +3,7 @@ import pytest
 from pathlib import Path
 from typing import ClassVar
 
-from animatica.backends.base import RenderBackend, RenderOptions, RenderResult
+from animatica.backends.base import RenderBackend, RenderResult
 from animatica.report import StageTimer, write_report
 
 

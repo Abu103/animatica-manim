@@ -9,7 +9,6 @@ from animatica.ai.template import TemplateMatcher
 from animatica.ai.repair import generate_storyboard, generate_storyboard_two_stage
 from animatica.ai.guidance import check_generation_guidance
 from animatica.backends.base import RenderBackend, RenderOptions
-from animatica.backends.manim_backend import ManimBackend
 from animatica.backends import default_backends
 from animatica.components.registry import ComponentRegistry, default_registry
 from animatica.config import load_config

@@ -110,7 +110,7 @@ class Compare(Component):
         return title, left, right
 
     def play(self, scene, p, colors) -> None:
-        from manim import FadeIn, VGroup, config
+        from manim import FadeIn
 
         prepare(scene, colors)
 

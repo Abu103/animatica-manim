@@ -35,13 +35,16 @@ import tempfile
 import threading
 import time
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from animatica.ai.base import ProviderError, RateLimited, StoryboardGenerationError
 from animatica.ai.template import TemplateMatcher
 from animatica.components.registry import default_registry
 from animatica.pipeline import MakeResult, make_video
 from animatica.storyboard.models import Storyboard, dump_storyboard, load_storyboard
+
+if TYPE_CHECKING:
+    from textual.app import ComposeResult
 
 
 # ---------------------------------------------------------------------------
@@ -52,7 +55,7 @@ from animatica.storyboard.models import Storyboard, dump_storyboard, load_storyb
 def _import_textual() -> dict[str, Any]:
     """Import the Textual names this app uses, with a helpful error if missing."""
     try:
-        from textual.app import App, ComposeResult
+        from textual.app import App
         from textual.binding import Binding
         from textual.containers import Grid, Horizontal, Vertical, VerticalScroll
         from textual.screen import ModalScreen
@@ -85,7 +88,6 @@ def _import_textual() -> dict[str, Any]:
         "Binding": Binding,
         "Button": Button,
         "Collapsible": Collapsible,
-        "ComposeResult": ComposeResult,
         "ContentSwitcher": ContentSwitcher,
         "DataTable": DataTable,
         "Footer": Footer,
@@ -398,7 +400,7 @@ class AnimaticaTuiApp:
                 w["Binding"]("f1", "close", "Close", show=False),
             ]
 
-            def compose(self) -> w["ComposeResult"]:  # type: ignore[valid-type]
+            def compose(self) -> ComposeResult:
                 with w["Vertical"](id="help-card"):
                     yield w["Static"]("A simple four-step flow", classes="pane-title")
                     yield w["Static"](
@@ -448,7 +450,7 @@ class AnimaticaTuiApp:
 
             # -- layout ----------------------------------------------------
 
-            def compose(self) -> w["ComposeResult"]:  # type: ignore[valid-type]
+            def compose(self) -> ComposeResult:
                 with w["Horizontal"](id="topbar"):
                     yield w["Static"]("ANIMATICA", classes="brand")
                     yield w["Static"](

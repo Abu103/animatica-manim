@@ -91,7 +91,7 @@ class ArrayViz(Component):
         return f"{p.title}: [{', '.join(f'{v:g}' for v in p.values)}]"  # type: ignore[attr-defined]
 
     def play(self, scene, p, colors) -> None:
-        from manim import DOWN, UP, FadeIn, Text, VGroup, config
+        from manim import UP, FadeIn, Text, VGroup, config
 
         prepare(scene, colors)
         title = Text(wrap(p.title, 45), font_size=MIN_FONT_SIZE + 8, color=colors.accent)

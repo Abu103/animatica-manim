@@ -166,7 +166,6 @@ def test_curve_grouped_with_axes():
     axes and curves together so they move/scale as a unit.
     """
     import inspect
-    from manim import Axes, VMobject, VGroup
 
     source = inspect.getsource(ParametricGraph.play)
 

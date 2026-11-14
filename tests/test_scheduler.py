@@ -1,7 +1,5 @@
 import os
-from concurrent.futures import ProcessPoolExecutor
 from pathlib import Path
-from typing import Callable
 
 import pytest
 

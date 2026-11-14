@@ -5,11 +5,9 @@ CI with just `pip install -e . pytest`. The mcp package (a main dependency)
 provides both the server and client SDK.
 """
 import asyncio
-import json
 import os
 import sys
 
-import pytest
 
 from mcp.client.stdio import stdio_client
 from mcp import ClientSession, StdioServerParameters
@@ -130,7 +128,6 @@ def test_mcp_render_storyboard_no_stdout(tmp_path, capsys):
     protocol channel.
     """
     import json as _json
-    from pathlib import Path
     from animatica.pipeline import make_video
 
     sb = {"version": "1", "title": "MCP Test", "scenes": [{"beats": [{"component": "title_card", "params": {"title": "Test"}}]}]}
