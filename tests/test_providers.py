@@ -6,7 +6,7 @@ from animatica.ai.groq import GroqProvider
 from animatica.ai.nim import NIMProvider
 from animatica.ai.ollama import OllamaProvider
 from animatica.ai.openrouter import OpenRouterProvider
-from animatica.config import Config, load_key, save_key
+from animatica.config import Config
 
 
 def _handler(status, json_body=None, headers=None):
@@ -108,7 +108,6 @@ def test_router_groq_refuses_without_cloud_allowed(monkeypatch):
 
 
 def test_router_openrouter_refuses_non_free_model():
-    from animatica.ai.router import get_provider
     from animatica.ai.openrouter import OpenRouterProvider
     from animatica.ai.base import ProviderError
     # openrouter model in providers.toml ends in :free; force a non-free model via provider directly

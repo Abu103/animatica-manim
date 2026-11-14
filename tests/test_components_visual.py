@@ -70,7 +70,6 @@ def test_code_highlight_plays(run_component):
 @pytest.mark.render
 def test_diagram_ten_node_chain_fits_frame_and_time(run_component):
     """Regression: layout coordinates used to be drawn un-centred (off the right edge) and 10 nodes overran the beat."""
-    from manim import config
 
     nodes = [f"Term {i}" for i in range(10)]
     edges = [(nodes[i], nodes[i + 1]) for i in range(9)]

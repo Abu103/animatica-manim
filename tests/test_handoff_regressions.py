@@ -1,6 +1,5 @@
 import sys
 import types
-from pathlib import Path
 
 import pytest
 
@@ -34,7 +33,6 @@ def test_missing_babel_english_still_reported():
 
 
 def test_concat_uses_bundled_when_no_system_ffmpeg(monkeypatch, tmp_path):
-    import animatica.encode.probe as probe
     import animatica.backends.scheduler as scheduler
     monkeypatch.setattr("shutil.which", lambda name: None)
     monkeypatch.setitem(sys.modules, "imageio_ffmpeg", types.SimpleNamespace(get_ffmpeg_exe=lambda: "/bundle/ffmpeg"))

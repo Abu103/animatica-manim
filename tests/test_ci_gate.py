@@ -142,7 +142,7 @@ def test_allowlisted_warning_still_happens(tmp_path):
     A tolerated warning that no longer happens has to be removed from the
     allowlist; leaving it there hides a regression behind a stale excuse.
     """
-    from ci_render_gate import _render, load_allowlist, storyboard_components, storyboard_paths, warning_kind
+    from ci_render_gate import _render, storyboard_components, storyboard_paths, warning_kind
 
     for component, kind in _allowlist_entries():
         found = False

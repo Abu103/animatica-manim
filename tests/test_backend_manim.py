@@ -1,4 +1,3 @@
-import json
 import subprocess
 from pathlib import Path
 
@@ -74,7 +73,6 @@ def test_manim_backend_bad_latex_degrades_with_warning(tmp_path):
 
 def test_failed_scene_error_includes_manim_output(tmp_path, monkeypatch):
     """A failing scene must say WHY (manim's stderr), not just 'non-zero exit status'."""
-    import subprocess
 
     import pytest
 
