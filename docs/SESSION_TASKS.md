@@ -2,7 +2,7 @@
 Updated: 2026-11-11. Newest status on top. Any Claude session can resume from here.
 
 ## Status (2026-11-14, Claude session, card C2 "ffmpeg without the bundled native libs")
-- Branch: `hermes/c2-ffmpeg-env`, off `main` = `7e231ae`. **Not pushed**; delivered as a patch.
+- Branch: `hermes/c-major-lint-ffmpeg` (C1 + C2 in one PR, by the owner's request), off `main` = `7e231ae`. **Not pushed**; delivered as a patch.
 - Changed: `src/animatica/_nativelibs.py` (new `system_tool_env()`), `backends/scheduler.py` (concat), `encode/transcode.py`, `encode/probe.py` (all three ffmpeg calls), `tests/test_nativelibs_env.py` (new), this log. 6 files.
 - **Bug**: `.animatica-env` and `_nativelibs.ensure()` put `<runtime>/native/lib` on `LD_LIBRARY_PATH` for the `manim` child. A system `ffmpeg` inherits it, loads the bundle's glib instead of its own and dies with a symbol lookup error (exit 127), so a two-scene render failed at the concat step.
 - **Evidence (RED)**: 10 new tests failed (`system_tool_env` missing; ffmpeg calls passed no `env`). End to end: with a broken library in the bundle dir on `LD_LIBRARY_PATH`, `concat_videos` on `main` raised `ffmpeg concat failed (exit 127)`.
@@ -13,7 +13,7 @@ Updated: 2026-11-11. Newest status on top. Any Claude session can resume from he
 - NOT verified: the full suite (the sandbox had no manim/dvisvgm); Windows (`LD_LIBRARY_PATH` is a no-op there); CI on GitHub.
 
 ## Status (2026-11-14, Claude session, card C1 "a lint gate for real defects")
-- Branch: `hermes/c1-lint-defects`, off `main` = `7e231ae`. **Not pushed** (no GitHub link in the session; delivered as a patch).
+- Branch: `hermes/c1-lint-defects` (PR #47); folded into `hermes/c-major-lint-ffmpeg` with C2.
 - Changed: `pyproject.toml` (ruff config, `ruff` in the `dev` extra), `.github/workflows/ci.yml` (one lint step in `linux-tests`), 51 source, test and script files for the fixes below (20 in `src`, 30 in `tests`, 1 in `scripts`), `docs/SESSION_TASKS.md`. This is far over the 5-file card limit because most of those files are one-line unused-import removals.
 - **Evidence (RED)**: `ruff check src scripts tests --select F,E9` found **110 defects** on `main`: 88 unused imports, 12 unused variables, 4 f-strings without placeholders, 4 undefined names, 2 redefinitions. (`experiments/` has 11 more; it is excluded on purpose, the pilots are self-contained.)
 - **Fix**: the 110 are gone, and CI now fails on any new one (`python -m ruff check src scripts tests`, rules `F` and `E9` only; no style rules).
