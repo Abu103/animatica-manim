@@ -1,6 +1,8 @@
 # Changelog
 
-## Unreleased (0.2.0.dev0)
+## Unreleased
+
+## v0.2.0 (2026-11-14)
 - New: one-command sandbox setup, `scripts/sandbox.sh`: a bare machine (curl, tar, sh) to a verified checkout, with `animatica doctor` and a smoke render. The prebuilt runtime is published by `.github/workflows/sandbox-runtime.yml` and keyed by a hash of the dependency list (`scripts/runtime_key.sh`). Plan and spec: `docs/superpowers/` (PR #44).
 - New: lint gate, `ruff` rules F and E9 in CI (`python -m ruff check src scripts tests`), with the 110 defects it found fixed. Four `test_pipeline` tests had patched a name production code no longer reads; they now patch `animatica.backends.ManimBackend`.
 - Fix: a system `ffmpeg` no longer inherits the bundled cairo/pango directory on `LD_LIBRARY_PATH`, which made it die with a symbol lookup error (exit 127) and failed the concat step of a multi-scene render in the sandbox. `animatica._nativelibs.system_tool_env()` is used by every ffmpeg call.
@@ -17,6 +19,8 @@
 - Fix: `code_walkthrough` leaves room for its closing fade-out, so a beat is no longer 0.4s longer than its declared duration.
 - Fix: `extract_json` ignores brackets inside strings and finishes an object a model left one or more closing brackets short (a recorded NIM run for "derive the quadratic formula" failed on this); a cut-off reply now says so.
 - Fix: the prompt catalog spells out the keys for `compare` (`heading`, `bullets`), `timeline` (`label`, `text`) and `array_viz`; models had been guessing `name`/`purpose` and `year`/`event`. A test fails if a component with free-form dict params has no hint.
+- Fix: the Windows TinyTeX cache was keyed to the repo's `.tex`, but `scripts/bootstrap.ps1` unpacks the bundle into `%LOCALAPPDATA%\Animatica\tex`, so the job had been caching an empty directory every run (#50).
+- CI: `windows` split into `windows-tests` and `windows-render`, run in parallel, with a cheap aggregate job judging both (same shape as the existing `linux`/`linux-tests`/`linux-render` split); fixes the windows job bottlenecking every CI run at over 4 minutes (#51).
 
 ## v0.1.1 (2026-11-04)
 - Release asset: `tinytex-manim.zip` (sha256 83fde080e52cdd7209738fb0876e3ddd3d5f755c5fdea4e2bca4222d120ecbf8), the pre-baked TinyTeX tree used by `scripts/bootstrap.{sh,ps1}`.

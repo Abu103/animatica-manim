@@ -1,6 +1,13 @@
 # Animatica session log (live, edit as you go)
 Updated: 2026-11-14. Newest status on top. "Not pushed" in an entry means as of when it was written; `gh pr list --state all` is the source of truth for what merged. Any Claude session can resume from here.
 
+## Status (2026-11-14, Claude session, cards T21-T23 "0.2.0 release prep")
+- Branch: `hermes/t21-23-release-0.2.0` off `main` (a224414+63035bd, i.e. after C4/C5 merged as #50/#51). **Not pushed**; delivered as a patch.
+- **T22 (version bump):** `0.2.0.dev0` -> `0.2.0` in `pyproject.toml` and `src/animatica/__init__.py`. `tests/test_version.py` (4 tests, no heavy deps needed) run for real and pass: matches, valid PEP 440, past the published `v0.1.1`.
+- **T21 (changelog):** renamed `## Unreleased (0.2.0.dev0)` to `## v0.2.0 (2026-11-14)`, added the two entries that section was missing (C4 TinyTeX-cache-path fix #50, C5 windows CI split #51), and opened a fresh empty `## Unreleased` section above it for whatever lands next.
+- **T23 (release notes draft):** `docs/RELEASE_NOTES_0.2.0.md`, written for a release page (highlights + fixes-worth-knowing + upgrading + known gaps) rather than as a changelog diff. Marked draft at the top; owner edits before pasting into the GitHub release.
+- Not done: the tag and the release itself (owner's step, per the task card).
+
 ## Status (2026-11-14, Claude session, card C5 "windows CI split")
 - Branch: `hermes/c5-windows-ci-split` off `hermes/c4-windows-tex-cache`. **Not pushed**; delivered as a patch.
 - Problem: the single `windows` job was taking >4 min and bottlenecking every CI run, same shape `linux` had before `linux-tests`/`linux-render` split it.
