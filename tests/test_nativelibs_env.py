@@ -9,6 +9,7 @@ ffmpeg call runs with the bundle directory removed.
 """
 from __future__ import annotations
 
+import os
 import subprocess
 from pathlib import Path
 
@@ -18,6 +19,17 @@ from animatica.encode.probe import EncoderInfo, probe_encoders
 from animatica.encode.transcode import transcode
 
 BUNDLE = "/rt/native/lib"
+KEEP = "/usr/lib/keep"
+SEP = os.pathsep  # ":" on POSIX, ";" on Windows, where this variable means nothing but must not crash
+
+
+def _entries(env):
+    """LD_LIBRARY_PATH entries, normalised so "/a/b/" and "\\a\\b" compare equal on any OS."""
+    return [os.path.normpath(e) for e in env.get("LD_LIBRARY_PATH", "").split(SEP) if e]
+
+
+def _has_bundle(env):
+    return os.path.normpath(BUNDLE) in _entries(env)
 
 
 class _CP:
@@ -25,9 +37,9 @@ class _CP:
         self.returncode, self.stdout, self.stderr = rc, out, err
 
 
-def _bundle_env(monkeypatch, ld="/rt/native/lib:/usr/lib/keep"):
+def _bundle_env(monkeypatch, ld=None):
     monkeypatch.setenv(_nativelibs.NATIVE_DIR_ENV, BUNDLE)
-    monkeypatch.setenv("LD_LIBRARY_PATH", ld)
+    monkeypatch.setenv("LD_LIBRARY_PATH", BUNDLE + SEP + KEEP if ld is None else ld)
 
 
 def _ld(env):
@@ -37,7 +49,7 @@ def _ld(env):
 def test_system_tool_env_drops_only_the_bundle_dir(monkeypatch):
     _bundle_env(monkeypatch)
     env = _nativelibs.system_tool_env()
-    assert _ld(env) == "/usr/lib/keep"
+    assert _ld(env) == KEEP
 
 
 def test_system_tool_env_removes_the_variable_when_nothing_else_is_left(monkeypatch):
@@ -46,19 +58,17 @@ def test_system_tool_env_removes_the_variable_when_nothing_else_is_left(monkeypa
 
 
 def test_system_tool_env_leaves_the_process_environment_alone(monkeypatch):
-    import os
-
     _bundle_env(monkeypatch)
     _nativelibs.system_tool_env()
-    assert os.environ["LD_LIBRARY_PATH"] == "/rt/native/lib:/usr/lib/keep"
+    assert os.environ["LD_LIBRARY_PATH"] == BUNDLE + SEP + KEEP
 
 
 def test_system_tool_env_keeps_unrelated_entries_and_other_variables(monkeypatch):
     monkeypatch.delenv(_nativelibs.NATIVE_DIR_ENV, raising=False)
-    monkeypatch.setenv("LD_LIBRARY_PATH", "/a:/b")
+    monkeypatch.setenv("LD_LIBRARY_PATH", "/a" + SEP + "/b")
     monkeypatch.setenv("ANIMATICA_PROBE", "1")
     env = _nativelibs.system_tool_env()
-    assert _ld(env) == "/a:/b"
+    assert _ld(env) == "/a" + SEP + "/b"
     assert env["ANIMATICA_PROBE"] == "1"
 
 
@@ -70,8 +80,8 @@ def test_system_tool_env_without_the_variable_adds_nothing(monkeypatch):
 
 def test_system_tool_env_matches_a_trailing_slash(monkeypatch):
     monkeypatch.setenv(_nativelibs.NATIVE_DIR_ENV, BUNDLE)
-    monkeypatch.setenv("LD_LIBRARY_PATH", BUNDLE + "/:/usr/lib/keep")
-    assert _ld(_nativelibs.system_tool_env()) == "/usr/lib/keep"
+    monkeypatch.setenv("LD_LIBRARY_PATH", BUNDLE + "/" + SEP + KEEP)
+    assert _ld(_nativelibs.system_tool_env()) == KEEP
 
 
 def test_concat_runs_ffmpeg_without_the_bundle(tmp_path, monkeypatch):
@@ -85,8 +95,8 @@ def test_concat_runs_ffmpeg_without_the_bundle(tmp_path, monkeypatch):
     monkeypatch.setattr("animatica.backends.scheduler.subprocess.run", fake_run)
     concat_videos([tmp_path / "a.mp4", tmp_path / "b.mp4"], tmp_path / "o.mp4", ffmpeg="ffmpeg")
     assert seen["env"] is not None, "concat must pass an explicit env"
-    assert BUNDLE not in _ld(seen["env"]).split(":")
-    assert "/usr/lib/keep" in _ld(seen["env"]).split(":")
+    assert not _has_bundle(seen["env"])
+    assert os.path.normpath(KEEP) in _entries(seen["env"])
 
 
 def test_transcode_runs_ffmpeg_without_the_bundle(tmp_path, monkeypatch):
@@ -102,7 +112,7 @@ def test_transcode_runs_ffmpeg_without_the_bundle(tmp_path, monkeypatch):
 
     transcode(src, dst, EncoderInfo("libx264", "libx264", True, ""), ffmpeg="ffmpeg", run=run)
     assert seen["env"] is not None
-    assert BUNDLE not in _ld(seen["env"]).split(":")
+    assert not _has_bundle(seen["env"])
 
 
 def test_probe_runs_every_ffmpeg_call_without_the_bundle(monkeypatch):
@@ -123,7 +133,7 @@ def test_probe_runs_every_ffmpeg_call_without_the_bundle(monkeypatch):
     assert len(envs) >= 2, "expected -version, -encoders and a test encode"
     for env in envs:
         assert env is not None
-        assert BUNDLE not in _ld(env).split(":")
+        assert not _has_bundle(env)
 
 
 def test_real_subprocess_sees_no_bundle_dir(tmp_path, monkeypatch):
@@ -137,4 +147,4 @@ def test_real_subprocess_sees_no_bundle_dir(tmp_path, monkeypatch):
         capture_output=True,
         text=True,
     )
-    assert out.stdout.strip() == "/usr/lib/keep"
+    assert out.stdout.strip() == KEEP
