@@ -69,13 +69,22 @@ class ManimBackend:
         # Durations are pure functions of the storyboard: compute them serially so
         # the list stays in scene index order regardless of render parallelism.
         durations: list[float] = []
-        for scene in sb.scenes:
+        floors = opts.beat_floors
+        for s_idx, scene in enumerate(sb.scenes):
             scene_dur = 0.0
-            for beat in scene.beats:
+            for b_idx, beat in enumerate(scene.beats):
                 comp = registry.get(beat.component)
                 params = comp.Params.model_validate(beat.params)
-                scene_dur += comp.duration(params)
+                beat_dur = comp.duration(params)
+                if floors and s_idx < len(floors) and b_idx < len(floors[s_idx]):
+                    beat_dur = max(beat_dur, floors[s_idx][b_idx])
+                scene_dur += beat_dur
             durations.append(scene_dur)
+        floors_path = out_dir / "beat_floors.json"
+        if floors:
+            floors_path.write_text(json.dumps(floors), encoding="utf-8")
+        else:
+            floors_path.unlink(missing_ok=True)  # a stale file from an earlier --narrate run in this dir
 
         n_scenes = len(sb.scenes)
         progress = opts.progress
@@ -95,6 +104,8 @@ class ManimBackend:
                 env["ANIMATICA_STORYBOARD"] = str(sb_path)
                 env["ANIMATICA_SCENE_INDEX"] = str(i)
                 env["ANIMATICA_CAPTIONS"] = "1" if opts.captions else "0"
+                if floors:
+                    env["ANIMATICA_BEAT_FLOORS"] = str(floors_path)
                 media_dir = out_dir / "media" / f"scene_{i}"
                 media_dir.mkdir(parents=True, exist_ok=True)
                 import animatica.render.scene as scene_mod  # noqa: PLC0415

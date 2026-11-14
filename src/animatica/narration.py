@@ -32,6 +32,8 @@ from animatica.tex_bundle import download, sha256_file
 #: ``en_US-ljspeech-medium`` is public domain (LJSpeech corpus).
 DEFAULT_VOICE = "en_US-ljspeech-medium"
 ALLOWED_VOICES: tuple[str, ...] = (DEFAULT_VOICE,)
+#: Recorded in report.json so whoever ships the video knows what binds them.
+VOICE_LICENSES: dict[str, str] = {DEFAULT_VOICE: "public domain (LJSpeech corpus)"}
 
 #: The Piper engine (MIT) binary, pinned to a tagged release -- never
 #: "latest" -- so the URL and the hash below cannot drift apart. Fetched and
@@ -154,6 +156,7 @@ def synthesize(
     voice_model_path: Path | None = None,
     run=subprocess.run,
     which=shutil.which,
+    piper_path: Path | None = None,
 ) -> Path:
     """Synthesize ``text`` to a WAV at ``out_path`` with Piper.
 
@@ -165,7 +168,7 @@ def synthesize(
         raise NarrationUnavailable(
             f"voice {voice!r} is not in the checked-license allowlist {ALLOWED_VOICES}"
         )
-    piper = which("piper")
+    piper = str(piper_path) if piper_path is not None else which("piper")
     if not piper:
         raise NarrationUnavailable("piper is not on PATH; run `animatica doctor --fix` to install it")
     if voice_model_path is None or not voice_model_path.exists():
@@ -222,3 +225,98 @@ def narrate_storyboard(
             )
         out.append(paths)
     return out
+
+
+def ensure_narration(voice: str = DEFAULT_VOICE) -> tuple[Path, Path]:
+    """The Piper binary and ``voice``'s model, lazily fetched on first use.
+
+    An unchecked voice is refused before any network call. Anything missing
+    that cannot be fetched and hash-verified raises :class:`NarrationUnavailable`:
+    ``--narrate`` never silently falls back to no narration (spec section 5).
+    """
+    if voice not in ALLOWED_VOICES:
+        raise NarrationUnavailable(f"voice {voice!r} is not in the checked-license allowlist {ALLOWED_VOICES}")
+    found = shutil.which("piper")
+    if found:
+        piper = Path(found)
+    elif piper_binary_path().is_file():
+        piper = piper_binary_path()
+    else:
+        piper = fetch_piper()
+    model = voice_model_file(voice)
+    if not model.is_file():
+        model = fetch_voice_model(voice)
+    return piper, model
+
+
+def narrate_for_render(sb: Storyboard, registry, out_dir: Path, voice: str = DEFAULT_VOICE):
+    """Synthesize every beat; return ``(wavs, floors)`` in ``_beat_durations`` shape.
+
+    ``floors[scene][beat]`` is the clip's real length, read back from the WAV,
+    and becomes that beat's minimum duration (spec section 3, option c).
+    """
+    piper, model = ensure_narration(voice)
+
+    def synth(text, out_path, voice=voice, voice_model_path=model):
+        return synthesize(text, out_path, voice=voice, voice_model_path=voice_model_path, piper_path=piper)
+
+    wavs = narrate_storyboard(sb, registry, Path(out_dir) / "narration", voice=voice, voice_model_path=model, synthesize_fn=synth)
+    return wavs, [[wav_duration_seconds(w) for w in row] for row in wavs]
+
+
+def build_track(wavs: list[list[Path]], durations: list[list[float]], out: Path) -> Path:
+    """One WAV the length of the video: each beat's clip starts where its beat starts.
+
+    ``durations`` are the final per-beat durations (visual extended to cover
+    narration), so clips can never overlap and never drift.
+    """
+    clips: list[tuple[float, Path]] = []
+    t = 0.0
+    for s_wavs, s_durs in zip(wavs, durations):
+        for wav, dur in zip(s_wavs, s_durs):
+            clips.append((t, wav))
+            t += dur
+    total = t
+    rate = width = None
+    for _, wav in clips:
+        with wave.open(str(wav), "rb") as w:
+            fmt = (w.getframerate(), w.getsampwidth(), w.getnchannels())
+        if rate is None:
+            rate, width, chans = fmt
+        elif fmt != (rate, width, chans):
+            raise NarrationUnavailable("narration clips have mixed audio formats; cannot build one track")
+    rate, width, chans = (rate or 22050, width or 2, chans if clips else 1)
+    frame_bytes = width * chans
+    buf = bytearray(round(total * rate) * frame_bytes)
+    for start, wav in clips:
+        with wave.open(str(wav), "rb") as w:
+            data = w.readframes(w.getnframes())
+        at = round(start * rate) * frame_bytes
+        data = data[: max(0, len(buf) - at)]
+        buf[at : at + len(data)] = data
+    out = Path(out)
+    with wave.open(str(out), "wb") as w:
+        w.setnchannels(chans)
+        w.setsampwidth(width)
+        w.setframerate(rate)
+        w.writeframes(bytes(buf))
+    return out
+
+
+def mux_narration(video: Path, track: Path, out: Path, ffmpeg: str | None = None) -> Path:
+    """Copy ``video`` untouched and add ``track`` as its AAC audio."""
+    if ffmpeg is None:
+        from animatica.encode.probe import _default_ffmpeg
+
+        ffmpeg = _default_ffmpeg()
+    from animatica._nativelibs import system_tool_env
+
+    proc = subprocess.run(
+        [ffmpeg, "-y", "-i", str(video), "-i", str(track), "-map", "0:v:0", "-map", "1:a:0",
+         "-c:v", "copy", "-c:a", "aac", "-shortest", str(out)],
+        capture_output=True, env=system_tool_env(),
+    )
+    if proc.returncode != 0 or not Path(out).exists():
+        detail = (proc.stderr or b"").decode("utf-8", "replace").strip()[-300:]
+        raise NarrationUnavailable(f"narration mux failed (ffmpeg exit {proc.returncode}): {detail}")
+    return Path(out)

@@ -160,8 +160,9 @@ def run_checks(run=subprocess.run, which=shutil.which, deep_latex: bool = True) 
     checks.append(
         CheckResult(
             "narration",
-            narration_ok,
-            f"piper={'yes' if piper_ok else 'no'} voice={'yes' if voice_ok else 'no'}",
+            True,  # opt-in (`make --narrate`): not installed is a tip, never a failure, so CI/bootstrap/sandbox stay green
+            f"piper={'yes' if piper_ok else 'no'} voice={'yes' if voice_ok else 'no'}"
+            + ("" if narration_ok else " (optional, only needed for --narrate)"),
             ""
             if narration_ok
             else "run `animatica doctor --fix` to fetch piper and the default voice model (~85MB, one-time)",

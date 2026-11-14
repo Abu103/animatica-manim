@@ -366,3 +366,9 @@ out2 video (real nemotron run, user's machine):
 4. Windows clean-clone install untested. CI smoke test not written.
 5. Then P1: two-stage generation, eval harness, frame lint, LLM-friendly validation errors (docs/ROADMAP.md).
 6. A real free-provider default (OpenRouter/Ollama) is only documented, not auto-configured.
+
+## Status (2026-11-14, Claude session, card T26d "--narrate / --voice, hold + mux")
+- `make --narrate [--voice]`: lazy-fetch Piper + voice, synthesize each beat's caption, clip length = beat floor (`RenderOptions.beat_floors`), `Clock` holds content before the fade-out, one track built on final beat timing, muxed to `video_narrated.mp4`; captions/lint use extended durations; `report.json` records voice + license.
+- Also fixed T26c: the `narration` doctor check is now an optional tip (ok=True), since a FAIL broke `animatica doctor` in CI and `sandbox.sh`.
+- Verified: tests/test_narrate_make.py (13), full suite 1336 passed / 12 failed -- the same 12 fail on the T26c baseline (graph/caption-room/scheduler, sandbox-specific). Real Manim render with fake 5s clips gave a 5.0s video with audio.
+- Unverified: real Piper synthesis; voice-model sha256; Windows (Piper asset is Linux-only, fails closed). Card exceeds the 5-file/150-line guideline (rule 10), flagged.

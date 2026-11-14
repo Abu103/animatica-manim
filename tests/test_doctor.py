@@ -24,7 +24,8 @@ def test_all_present_ok(tmp_path, monkeypatch):
 def test_narration_check_reports_what_is_missing():
     checks = run_checks(which=lambda cmd: None, deep_latex=False)
     narration_check = next(c for c in checks if c.name == "narration")
-    assert narration_check.ok is False
+    # Opt-in feature: missing is a tip, not a failure (a failing check would break `animatica doctor` in CI).
+    assert narration_check.ok is True
     assert "piper=no" in narration_check.detail and "voice=no" in narration_check.detail
     assert "doctor --fix" in narration_check.fix
 
