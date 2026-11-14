@@ -1,6 +1,19 @@
 # Animatica session log (live, edit as you go)
 Updated: 2026-11-14. Newest status on top. "Not pushed" in an entry means as of when it was written; `gh pr list --state all` is the source of truth for what merged. Any Claude session can resume from here.
 
+## Status (2026-11-14, Claude session, card T25 "v0.3 owner approvals")
+- Branch: `hermes/t25-v03-approvals` off `hermes/t24-narration-spec` (429b2f3). **Not pushed**; delivered as a patch.
+- Owner approved all of `docs/TASKS_FOR_HERMES_V02.md`'s v0.3 proposals in this session: narration, components batch 2 (all 6 listed examples, no substitutions), agent surface publish. HyperFrames stays experimental (no real-demand signal to promote on).
+- Resolved the narration spec's two open owner questions (section 5): default voice is lazy-fetched on first `--narrate`/`doctor --fix`, not bundled into `sandbox.sh`/`bootstrap.*` (keeps the under-a-minute install promise); `--voice` ships in 0.3, default-only allowlist until a second voice's license is checked.
+- Not started: T26 (narration implementation) and T27-T33 (components batch 2, agent surface). These are the next cards, one branch each per AGENTS.md rule 7.
+
+## Status (2026-11-14, Claude session, v0.3 kickoff: narration spec)
+- Branch: `hermes/t24-narration-spec` off `main` @ a54a93b. **Not pushed**; delivered as a patch.
+- `docs/superpowers/specs/2026-11-14-narration-design.md`: resolves the licensing UNVERIFIED flag on `v0.3`'s narration proposal. Piper engine is MIT; voice models carry their own per-voice license (checked against the real `rhasspy/piper-voices` MODEL_CARDs, not reseller marketing pages, which overstate the restriction). `en_US-ljspeech-medium` (public domain) recommended as the default bundled voice.
+- Spec's real content is the sync-strategy decision (section 3): extend a beat to `max(visual_duration, narration_duration)` rather than time-stretching either side, reusing the per-beat text `_write_captions` already computes.
+- Two open questions left for the owner (section 5): default-voice bundle size vs lazy fetch, and whether `--voice` ships in 0.3 or stays default-only.
+- Not started: implementation (this is the "Claude-written spec" the roadmap asked for before any v0.3 code). Components batch 2 and the HyperFrames decision still need the owner's picks before those get their own cards.
+
 ## Status (2026-11-14, Claude session, cards T21-T23 "0.2.0 release prep")
 - Branch: `hermes/t21-23-release-0.2.0` off `main` (a224414+63035bd, i.e. after C4/C5 merged as #50/#51). **Not pushed**; delivered as a patch.
 - **T22 (version bump):** `0.2.0.dev0` -> `0.2.0` in `pyproject.toml` and `src/animatica/__init__.py`. `tests/test_version.py` (4 tests, no heavy deps needed) run for real and pass: matches, valid PEP 440, past the published `v0.1.1`.
