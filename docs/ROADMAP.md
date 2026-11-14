@@ -1,4 +1,6 @@
-# Animatica roadmap / design spec (DRAFT, needs owner approval)
+# Animatica roadmap / design spec
+
+> **Status (2026-11-14): working plan.** The owner approved P0 on 2026-11-04 and has directed the later work in it since (the T-cards in `docs/TASKS_FOR_HERMES*.md`). It began as a draft; treat it as the plan in use, and the "Decision needed" section at the end as history.
 
 ## Goal (as understood, correct me)
 Prompt in, correct and decent-looking explainer video out, **driven by free/weak models** (Nemotron 3 Super 120B-A12B, Ultra 550B-A55B via NIM/OpenRouter, Hermes Agent). Stable enough to demo and put on a portfolio. Not a general Manim-code writer.

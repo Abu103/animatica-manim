@@ -1,8 +1,15 @@
 # Animatica session log (live, edit as you go)
-Updated: 2026-11-11. Newest status on top. Any Claude session can resume from here.
+Updated: 2026-11-14. Newest status on top. "Not pushed" in an entry means as of when it was written; `gh pr list --state all` is the source of truth for what merged. Any Claude session can resume from here.
+
+## Status (2026-11-14, Claude session, card C3 "docs cleanup")
+- Branch: `hermes/c-minor-docs` (the minor PR; C1 + C2 are in the major PR `hermes/c-major-lint-ffmpeg`, by the owner's request). **Not pushed**; delivered as a patch.
+- Changed (docs only): `CHANGELOG.md` (new Unreleased section: sandbox setup, lint gate, ffmpeg fix, caption/graph/compare fixes, CI split; later eval items that sat under v0.1.1 moved up), this log (stale "Not pushed" lines now name the PR that merged them; #46, #34, #26, #19; `c31-caption-duplicate` left unmatched), `docs/superpowers/plans/2026-11-12-sandbox-bootstrap.md` (36 boxes ticked, status note), its spec (draft -> implemented), `docs/ROADMAP.md` and `AGENTS.md` (no longer "DRAFT").
+- Judgement call to confirm: the ROADMAP is now labelled the working plan, based on the log's own "P0 APPROVED by user" line and the T-cards built since. Revert that one header if you do not want to say so.
+- Verified: every ticked step has a test in `tests/test_sandbox_script.py` or `tests/test_ci_gate.py` (Task 5 under slightly different names); `pytest tests/test_sandbox_script.py tests/test_version.py` -> 70 passed, 1 failed (the same one that fails on `main`).
+- NOT done (needs push access): C4, triaging PRs #38 and #40 and deleting merged remote branches. The PR numbers in the log came from `git log` titles, not the GitHub API (it refused this session).
 
 ## Status (2026-11-13, Claude session, card "parametric_graph: a circle is a circle, and labels stay readable")
-- Branch: `hermes/parametric-shape`, stacked on `hermes/eval-model-flag`. **Not pushed.**
+- Branch: `hermes/parametric-shape`, stacked on `hermes/eval-model-flag`. Merged into `main` with PR #46 (`7e231ae`).
 - Changed: `src/animatica/components/parametric_graph.py`, `tests/test_parametric_graph.py`, `docs/SESSION_TASKS.md`.
 - **Problem (noticed while fixing #32)**: the axes were always 10 x 5 units, so one unit along x was twice as long as one along y; `cos t, sin t` was drawn as an ellipse (measured curve width/height = 2.00). The circle also passes through the axis numbers at +-1, and the curve was drawn over them.
 - **Fix**: `_axes_lengths()` gives the largest equal-scale plot that fits the 10 x 5 box; if that would leave a side under 2.0 units (a very wide, flat curve) the axes fill the box with independent scales as before. Axis numbers get a higher z-index than the curve and a background-colour halo (stroke width 6), so a curve crossing a label does not hide it.
@@ -13,7 +20,7 @@ Updated: 2026-11-11. Newest status on top. Any Claude session can resume from he
 - NOT verified: `ci_render_gate.py` and the full suite were not run on this branch; nothing was run on Windows.
 
 ## Status (2026-11-13, Claude session, card "eval: a model per provider, and defaults that still exist")
-- Branch: `hermes/eval-model-flag`, stacked on `hermes/windows-test-env`. **Not pushed.**
+- Branch: `hermes/eval-model-flag`, stacked on `hermes/windows-test-env`. Merged into `main` with PR #46 (`7e231ae`).
 - Changed: `src/animatica/cli.py`, `src/animatica/ai/router.py`, `src/animatica/ai/groq.py`, `src/animatica/ai/openrouter.py`, `src/animatica/ai/providers.toml`, `tests/test_provider_defaults.py` (new), `docs/SESSION_TASKS.md`.
 - **Problem (found in T16)**: `animatica eval` had no way to give two providers two model ids (one `ANIMATICA_MODEL` for the process), and two defaults were retired: Groq shut `llama-3.1-8b-instant` down for free and developer keys on 2026-08-16 (Groq's deprecation page names `openai/gpt-oss-20b` as the replacement), and the OpenRouter default `meta-llama/llama-3.1-8b-instruct:free` was unavailable.
 - **Fix**: `get_provider(name, config, model=None)`; `animatica eval --provider X --model M`; `--models nim,groq:openai/gpt-oss-20b` (`provider:model`, split on the first `:` so `:free` ids work); the same provider listed twice is an error (the table has one column per provider); an unknown provider is a clean `Error:` line, not a traceback. New defaults: groq `openai/gpt-oss-20b`; openrouter `nvidia/nemotron-3.5-super-vl:free` (id as shown on openrouter.ai; the free list changes every few days, so `--model` is the way to override).
@@ -22,7 +29,7 @@ Updated: 2026-11-11. Newest status on top. Any Claude session can resume from he
 - NOT verified: no live call to Groq or OpenRouter (no keys here), so the two new default ids are checked against the providers' published pages only, not by a request.
 
 ## Status (2026-11-13, Claude session, card "the four Windows-only test failures")
-- Branch: `hermes/windows-test-env`, off `main` = `ff7cc06`. **Not pushed.**
+- Branch: `hermes/windows-test-env`, off `main` = `ff7cc06`. Merged into `main` as PR #46 (`7e231ae`).
 - Changed: `tests/test_bootstrap_script.py`, `tests/test_tex_path.py`, `docs/SESSION_TASKS.md`. **No source change.**
 - **Cause, from the owner's Windows run**: (1) `bash` on PATH was `C:\Windows\system32\bash.EXE`, the WSL launcher; it answers `--version` but cannot open a `C:\...` script path (`No such file or directory`, exit 127), so 3 tests in `test_bootstrap_script.py` failed. (2) `test_dir_without_latex_is_not_accepted` found the machine's real `C:/tools/tinytex/bin/windows` (a fixed candidate in `tinytex_bin_dirs`) and returned it instead of `None`.
 - **Fix**: `_usable_bash()` now tries Git for Windows' bash first (next to the `git` found on PATH, then the default folders), and accepts a candidate only if it also parses the real script (`bash -n <script>`). The tex test patches `tinytex_bin_dirs` to the temp dir only, so no installed TinyTeX can decide it. New test: a shell that answers `--version` but cannot open the script is rejected.
@@ -30,7 +37,7 @@ Updated: 2026-11-11. Newest status on top. Any Claude session can resume from he
 - NOT verified: on Windows. The failure itself cannot be reproduced on Linux (no WSL launcher, no `C:/tools/tinytex`); the owner's run is the evidence. Run `python scripts/ci_tests.py` on Windows: the expected result is 0 failed.
 
 ## Status (2026-11-11, Hermes session, card "dynamic worker count for pytest (-n) and the render gate")
-- Branch: `hermes/m2-eval-baseline` (current, off `main` = `88652e2`). **Not pushed.** No new branch created; this completes the owner's in-progress worker-count rework left in the working tree.
+- Branch: `hermes/m2-eval-baseline` (off `main` = `88652e2`). Merged as PR #34 (`e43d00f`). No new branch created; this completes the owner's in-progress worker-count rework left in the working tree.
 - Changed: `src/animatica/backends/scheduler.py`, `scripts/ci_tests.py`, `scripts/ci_render_gate.py`, `tests/test_scheduler.py`, `docs/SETUP.md`.
 - `system_info()` returns (usable CPUs, total RAM): affinity then cgroup `cpu.max` quota on Linux, else `os.cpu_count()`; `/proc/meminfo` on Linux, `GlobalMemoryStatusEx` via ctypes on Windows, `sysctl hw.memsize` on macOS; unknown -> None (memory limit skipped).
 - `pick_workers(kind, cpus, mem_gb)`: workers = min(cpus, floor(mem_gb / 1.5)), raised to min 4, never above memory limit when below 4 (then max(2, limit)), capped at 12. `kind="test"` uses 1.5 GB/worker; `kind="render"` keeps its budget (free memory, cap 4). `ANIMATICA_TEST_JOBS` / `ANIMATICA_RENDER_JOBS` override everything (invalid values ignored with a warning). Returns (workers, limit in {cpu, mem, cap, env}).
@@ -46,7 +53,7 @@ Updated: 2026-11-11. Newest status on top. Any Claude session can resume from he
 - User runs on Windows, provider nim, model nvidia/nemotron-3.5-super-vl-120b-a12b
 - Goal: stable demo to show others; then features that weak/free models (nemotron 120b, "3 super 550b") can drive reliably
 ## Status (2026-11-11, Hermes session, card C31 "a caption wider than the frame is drawn twice")
-- Branch: `hermes/c31-caption-duplicate`, off `main` = `88652e2`. **Not pushed.**
+- Branch: `hermes/c31-caption-duplicate`, off `main` = `88652e2`. Written before it was pushed; the PR is not identified here (`gh pr list --state all --head hermes/c31-caption-duplicate`).
 - Changed: `src/animatica/components/_draw.py`, `tests/test_caption.py`, `docs/SESSION_TASKS.md`. **No other source change.**
 - **The evidence** (the card asks for it before the fix): rendered the storyboard of issue #31 on `main` at `--quality preview` (the Fibonacci bounce with the 88-character caption) -> the caption's first line is printed twice, a few pixels off, over the caption itself. Frames: `out/c31_before.png` (before) and `out/c31_after.png` (after).
 - **What is duplicated -- measured, not guessed**:
@@ -65,7 +72,7 @@ Updated: 2026-11-11. Newest status on top. Any Claude session can resume from he
 - NOT verified: the mechanism inside Manim is still unknown; the leading is a workaround for the measured trigger, not a proof; the caption's look changed (looser leading, 0.3 units taller).
 
 ## Status (2026-11-11, Hermes session, card T14 "the graph's legend and its tick labels")
-- Branch: `hermes/t14-graph-legend-ticks` (from `main` = `0ac045a`). **Not pushed.**
+- Branch: `hermes/t14-graph-legend-ticks` (from `main` = `0ac045a`). Merged as PR #26 (`88652e2`).
 - Changed: `src/animatica/components/graph.py`, `src/animatica/components/_draw.py`, `tests/test_graph.py` (new), `tests/geometry.py`, `tests/test_caption.py`, `tests/conformance/graph_taylor.json` (new), `tests/conformance/expected.json`, `docs/COMPONENTS.md`.
 - **The missing legend**: the legend was only built when the model had labelled *both* curves (`if p.approx_fn.strip() and (p.label or p.approx_label)`). A graph that compared two functions without labels showed two coloured curves and nothing to tell them apart -- the storyboard's third beat has no labels, and the before frame has no legend at all.
 - **The legend on the curve**: when there was a legend it was anchored to the axes' top-right corner without looking at the curves or at its own width. On a rising curve (e^x) that corner is exactly where the curve goes: the before frame has the cyan line running through the "2nd-order Taylor" entry. The legend now sits **above** the plot, so no curve can reach it.
@@ -78,7 +85,7 @@ Updated: 2026-11-11. Newest status on top. Any Claude session can resume from he
 - NOT verified: nothing is pushed and no CI has run on this branch; the frames were judged by eye on this Windows box only.
 
 ## Status (2026-11-11, Hermes session, card T15 + T16 "the eval baseline")
-- Branch: `hermes/m2-eval-baseline`, off `main` = `88652e2` (T14, PR #26, merged by the owner). **Not pushed.**
+- Branch: `hermes/m2-eval-baseline`, off `main` = `88652e2` (T14, PR #26, merged by the owner). This branch merged as PR #34 (`e43d00f`).
 - Changed: `tests/reference_prompts.txt`, `tests/test_reference_prompts.py`, `docs/EVAL_BASELINE.md` (new), `docs/gallery/eval_*` (new: 5 storyboards + 5 stills), `README.md`, `docs/SESSION_TASKS.md`. **No source changes** (the card allows only the prompt file and the coverage test).
 - **T15**: the corpus had 30 prompts for 21 components: ten components (`array_viz`, `bounce_sequence`, `flow`, `formula_derivation`, `matrix`, `number_line`, `parametric_graph`, `recursion_tree`, `stat_callout`, `table`) had no prompt at all, several prompts were near-duplicates, and one prompt carried code (`def f(x): return x * x` was in the *eval* file). The file now has exactly one prompt per component -- 21 lines, no code, including `explain taylor series` and the Fibonacci bounce -- and the coverage test resolves every prompt to exactly one component (by the component's name or by an obvious intent) and requires that resolution to be a bijection onto the registry.
 - The offline `TemplateMatcher` check that used to guard this file was **replaced** by the coverage test: the matcher knows ten templates and the registry has twenty-one components, so it cannot express the corpus any more. The matcher's own coverage lives in `tests/test_template.py` and is untouched.
@@ -126,7 +133,7 @@ Updated: 2026-11-11. Newest status on top. Any Claude session can resume from he
 - CI after the fix (run 42834986187): **linux, windows and hyperframes all green**, the Linux job **203 s** against main's 416 s. Step by step: the TeX setup 6 s (the bundle came from `actions/cache`; ~20 s cold) against ~1m55s of apt; the suite **1m25s** against 4m01s (four workers); the render gate **31 s** against ~2m24s (the corpus in parallel).
 
 ## Status (2026-11-10, Hermes session, card B4d "recursion_tree edges connect the wrong nodes")
-- Branch: `hermes/b4-conformance-clean` (B4 + B4b + B4c + B4d). **Not pushed.**
+- Branch: `hermes/b4-conformance-clean` (B4 + B4b + B4c + B4d). Merged as PR #19 (`9f12ac9`).
 - Changed: `src/animatica/components/recursion_tree.py`, `tests/geometry.py`, `tests/test_recursion_tree.py`.
 - Step 0 (the "before" evidence): rendered `tests/conformance/recursion_tree.json` on **origin/main** (`0c0b444`, before B4) and saved the frames `b4d_recursion_tree_main_4.6.png`, `_5.png`, `_5.1.png`. **The edges were already wrong there**: 24 edges drawn for the 14 relations of fib(5), 10 of them to a node that is not the child.
 - Root cause: `tree_layout()` computed the real parent -> child relation and threw it away, so `play()` guessed the children from the depth row and the child's argument value -- every node was connected to every matching node in the next row. The guess came in with the component in **cb6dbd4** (2026-11-09, the PR #10 squash that added the file); the B4 budget and fit commits (`92bf01e`, `cb71a54`) never touched it. The edge set is identical on origin/main and on the branch before the fix.
@@ -138,7 +145,7 @@ Updated: 2026-11-11. Newest status on top. Any Claude session can resume from he
 - OPEN ITEM (found, not fixed): the nodes are still drawn leaves-first, because the layout hands them out in the order it placed them (a parent is placed after its children) while the node ids run from the root down. The tree therefore fills in bottom-up and the root drops in last. Cosmetic, not a bug; it was the same before this card.
 
 ## Status (2026-11-10, Hermes session, card B4c "make the tests fast")
-- Branch: `hermes/b4-conformance-clean` (B4 + B4b + B4c), 19 commits on `main` (`0c0b444`). **Not pushed.**
+- Branch: `hermes/b4-conformance-clean` (B4 + B4b + B4c), 19 commits on `main` (`0c0b444`). Merged as PR #19 (`9f12ac9`).
 - Changed (B4c, 7 commits): `src/animatica/backends/scheduler.py`, new `src/animatica/render_cache.py`, `src/animatica/conformance.py`, `scripts/ci_render_gate.py`, `scripts/ci_tests.py`, `tests/conftest.py`, `tests/test_conformance.py`, `tests/test_ci_gate.py`, new `tests/test_render_pool.py`, new `tests/test_render_cache.py`, new `tests/test_text_cache.py`, `.github/workflows/ci.yml`, `pyproject.toml`, `docs/HERMES_PLAYBOOK.md`, `docs/TASKS_FOR_HERMES_V02.md`.
 - Measured on the owner's machine (i5-1135G7, 4 cores / 8 threads, 7.7 GB RAM, 20 GB free disk): full suite **369 s -> 156 s**; render gate **145 s -> 68 s cold / 1.9 s warm**; corpus renders per CI run **35 -> 18**. Worker count on that machine: 369 s serial, 183 s (-n 2), 154 s (-n 3), 155 s (-n 4), 138 s (-n 6).
 - Root cause of the flaky geometry tests under `-n 4`: Manim caches every rendered text as an SVG under `<media_dir>/texts`, keyed by the text and the style but **not by the process**. Two workers that render the same string write the same file and one can read it half written. Proof: 8 processes rendering one string into one media directory -> `xml.etree.ElementTree.ParseError: no element found`. Fix: every process gets its own `media_dir` (`tests/conftest.py`).
@@ -226,7 +233,7 @@ Updated: 2026-11-11. Newest status on top. Any Claude session can resume from he
 ## Status
 - [x] 1. Review user's out2/video.mp4 (fib to 15th term, real nemotron run) -- 5 scenes, 25s
 - [x] 2. Read skills. brainstorming => ARCHITECTURAL path: write spec, get user approval BEFORE feature code. using-superpowers => announce skill use. brightdata search => bdata CLI not installed/authed + sandbox network locked, used web_search instead
-- [x] 3. Feature plan written: docs/ROADMAP.md (spec, DRAFT) + docs/TASKS_FOR_HERMES.md (9 task cards)
+- [x] 3. Feature plan written: docs/ROADMAP.md (spec, was DRAFT; see its header) + docs/TASKS_FOR_HERMES.md (9 task cards)
 - [~] 4. P0 APPROVED by user ('yeah'). Sub-tasks below
 - [x] 5. Re-packaged zip with ROADMAP + TASKS_FOR_HERMES + this log in docs/
 

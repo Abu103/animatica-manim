@@ -1,13 +1,12 @@
 # Changelog
 
-## v0.1.1 (2026-11-04)
-- Release asset: `tinytex-manim.zip` (sha256 83fde080e52cdd7209738fb0876e3ddd3d5f755c5fdea4e2bca4222d120ecbf8), the pre-baked TinyTeX tree used by `scripts/bootstrap.{sh,ps1}`.
-- Note: this tag was cut while the source tree still said `0.1.0`, so the published `animatica --version` reported 0.1.0. Fixed after the fact in 0.2.0.dev0 (see `tests/test_version.py`).
-
-- Setup: parallel `scripts/bootstrap.{sh,ps1}` (~25-40s full quality) using `uv` + pre-baked TinyTeX release zip; ffmpeg now comes from the `imageio-ffmpeg` bundled binary when no system ffmpeg exists (doctor + encoder probe). CI workflow `build-tinytex.yml` bakes the zip.
-- New: `animatica bootstrap` one-command setup; `animatica doctor --fix` now auto-installs ffmpeg and TinyTeX + required TeX packages (standalone preview babel-english amsmath amsfonts dvisvgm).
-- New: `table` component (max 6x6, rows fade in one by one) -- task card T4.
-- New: `number_line` component (line, ticks, jumping arrows) -- task card T1.
+## Unreleased (0.2.0.dev0)
+- New: one-command sandbox setup, `scripts/sandbox.sh`: a bare machine (curl, tar, sh) to a verified checkout, with `animatica doctor` and a smoke render. The prebuilt runtime is published by `.github/workflows/sandbox-runtime.yml` and keyed by a hash of the dependency list (`scripts/runtime_key.sh`). Plan and spec: `docs/superpowers/` (PR #44).
+- New: lint gate, `ruff` rules F and E9 in CI (`python -m ruff check src scripts tests`), with the 110 defects it found fixed. Four `test_pipeline` tests had patched a name production code no longer reads; they now patch `animatica.backends.ManimBackend`.
+- Fix: a system `ffmpeg` no longer inherits the bundled cairo/pango directory on `LD_LIBRARY_PATH`, which made it die with a symbol lookup error (exit 127) and failed the concat step of a multi-scene render in the sandbox. `animatica._nativelibs.system_tool_env()` is used by every ffmpeg call.
+- Fix: captions leave their room in every component, one `Text` per line (#35, #37, #43); `compare` layout aligned and margin-safe (#15, #16); graph legend, tick labels and plot size against the real caption (#26); `parametric_graph` uses equal axis scales.
+- CI: Linux job split into tests and render with a persisted render cache (#36); apt downloads cached; real-render gate with zero skips allowed on Linux and Windows (#17, #46).
+- New: `--model` and `provider:model` for `animatica eval`; eval baseline and reference corpus (#34).
 - New: `animatica eval --save-dir DIR` writes each prompt's raw model responses, failure reasons and storyboard as one JSON file, so a live run can be replayed offline (groundwork for T17).
 - New: offline regression gate (`tests/test_eval_gate.py`, T17): ten recorded NIM storyboards are replayed through parse, validate, lint and duration with no network, against `tests/fixtures/eval_replay/thresholds.json`.
 - New: `scripts/render_gallery.py` renders every `docs/gallery/*.json` at preview quality, prints a table with warnings verbatim, exits non-zero if any render fails, and `--write-doc` pastes the run into `docs/GALLERY.md` (T18). New `docs/VERIFIED_INSTALLS.md`, empty until a real clean-machine run is reported (T19). README gets a "What you get" section (T20).
@@ -18,6 +17,15 @@
 - Fix: `code_walkthrough` leaves room for its closing fade-out, so a beat is no longer 0.4s longer than its declared duration.
 - Fix: `extract_json` ignores brackets inside strings and finishes an object a model left one or more closing brackets short (a recorded NIM run for "derive the quadratic formula" failed on this); a cut-off reply now says so.
 - Fix: the prompt catalog spells out the keys for `compare` (`heading`, `bullets`), `timeline` (`label`, `text`) and `array_viz`; models had been guessing `name`/`purpose` and `year`/`event`. A test fails if a component with free-form dict params has no hint.
+
+## v0.1.1 (2026-11-04)
+- Release asset: `tinytex-manim.zip` (sha256 83fde080e52cdd7209738fb0876e3ddd3d5f755c5fdea4e2bca4222d120ecbf8), the pre-baked TinyTeX tree used by `scripts/bootstrap.{sh,ps1}`.
+- Note: this tag was cut while the source tree still said `0.1.0`, so the published `animatica --version` reported 0.1.0. Fixed after the fact in 0.2.0.dev0 (see `tests/test_version.py`).
+
+- Setup: parallel `scripts/bootstrap.{sh,ps1}` (~25-40s full quality) using `uv` + pre-baked TinyTeX release zip; ffmpeg now comes from the `imageio-ffmpeg` bundled binary when no system ffmpeg exists (doctor + encoder probe). CI workflow `build-tinytex.yml` bakes the zip.
+- New: `animatica bootstrap` one-command setup; `animatica doctor --fix` now auto-installs ffmpeg and TinyTeX + required TeX packages (standalone preview babel-english amsmath amsfonts dvisvgm).
+- New: `table` component (max 6x6, rows fade in one by one) -- task card T4.
+- New: `number_line` component (line, ticks, jumping arrows) -- task card T1.
 - New: `animatica eval` -- deterministic eval harness over reference prompts (P1.2).
 - New: `--two-stage` on `animatica make` -- P1.1 two-stage generation (scene outline, then params filled per scene with individual retries).
 - New: `animatica new-component NAME` scaffolds a component (module, registry entry, COMPONENTS.md row, test, conformance JSON) -- task card T9 for Hermes/Nemotron.
