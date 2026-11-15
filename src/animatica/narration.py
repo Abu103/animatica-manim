@@ -3,7 +3,8 @@
 docs/superpowers/specs/2026-11-14-narration-design.md is the design record
 this implements. Two things from that spec that matter here:
 
-* The engine (Piper) is MIT; each *voice model* carries its own license,
+* The engine's licence depends on where it came from (see T26e below); each
+  *voice model* carries its own license,
   checked individually. ``ALLOWED_VOICES`` is the allowlist of voices whose
   MODEL_CARD has actually been checked -- adding a voice is a data change to
   that tuple, never a bare string accepted from the CLI.
@@ -12,11 +13,28 @@ this implements. Two things from that spec that matter here:
   otherwise -- the same "nothing silent" posture as ``tex_bundle.py``.
   Fetching the voice model (pinned sha256, lazy on first use) is a separate
   card (the doctor ``--fix`` check), not implemented here.
+
+T26e (bug fix): ``fetch_piper()`` only ever fetched the Linux
+``piper_amd64.tar.gz`` asset, on every platform. On Windows that ELF binary
+was extracted and handed to ``subprocess.run``, which fails with
+``OSError: [WinError 193] %1 is not a valid Win32 application``.
+
+The archived rhasspy/piper (MIT, pinned below for Linux) ships Linux/ARM
+binaries only. Its maintained successor, OHF-Voice/piper1-gpl, is
+distributed solely as the ``piper-tts`` PyPI package (prebuilt wheels for
+Windows, macOS and Linux) and is **GPL-3.0**. Animatica only runs it as a
+separate process, never links it, but whoever ships a narrated video built
+with it should know which engine licence applies. So on anything other than
+Linux ``fetch_piper()`` now ``pip install``s ``piper-tts`` into the running
+interpreter's environment and uses the ``piper`` entry point pip puts in
+that environment's scripts dir (``Scripts\\piper.exe`` on Windows).
 """
 from __future__ import annotations
 
 import shutil
 import subprocess
+import sys
+import sysconfig
 import tarfile
 import tempfile
 import wave
@@ -35,7 +53,7 @@ ALLOWED_VOICES: tuple[str, ...] = (DEFAULT_VOICE,)
 #: Recorded in report.json so whoever ships the video knows what binds them.
 VOICE_LICENSES: dict[str, str] = {DEFAULT_VOICE: "public domain (LJSpeech corpus)"}
 
-#: The Piper engine (MIT) binary, pinned to a tagged release -- never
+#: Linux only: the archived rhasspy/piper engine (MIT) binary, pinned to a tagged release -- never
 #: "latest" -- so the URL and the hash below cannot drift apart. Fetched and
 #: hashed directly from github.com/rhasspy/piper's real release asset in
 #: this session: verified.
@@ -43,6 +61,10 @@ PIPER_RELEASE_TAG = "v1.2.0"
 PIPER_LINUX_ASSET = "piper_amd64.tar.gz"
 PIPER_LINUX_SHA256 = "467c17935d2a22dcce9dc9e08ba07485e29be813097e7cf08c5627aa09d32e42"
 PIPER_URL = f"https://github.com/rhasspy/piper/releases/download/{PIPER_RELEASE_TAG}/{PIPER_LINUX_ASSET}"
+
+#: Everywhere else: the maintained OHF-Voice/piper1-gpl engine (GPL-3.0) from
+#: PyPI. Its wheels are abi3 (cp39+), so they cover every Python we support.
+PIPER_PIP_PACKAGE = "piper-tts"
 
 #: Voice model sha256, per voice (spec section 5: lazy-fetch, fail closed on
 #: an unknown hash -- same posture as the Windows TeX bundle). UNVERIFIED:
@@ -77,13 +99,78 @@ def voice_model_file(voice: str = DEFAULT_VOICE) -> Path:
     return narration_dir() / f"{voice}.onnx"
 
 
-def fetch_piper(download_fn=download, timeout: int = 600) -> Path:
+def pip_piper_path() -> Path | None:
+    """The ``piper`` entry point a ``pip install piper-tts`` left next to this interpreter."""
+    dirs = [sysconfig.get_path("scripts"), str(Path(sys.executable).parent)]
+    for d in dirs:
+        if not d:
+            continue
+        for name in ("piper.exe", "piper"):
+            cand = Path(d) / name
+            if cand.is_file():
+                return cand
+    return None
+
+
+def _is_linux() -> bool:
+    return sys.platform.startswith("linux")
+
+
+def find_piper(which=None) -> Path | None:
+    """Any usable Piper already on this machine, or ``None``."""
+    found = (which or shutil.which)("piper")
+    if found:
+        return Path(found)
+    # The cached tarball binary is a Linux ELF: off Linux it is not runnable
+    # (WinError 193), so a copy left by an older ``doctor --fix`` is ignored.
+    if _is_linux() and piper_binary_path().is_file():
+        return piper_binary_path()
+    return pip_piper_path()
+
+
+def _pip_install_piper(run=subprocess.run) -> Path:
+    """``pip install piper-tts`` into this interpreter's environment, return its entry point."""
+    attempts = [[sys.executable, "-m", "pip", "install", PIPER_PIP_PACKAGE]]
+    uv = shutil.which("uv")
+    if uv:  # uv-created venvs ship without pip
+        attempts.append([uv, "pip", "install", "--python", sys.executable, PIPER_PIP_PACKAGE])
+    last = "no installer ran"
+    for cmd in attempts:
+        try:
+            proc = run(cmd, capture_output=True, text=True)
+        except OSError as exc:
+            last = str(exc)
+            continue
+        if proc.returncode == 0:
+            break
+        lines = [ln for ln in (proc.stderr or "").strip().splitlines() if ln.strip()]
+        last = lines[-1][:200] if lines else f"exit {proc.returncode}"
+    else:
+        raise NarrationUnavailable(
+            f"could not install {PIPER_PIP_PACKAGE} ({last}); run `pip install {PIPER_PIP_PACKAGE}` "
+            "in Animatica's environment yourself"
+        )
+    found = pip_piper_path()
+    if not found:
+        raise NarrationUnavailable(f"{PIPER_PIP_PACKAGE} installed but no `piper` entry point was found")
+    return found
+
+
+def fetch_piper(download_fn=download, timeout: int = 600, platform: str | None = None, run=subprocess.run) -> Path:
     """Fetch and verify the Piper engine binary, cached after the first call.
 
     Raises :class:`NarrationUnavailable` on any network failure or a hash
     that does not match ``PIPER_LINUX_SHA256`` -- the downloaded archive is
     never used unverified.
+
+    ``platform`` and ``run`` are injectable (defaults ``sys.platform`` and
+    ``subprocess.run``) so every OS can be exercised from one sandbox. Off
+    Linux there is no prebuilt binary to hash, so Piper comes from PyPI
+    instead -- see the module docstring.
     """
+    platform = platform or sys.platform
+    if not platform.startswith("linux"):
+        return pip_piper_path() or _pip_install_piper(run=run)
     binary = piper_binary_path()
     if binary.is_file():
         return binary
@@ -236,13 +323,7 @@ def ensure_narration(voice: str = DEFAULT_VOICE) -> tuple[Path, Path]:
     """
     if voice not in ALLOWED_VOICES:
         raise NarrationUnavailable(f"voice {voice!r} is not in the checked-license allowlist {ALLOWED_VOICES}")
-    found = shutil.which("piper")
-    if found:
-        piper = Path(found)
-    elif piper_binary_path().is_file():
-        piper = piper_binary_path()
-    else:
-        piper = fetch_piper()
+    piper = find_piper() or fetch_piper()
     model = voice_model_file(voice)
     if not model.is_file():
         model = fetch_voice_model(voice)

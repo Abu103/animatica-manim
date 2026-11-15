@@ -21,7 +21,10 @@ def test_all_present_ok(tmp_path, monkeypatch):
     assert all(c.ok for c in checks), [c for c in checks if not c.ok]
 
 
-def test_narration_check_reports_what_is_missing():
+def test_narration_check_reports_what_is_missing(monkeypatch):
+    from animatica import narration
+
+    monkeypatch.setattr(narration, "pip_piper_path", lambda: None)  # a pip-installed piper on this machine must not leak in
     checks = run_checks(which=lambda cmd: None, deep_latex=False)
     narration_check = next(c for c in checks if c.name == "narration")
     # Opt-in feature: missing is a tip, not a failure (a failing check would break `animatica doctor` in CI).

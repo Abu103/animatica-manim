@@ -199,6 +199,7 @@ def test_backend_is_registered_and_reports_itself():
 
 
 def test_capabilities_are_empty_without_node(monkeypatch):
+    monkeypatch.delenv(CLI_ENV, raising=False)
     backend = HyperFramesBackend(runner=RecordingRunner())
     monkeypatch.setattr("animatica.backends.hyperframes.backend.shutil.which", lambda name: None)
     assert backend.capabilities() == []
@@ -211,3 +212,28 @@ def test_capabilities_present_with_node_and_cli(monkeypatch):
         lambda name: "/usr/bin/" + name,
     )
     assert backend.capabilities() == ["html", "css"]
+
+
+def test_render_timeout_is_a_readable_error_not_a_raw_traceback(cli_env, tmp_path):
+    error = subprocess.TimeoutExpired("hyperframes", 1800)
+    with pytest.raises(RuntimeError, match="timed out after 1800s"):
+        HyperFramesBackend(runner=RecordingRunner(error=error)).render(
+            storyboard(), tmp_path, RenderOptions()
+        )
+
+
+def test_an_unexecutable_cli_is_a_readable_error(cli_env, tmp_path):
+    # The Windows class of bug: the path resolves but is not a runnable program (WinError 193).
+    error = OSError(193, "%1 is not a valid Win32 application")
+    with pytest.raises(RuntimeError) as excinfo:
+        HyperFramesBackend(runner=RecordingRunner(error=error)).render(
+            storyboard(), tmp_path, RenderOptions()
+        )
+    message = str(excinfo.value)
+    assert cli_env in message and CLI_ENV in message and "npm install -g hyperframes@" in message
+
+
+def test_capabilities_honour_an_explicit_cli_override(monkeypatch):
+    monkeypatch.setenv(CLI_ENV, "/opt/hyperframes/bin/hyperframes")
+    monkeypatch.setattr("animatica.backends.hyperframes.backend.shutil.which", lambda name: None)
+    assert HyperFramesBackend(runner=RecordingRunner()).capabilities() == ["html", "css"]

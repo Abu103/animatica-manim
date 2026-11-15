@@ -132,4 +132,13 @@ def write_composition(plan: Plan, out_dir: Path) -> Path:
     out_dir.mkdir(parents=True, exist_ok=True)
     path = out_dir / "index.html"
     path.write_text(render_html(plan), encoding="utf-8", newline="\n")
+    _copy_fonts(out_dir / "fonts")
     return path
+
+
+def _copy_fonts(dest: Path) -> None:
+    """Put the bundled webfonts next to ``index.html`` (the template references ``fonts/...``)."""
+    dest.mkdir(parents=True, exist_ok=True)
+    for font in resources.files(__package__).joinpath("fonts").iterdir():
+        if font.name.endswith(".woff2"):
+            (dest / font.name).write_bytes(font.read_bytes())

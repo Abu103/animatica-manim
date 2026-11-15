@@ -59,7 +59,8 @@ class HyperFramesBackend:
         Whether the pinned CLI is actually installed is answered by ``render``,
         which fails with an actionable message if it is not.
         """
-        if shutil.which("node") and (shutil.which("hyperframes") or shutil.which("npx")):
+        override = os.environ.get(CLI_ENV, "").strip()
+        if override or (shutil.which("node") and (shutil.which("hyperframes") or shutil.which("npx"))):
             return list(self.supported_capabilities)
         return []
 
@@ -103,6 +104,18 @@ class HyperFramesBackend:
                 )
                 raise RuntimeError(
                     f"hyperframes render failed (exit {exc.returncode}) on {composition}:\n{tail}"
+                ) from exc
+            except subprocess.TimeoutExpired as exc:
+                raise RuntimeError(
+                    f"hyperframes render timed out after {_RENDER_TIMEOUT}s on {composition}; "
+                    "try a shorter storyboard, or --backend manim"
+                ) from exc
+            except OSError as exc:
+                # e.g. WinError 193 / ENOENT: the CLI path exists on PATH or in
+                # the override but cannot be executed (wrong platform, stale shim).
+                raise RuntimeError(
+                    f"could not start the hyperframes CLI ({cmd[0]}): {exc}\n"
+                    f"Check {CLI_ENV} or reinstall: npm install -g hyperframes@{HYPERFRAMES_VERSION}"
                 ) from exc
 
         note("hyperframes render: done", 3)

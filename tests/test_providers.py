@@ -195,3 +195,60 @@ def test_network_failure_raises_provider_unreachable(monkeypatch):
         p.generate("prompt", {})
     assert "nim" in str(exc.value) and "getaddrinfo" in str(exc.value)
     assert isinstance(exc.value, ProviderError)
+
+
+# ---------------------------------------------------------------------------
+# Reasoning models: a cut-off reply must not be retried with the same budget
+# ---------------------------------------------------------------------------
+
+def _recording_client(bodies):
+    sent = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        import json as _json
+
+        sent.append(_json.loads(request.content))
+        return httpx.Response(200, json=bodies[min(len(sent) - 1, len(bodies) - 1)])
+
+    return _client(handler), sent
+
+
+def test_length_cutoff_retry_doubles_max_tokens(monkeypatch):
+    monkeypatch.setattr("animatica.ai.nim.load_key", lambda provider: "sk-x")
+    client, sent = _recording_client([NULL_BODY, OK_BODY])
+    assert NIMProvider(client=client).generate("prompt", {}) == "{}"
+    assert sent[1]["max_tokens"] == sent[0]["max_tokens"] * 2
+
+
+def test_length_retry_is_capped(monkeypatch):
+    from animatica.ai.base import RETRY_MAX_TOKENS_CAP
+
+    monkeypatch.setattr("animatica.ai.nim.load_key", lambda provider: "sk-x")
+    client, sent = _recording_client([NULL_BODY, OK_BODY])
+    NIMProvider(client=client).generate("prompt", {})
+    assert sent[1]["max_tokens"] <= RETRY_MAX_TOKENS_CAP
+
+
+def test_non_length_empty_reply_is_retried_unchanged(monkeypatch):
+    monkeypatch.setattr("animatica.ai.nim.load_key", lambda provider: "sk-x")
+    filtered = {"choices": [{"finish_reason": "content_filter", "message": {"content": None}}]}
+    client, sent = _recording_client([filtered, OK_BODY])
+    NIMProvider(client=client).generate("prompt", {})
+    assert sent[1]["max_tokens"] == sent[0]["max_tokens"]
+
+
+def test_nim_defaults_to_a_big_budget_with_thinking_off(monkeypatch):
+    monkeypatch.setattr("animatica.ai.nim.load_key", lambda provider: "sk-x")
+    monkeypatch.delenv("ANIMATICA_NIM_THINKING", raising=False)
+    client, sent = _recording_client([OK_BODY])
+    NIMProvider(client=client).generate("prompt", {})
+    assert sent[0]["max_tokens"] >= 16384
+    assert sent[0]["chat_template_kwargs"] == {"enable_thinking": False}
+
+
+def test_nim_thinking_can_be_turned_back_on(monkeypatch):
+    monkeypatch.setattr("animatica.ai.nim.load_key", lambda provider: "sk-x")
+    monkeypatch.setenv("ANIMATICA_NIM_THINKING", "1")
+    client, sent = _recording_client([OK_BODY])
+    NIMProvider(client=client).generate("prompt", {})
+    assert "chat_template_kwargs" not in sent[0]

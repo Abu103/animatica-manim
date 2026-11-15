@@ -184,8 +184,12 @@ class BaseProvider:
     def _chat_text(self, url: str, headers: dict, payload: dict, attempts: int = 2) -> str:
         """POST a chat completion and return the reply text.
 
-        An empty reply is retried once, because it is usually a one-off. If it
-        is still empty, raises `EmptyCompletion` saying why.
+        An empty reply is retried once, because it is usually a one-off. When
+        the reply was cut off by the token limit (a reasoning model that spent
+        its whole budget thinking), the retry doubles ``max_tokens`` up to
+        ``RETRY_MAX_TOKENS_CAP`` -- resending the identical request would just
+        fail the same way. If it is still empty, raises `EmptyCompletion`
+        saying why.
         """
         reason = ""
         for _ in range(attempts):
@@ -197,6 +201,8 @@ class BaseProvider:
             if text.strip():
                 return text
             reason = _empty_reason(data)
+            if _finish_reason(data) == "length" and "max_tokens" in payload:
+                payload = {**payload, "max_tokens": min(payload["max_tokens"] * 2, RETRY_MAX_TOKENS_CAP)}
         raise EmptyCompletion(
             f"{self.name}: empty reply after {attempts} attempt(s) ({reason}; model: {self.model!r})"
         )
@@ -219,6 +225,18 @@ def _message_text(message: object) -> str:
             if isinstance(part, dict) and isinstance(part.get("text"), str)
         )
     return ""
+
+
+#: Hosted NIM lists 32768 as the maximum output for Nemotron 3 Super; the
+#: other providers accept at least this much for the models we ship.
+RETRY_MAX_TOKENS_CAP = 32768
+
+
+def _finish_reason(data: object) -> str | None:
+    try:
+        return data["choices"][0].get("finish_reason")  # type: ignore[index]
+    except (KeyError, IndexError, TypeError, AttributeError):
+        return None
 
 
 def _empty_reason(data: object) -> str:
