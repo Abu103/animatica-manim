@@ -6,6 +6,8 @@ Returns (new_storyboard, notes); notes are shown to the user as warnings.
 """
 from __future__ import annotations
 
+import re
+
 from animatica.storyboard.models import Beat, Scene, Storyboard
 
 MAX_MERGED_TERMS = 20
@@ -73,6 +75,35 @@ def _drop_redundant_charts(scenes: list[Scene], notes: list[str]) -> list[Scene]
                 seen |= {float(v) for v in beat.params.get("values", [])}
         out.append(s)
     return out or scenes
+
+
+_INFINITY_WORD = re.compile(r"infinit|∞|\binf\b", re.IGNORECASE)
+#: Weak models write "infinity" as 999999, 99999, 1e9 ... Anything this big in an array
+#: whose own caption or title says infinity is that sentinel, not a measurement.
+_SENTINEL_MIN = 9999
+
+
+def _show_infinity(scenes: list[Scene], notes: list[str]) -> list[Scene]:
+    """Rewrite an `array_viz` sentinel (999999) as ``"inf"`` when the beat itself says infinity.
+
+    Stored as the string ``"inf"``: a real ``inf`` would serialise to ``null`` and break
+    the cached / replayed storyboard JSON. ``ArrayViz.Params`` reads it back as a float.
+    """
+    out = []
+    for s in scenes:
+        beats = []
+        for b in s.beats:
+            values = b.params.get("values")
+            says_inf = _INFINITY_WORD.search(f"{b.caption} {b.params.get('title', '')}")
+            if (b.component == "array_viz" and says_inf and isinstance(values, list)
+                    and any(isinstance(v, (int, float)) and not isinstance(v, bool) and v >= _SENTINEL_MIN for v in values)):
+                fixed = ["inf" if isinstance(v, (int, float)) and not isinstance(v, bool) and v >= _SENTINEL_MIN else v
+                         for v in values]
+                notes.append(f"lint: array_viz drew a {_SENTINEL_MIN}+ placeholder where the caption says infinity; shown as inf")
+                b = b.model_copy(update={"params": {**b.params, "values": fixed}})
+            beats.append(b)
+        out.append(s.model_copy(update={"beats": beats}))
+    return out
 
 
 def _warn_phantom_objects(scenes: list[Scene], notes: list[str]) -> None:
@@ -152,6 +183,7 @@ def lint_storyboard(sb: Storyboard) -> tuple[Storyboard, list[str]]:
     notes: list[str] = []
     scenes = _merge_sequences(list(sb.scenes), notes)
     scenes = _drop_redundant_charts(scenes, notes)
+    scenes = _show_infinity(scenes, notes)
     _warn_phantom_objects(scenes, notes)
     _scene_component_order(scenes, notes)
     if scenes == list(sb.scenes):

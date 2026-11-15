@@ -1,6 +1,10 @@
 # Changelog
 
 ## Unreleased
+- Fix: `--narrate` on Windows/macOS no longer runs the Linux Piper binary (`OSError: [WinError 193]`). Off Linux, `animatica doctor --fix` / the first `--narrate` pip-installs `piper-tts` (the maintained OHF-Voice/piper1-gpl engine, **GPL-3.0-or-later**; run as a separate process) and uses the `piper` entry point pip puts next to the interpreter; a Linux binary left in the narration cache by an older version is ignored off Linux. Linux still uses the sha256-pinned rhasspy/piper v1.2.0 binary (MIT).
+- Fix: NIM replies cut off by the token limit (a reasoning model spending all of `max_tokens` thinking) no longer fail the two-stage run: `max_tokens` 4096 -> 16384, thinking off by default (`ANIMATICA_NIM_THINKING=1` turns it on), and the one retry doubles `max_tokens` (cap 32768) instead of resending the same request.
+- Fix: `array_viz` draws `inf` as `∞`, and the lint pass rewrites a 9999+ placeholder (e.g. `999999`) to `"inf"` when the beat's own caption or title says infinity. A real out-2 render showed `999999` boxes under a caption saying "infinity".
+- Fix: HyperFrames backend: a render timeout or a CLI that cannot be started (e.g. WinError 193) is a readable error, `capabilities()` honours `ANIMATICA_HYPERFRAMES`, the template's glows/masthead/footer no longer trip frame-lint (25 warnings on a real Windows render), DejaVu Sans is bundled (Bitstream Vera licence file included) so the render matches the planner's glyph widths on every machine, and `Encoder:` no longer claims x264 for a non-Manim backend.
 
 ## v0.2.0 (2026-11-14)
 - New: one-command sandbox setup, `scripts/sandbox.sh`: a bare machine (curl, tar, sh) to a verified checkout, with `animatica doctor` and a smoke render. The prebuilt runtime is published by `.github/workflows/sandbox-runtime.yml` and keyed by a hash of the dependency list (`scripts/runtime_key.sh`). Plan and spec: `docs/superpowers/` (PR #44).
