@@ -28,6 +28,7 @@ sync with the code: the test suite compares this document against
 | `array_viz` | `title`, `values[]` (2-12), `steps[]` (<=12); a step carries `highlight[]`, `swap` (exactly 2 indices), and/or binary-search `low`/`high`/`mid` — all indices in `[0, len(values)-1]`, `low` <= `high`, `mid` inside that range | 2.0 s + 0.8 s per step |
 | `timeline` | `title`, `events[]` (1-8), each `{label, text}` (both keys required) | 2.0 s + 0.8 s per event |
 | `compare` | `title`, `left` and `right`, each `{heading, bullets[]}` (1-6 bullets per side) | 2.2 s + 0.6 s per bullet (both sides) |
+| `probability_tree` | `title`, optional `root` (default "Start"), `branches[]` (1-3), each `{label, p, children[]}` (<=3 `{label, p}` each); `0 < p <= 1`, siblings must sum to 1, labels <=40 chars | 2.0 s + 0.5 s per node |
 | `bounce_sequence` | `title`, `values[]` (2-20), optional `scale` (auto/linear/sqrt/log), `labels[]` (optional) | 2.0 s + 0.8 s per term |
 
 Registered component names:
@@ -40,6 +41,7 @@ Registered component names:
 - diagram
 - code_highlight
 - bounce_sequence
+- probability_tree
 - compare
 - timeline
 - array_viz

@@ -74,5 +74,9 @@
   "graph_legend_shapes.json": {
     "scenes": 1,
     "duration": 12.0
+  },
+  "probability_tree.json": {
+    "scenes": 1,
+    "duration": 5.0
   }
 }
