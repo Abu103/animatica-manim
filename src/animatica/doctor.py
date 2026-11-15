@@ -154,7 +154,7 @@ def run_checks(run=subprocess.run, which=shutil.which, deep_latex: bool = True) 
     # "report missing, --fix installs" shape as the LaTeX check above.
     from animatica import narration
 
-    piper_ok = bool(which("piper")) or narration.piper_binary_path().is_file()
+    piper_ok = bool(which("piper")) or narration.find_piper(which=which) is not None
     voice_ok = narration.voice_model_file().is_file()
     narration_ok = piper_ok and voice_ok
     checks.append(
@@ -608,10 +608,10 @@ def fix_dependencies(
     # closed on an unknown hash" decision -- never a silent fallback).
     from animatica import narration
 
-    if not (which("piper") or narration.piper_binary_path().is_file()):
+    if not (which("piper") or narration.find_piper(which=which)):
         try:
             narration.fetch_piper()
-            actions.append("done: fetch piper engine (MIT, pinned sha256)")
+            actions.append("done: install piper engine (Linux: pinned sha256 binary; elsewhere: pip piper-tts, GPL-3.0)")
         except Exception as exc:
             actions.append(f"failed: fetch piper engine ({exc})")
     if not narration.voice_model_file().is_file():
