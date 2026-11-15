@@ -22,11 +22,14 @@
 
   #stage { position: relative; width: 1280px; height: 720px; overflow: hidden; isolation: isolate; background: var(--c-bg); }
 
+  /* Chrome (glows, masthead, footer) must not read as content to frame_lint: glows stay under its
+     luminance threshold, and masthead/footer sit outside its 5% safe-area band (36px top/bottom).
+     test_hyperframes_template.py pins both. */
   .backdrop {
     position: absolute; inset: 0; z-index: 0;
     background:
-      radial-gradient(ellipse 780px 620px at 94% 4%, #17463c 0%, transparent 62%),
-      radial-gradient(ellipse 820px 500px at 2% 98%, #16343c 0%, transparent 66%),
+      radial-gradient(ellipse 780px 620px at 94% 4%, #12302a 0%, transparent 62%),
+      radial-gradient(ellipse 820px 500px at 2% 98%, #112b33 0%, transparent 66%),
       linear-gradient(130deg, #0b1620 0%, #0a141b 55%, #0d1c23 100%);
   }
   .backdrop::after {
@@ -35,15 +38,15 @@
   }
 
   .masthead {
-    position: absolute; top: 32px; left: 80px; width: 1120px; z-index: 8;
+    position: absolute; top: 40px; left: 80px; width: 1120px; z-index: 8;
     display: flex; justify-content: space-between;
     font-size: 12px; font-weight: 700; letter-spacing: 2.6px; color: #9fbdb5;
     text-transform: uppercase;
   }
   .masthead .right { color: #7e9f9d; letter-spacing: 1.8px; text-transform: none; }
 
-  .footer-rule { position: absolute; left: 80px; right: 80px; bottom: 27px; height: 2px; background: var(--c-rule); z-index: 8; }
-  .footer-progress { position: absolute; left: 80px; bottom: 27px; width: 0; height: 2px; z-index: 9; background: var(--c-accent); }
+  .footer-rule { position: absolute; left: 80px; right: 80px; bottom: 40px; height: 2px; background: var(--c-rule); z-index: 8; }
+  .footer-progress { position: absolute; left: 80px; bottom: 40px; width: 0; height: 2px; z-index: 9; background: var(--c-accent); }
 
   .beat { position: absolute; inset: 0; z-index: 2; visibility: hidden; }
   .line {

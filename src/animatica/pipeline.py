@@ -154,6 +154,15 @@ def _write_captions(sb: Storyboard, registry, path: Path, beat_durations: list[l
     path.write_text("\n".join(lines) + "\n", encoding="utf-8")
 
 
+def default_encoder_label(backend_name: str) -> str:
+    """What to report as the encoder when no transcode was requested.
+
+    Only Manim's own pipe is known to be x264; other backends (HyperFrames encodes
+    through its own Chrome + ffmpeg path) must not be credited with it.
+    """
+    return "x264 (manim default)" if backend_name == "manim" else f"{backend_name} default"
+
+
 def resolve_backend(name: str) -> RenderBackend:
     """Resolve a render backend by name from ``default_backends()``.
 
@@ -301,7 +310,7 @@ def make_video(
     warnings.extend(render_result.warnings)
 
     # ---- optional transcode ----
-    encoder_used = "x264 (manim default)"
+    encoder_used = default_encoder_label(render_backend.name)
     if encoder != "auto":
         enc_infos = probe_encoders()
         enc = pick_encoder(encoder, enc_infos)
