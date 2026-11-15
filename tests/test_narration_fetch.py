@@ -9,6 +9,7 @@ prove the hash-check logic.
 from __future__ import annotations
 
 import hashlib
+from pathlib import Path
 
 import pytest
 
@@ -32,14 +33,98 @@ def test_fetch_piper_uses_the_cached_binary_without_downloading(tmp_path, monkey
     def _boom(*a, **k):
         raise AssertionError("should not download when already cached")
 
-    assert narration.fetch_piper(download_fn=_boom) == cached
+    assert narration.fetch_piper(download_fn=_boom, platform="linux") == cached
 
 
 def test_fetch_piper_rejects_a_hash_mismatch(tmp_path, monkeypatch):
     monkeypatch.setattr(narration, "narration_dir", lambda: tmp_path)
     with pytest.raises(narration.NarrationUnavailable, match="hash mismatch"):
-        narration.fetch_piper(download_fn=_fake_download(b"not the real piper tarball"))
+        narration.fetch_piper(download_fn=_fake_download(b"not the real piper tarball"), platform="linux")
     assert not narration.piper_binary_path().is_file()
+
+
+class _Proc:
+    def __init__(self, rc=0, err=""):
+        self.returncode, self.stderr = rc, err
+
+
+@pytest.mark.parametrize("plat", ["win32", "darwin"])
+def test_fetch_piper_off_linux_pip_installs_instead_of_downloading_the_linux_binary(tmp_path, monkeypatch, plat):
+    # The WinError 193 bug: the Linux ELF tarball must never be fetched here.
+    monkeypatch.setattr(narration, "narration_dir", lambda: tmp_path)
+    scripts = tmp_path / "Scripts"
+    scripts.mkdir()
+    monkeypatch.setattr(narration.sysconfig, "get_path", lambda name: str(scripts))
+    monkeypatch.setattr(narration.sys, "executable", str(scripts / "python.exe"))
+    calls = []
+
+    def _run(cmd, **kw):
+        calls.append(cmd)
+        (scripts / "piper.exe").write_text("exe", encoding="utf-8")  # what pip leaves behind
+        return _Proc()
+
+    def _boom(*a, **k):
+        raise AssertionError("must not download the Linux tarball off Linux")
+
+    got = narration.fetch_piper(download_fn=_boom, platform=plat, run=_run)
+    assert got == scripts / "piper.exe"
+    assert calls[0][1:5] == ["-m", "pip", "install", "piper-tts"]
+
+
+def test_fetch_piper_off_linux_reuses_an_existing_pip_install(tmp_path, monkeypatch):
+    monkeypatch.setattr(narration, "narration_dir", lambda: tmp_path)
+    scripts = tmp_path / "Scripts"
+    scripts.mkdir()
+    (scripts / "piper.exe").write_text("exe", encoding="utf-8")
+    monkeypatch.setattr(narration.sysconfig, "get_path", lambda name: str(scripts))
+
+    def _boom(*a, **k):
+        raise AssertionError("already installed: no pip run")
+
+    assert narration.fetch_piper(platform="win32", run=_boom) == scripts / "piper.exe"
+
+
+def test_fetch_piper_off_linux_reports_a_failed_pip_install(tmp_path, monkeypatch):
+    monkeypatch.setattr(narration, "narration_dir", lambda: tmp_path)
+    monkeypatch.setattr(narration.sysconfig, "get_path", lambda name: str(tmp_path / "empty"))
+    monkeypatch.setattr(narration.sys, "executable", str(tmp_path / "py"))
+    monkeypatch.setattr(narration.shutil, "which", lambda name: None)
+    with pytest.raises(narration.NarrationUnavailable, match="pip install piper-tts"):
+        narration.fetch_piper(platform="win32", run=lambda cmd, **kw: _Proc(1, "No matching distribution"))
+
+
+def test_find_piper_prefers_path_then_cache_then_pip(tmp_path, monkeypatch):
+    monkeypatch.setattr(narration, "narration_dir", lambda: tmp_path)
+    monkeypatch.setattr(narration.sysconfig, "get_path", lambda name: str(tmp_path / "none"))
+    monkeypatch.setattr(narration.sys, "executable", str(tmp_path / "none" / "py"))
+    assert narration.find_piper(which=lambda n: None) is None
+    assert narration.find_piper(which=lambda n: "/usr/bin/piper") == Path("/usr/bin/piper")
+
+
+def test_find_piper_ignores_a_stale_linux_binary_in_the_cache_off_linux(tmp_path, monkeypatch):
+    # The real-world WinError 193 repro: an older `doctor --fix` left the Linux ELF at piper/piper.
+    monkeypatch.setattr(narration, "narration_dir", lambda: tmp_path)
+    stale = tmp_path / "piper" / "piper"
+    stale.parent.mkdir(parents=True)
+    stale.write_text("ELF", encoding="utf-8")
+    monkeypatch.setattr(narration.sysconfig, "get_path", lambda name: str(tmp_path / "none"))
+    monkeypatch.setattr(narration.sys, "executable", str(tmp_path / "none" / "py"))
+    monkeypatch.setattr(narration, "_is_linux", lambda: False)
+    assert narration.find_piper(which=lambda n: None) is None
+    monkeypatch.setattr(narration, "_is_linux", lambda: True)
+    assert narration.find_piper(which=lambda n: None) == stale
+
+
+def test_fetch_piper_still_uses_the_cached_binary_on_linux(tmp_path, monkeypatch):
+    monkeypatch.setattr(narration, "narration_dir", lambda: tmp_path)
+    cached = tmp_path / "piper" / "piper"
+    cached.parent.mkdir(parents=True)
+    cached.write_text("already here", encoding="utf-8")
+
+    def _boom(*a, **k):
+        raise AssertionError("cached binary should short-circuit")
+
+    assert narration.fetch_piper(platform="linux", download_fn=_boom) == cached
 
 
 def test_fetch_piper_wraps_a_download_failure(tmp_path, monkeypatch):
@@ -49,7 +134,7 @@ def test_fetch_piper_wraps_a_download_failure(tmp_path, monkeypatch):
         raise OSError("network unreachable")
 
     with pytest.raises(narration.NarrationUnavailable, match="download failed"):
-        narration.fetch_piper(download_fn=_fails)
+        narration.fetch_piper(download_fn=_fails, platform="linux")
 
 
 def test_fetch_voice_model_rejects_an_unchecked_voice(tmp_path, monkeypatch):

@@ -36,7 +36,7 @@ animatica = "animatica.cli:app"
 where = ["src"]
 
 [tool.setuptools.package-data]
-animatica = ["ai/providers.toml", "docs/*.md", "backends/hyperframes/template.html"]
+animatica = ["ai/providers.toml", "docs/*.md", "backends/hyperframes/template.html", "backends/hyperframes/fonts/*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

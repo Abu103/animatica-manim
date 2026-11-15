@@ -89,6 +89,10 @@ def test_ensure_narration_uses_cached_files_without_fetching(monkeypatch, tmp_pa
     monkeypatch.setattr(narration, "piper_binary_path", lambda: piper)
     monkeypatch.setattr(narration, "voice_model_file", lambda voice=narration.DEFAULT_VOICE: model)
     monkeypatch.setattr(narration.shutil, "which", lambda name: None)
+    # The cached tarball binary is only honoured on Linux; pin that so a pip-installed
+    # piper on the test machine (Windows CI has one) cannot win.
+    monkeypatch.setattr(narration, "_is_linux", lambda: True)
+    monkeypatch.setattr(narration, "pip_piper_path", lambda: None)
 
     def boom(*a, **k):
         raise AssertionError("cached: no fetch")
