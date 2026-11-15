@@ -33,7 +33,7 @@ def test_fetch_piper_uses_the_cached_binary_without_downloading(tmp_path, monkey
     def _boom(*a, **k):
         raise AssertionError("should not download when already cached")
 
-    assert narration.fetch_piper(download_fn=_boom) == cached
+    assert narration.fetch_piper(download_fn=_boom, platform="linux") == cached
 
 
 def test_fetch_piper_rejects_a_hash_mismatch(tmp_path, monkeypatch):
@@ -109,9 +109,9 @@ def test_find_piper_ignores_a_stale_linux_binary_in_the_cache_off_linux(tmp_path
     stale.write_text("ELF", encoding="utf-8")
     monkeypatch.setattr(narration.sysconfig, "get_path", lambda name: str(tmp_path / "none"))
     monkeypatch.setattr(narration.sys, "executable", str(tmp_path / "none" / "py"))
-    monkeypatch.setattr(narration.sys, "platform", "win32")
+    monkeypatch.setattr(narration, "_is_linux", lambda: False)
     assert narration.find_piper(which=lambda n: None) is None
-    monkeypatch.setattr(narration.sys, "platform", "linux")
+    monkeypatch.setattr(narration, "_is_linux", lambda: True)
     assert narration.find_piper(which=lambda n: None) == stale
 
 

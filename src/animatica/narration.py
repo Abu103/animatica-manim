@@ -112,14 +112,18 @@ def pip_piper_path() -> Path | None:
     return None
 
 
-def find_piper(which=shutil.which) -> Path | None:
+def _is_linux() -> bool:
+    return sys.platform.startswith("linux")
+
+
+def find_piper(which=None) -> Path | None:
     """Any usable Piper already on this machine, or ``None``."""
-    found = which("piper")
+    found = (which or shutil.which)("piper")
     if found:
         return Path(found)
     # The cached tarball binary is a Linux ELF: off Linux it is not runnable
     # (WinError 193), so a copy left by an older ``doctor --fix`` is ignored.
-    if sys.platform.startswith("linux") and piper_binary_path().is_file():
+    if _is_linux() and piper_binary_path().is_file():
         return piper_binary_path()
     return pip_piper_path()
 
