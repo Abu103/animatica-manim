@@ -55,6 +55,24 @@ Piper voices later, each gated by checking its MODEL_CARD before it's added
 to the allowlist — same "fails closed on an unverified hash" posture as the
 Windows TeX bundle.
 
+### Amendment 2026-11-15: the engine licence is no longer uniformly MIT
+
+The paragraph above describes `rhasspy/piper`, which is archived and only ships Linux/ARM
+binaries (v1.2.0 has no Windows or macOS asset; verified against the release's asset list).
+The maintained successor is `OHF-Voice/piper1-gpl`, distributed as the `piper-tts` package on
+PyPI (`pip show piper-tts`: 1.8.0, `GPL-3.0-or-later`, home page OHF-voice/piper1-gpl), with
+wheels for Windows, macOS and Linux. Windows and macOS now use it (T26e), so:
+
+- **Engine:** Linux = pinned rhasspy/piper v1.2.0 binary (MIT); Windows/macOS = `piper-tts`
+  (GPL-3.0-or-later). Animatica runs it as a separate process and never links it. This is not
+  legal advice; the owner decides whether one GPL engine on two of three platforms is
+  acceptable, or whether to unify on one engine.
+- **Voice:** unchanged. The Piper project's `docs/COMMERCIAL_USE.md` lists
+  `en_US-ljspeech-medium` under "Voices trained from scratch", public domain, so the default
+  voice holds up under the stricter whole-chain rule that page applies (a voice's `MODEL_CARD`
+  `License` line covers only that voice's own dataset).
+- `--voice` additions must be checked against that whole-chain rule, not just the card.
+
 ## 3. Sync strategy — the actual design decision
 
 Today, a beat's on-screen duration comes from `comp.duration(params)`: a pure

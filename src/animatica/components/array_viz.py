@@ -6,6 +6,7 @@ takes exactly the duration it declares.
 """
 from __future__ import annotations
 
+import math
 from typing import ClassVar
 
 from pydantic import BaseModel, Field, model_validator
@@ -18,6 +19,13 @@ from animatica.storyboard.models import MAX_TEXT
 MAX_VALUES = 12
 
 Point = tuple[float, float, float]
+
+
+def value_label(v: float) -> str:
+    """The text drawn in a box. ``inf`` is drawn as ``∞`` (distance arrays start at infinity)."""
+    if math.isinf(v):
+        return "∞" if v > 0 else "-∞"
+    return f"{v:g}"
 
 
 def swap_targets(centers: list[Point], i: int, j: int) -> list[tuple[int, Point]]:
@@ -62,6 +70,8 @@ class ArrayViz(Component):
         @model_validator(mode="after")
         def _check(self):
             n = len(self.values)
+            if any(math.isnan(v) for v in self.values):
+                raise ValueError("values must not contain nan (use \"inf\" for infinity)")
             for i, st in enumerate(self.steps):
                 for key in ("highlight", "swap"):
                     if key not in st:
@@ -88,7 +98,7 @@ class ArrayViz(Component):
         return 2.0 + 0.8 * len(p.steps)  # type: ignore[attr-defined]
 
     def fallback_text(self, p: BaseModel) -> str:
-        return f"{p.title}: [{', '.join(f'{v:g}' for v in p.values)}]"  # type: ignore[attr-defined]
+        return f"{p.title}: [{', '.join(value_label(v) for v in p.values)}]"  # type: ignore[attr-defined]
 
     def play(self, scene, p, colors) -> None:
         from manim import UP, FadeIn, Text, VGroup, config
@@ -100,7 +110,7 @@ class ArrayViz(Component):
         # frame empty.
         title.to_edge(UP, buff=0.6).set_x(0)
         boxes = VGroup(*[
-            Text(f"{v:g}", font_size=MIN_FONT_SIZE + 4, color=colors.text) for v in p.values  # type: ignore[attr-defined]
+            Text(value_label(v), font_size=MIN_FONT_SIZE + 4, color=colors.text) for v in p.values  # type: ignore[attr-defined]
         ]).arrange_in_grid(1, len(p.values), buff=0.9)  # type: ignore[attr-defined]
         # The boxes fill the stage. The cap keeps them inside the safe area:
         # at most 70% of the frame width.

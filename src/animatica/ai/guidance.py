@@ -55,30 +55,49 @@ COMPONENT_RULES = [
 ]
 
 
+#: Words that describe the production (the card, the layout) instead of the topic.
+_META_PHRASES = (
+    "title card", "this scene", "this beat", "introducing", "shows a",
+    "displays a", "renders a", "the graph", "the equation",
+    # seen in a real narrated render (out-2): read aloud by --narrate
+    "two columns", "callout", "the walkthrough",
+)
+#: Captions that open with an instruction to the author ("Show final distances") read
+#: as a command when narrated. Deliberately short: "walk through ..." teaches, so it is absent.
+_AUTHOR_IMPERATIVE = re.compile(
+    r"^(show|present|define|display|summarize|initialize|illustrate|demonstrate|introduce)\b"
+)
+
+
+def mechanics_phrase(caption: str) -> str | None:
+    """The production-mechanics wording a caption contains, or None if it teaches."""
+    cap = caption.strip().lower()
+    if not cap:
+        return None
+    for phrase in _META_PHRASES:
+        if phrase in cap:
+            return phrase
+    m = _AUTHOR_IMPERATIVE.match(cap)
+    return m.group(1) if m else None
+
+
 def caption_teaches_not_describes(sb: Storyboard) -> list[str]:
     """Flag captions that describe production mechanics instead of teaching.
 
-    Returns a list of (scene_index, caption, reason) tuples for captions that
-    look like meta-commentary rather than explanatory content.
+    Returns one human-readable note per caption that looks like meta-commentary
+    rather than explanatory content (see ``mechanics_phrase``). With ``--narrate``
+    the caption is also what is spoken, so these are audible.
     """
     flags: list[str] = []
-    meta_phrases = (
-        "title card", "this scene", "this beat", "introducing", "shows a",
-        "displays a", "renders a", "the graph", "the equation",
-    )
     for si, scene in enumerate(sb.scenes, 1):
         for beat in scene.beats:
-            cap = beat.caption.strip().lower()
-            if not cap:
-                continue
-            for phrase in meta_phrases:
-                if phrase in cap:
-                    flags.append(
-                        f"scene {si}: caption describes production mechanics "
-                        f"({phrase!r}) instead of teaching the topic: "
-                        f"{beat.caption!r}"
-                    )
-                    break
+            phrase = mechanics_phrase(beat.caption)
+            if phrase is not None:
+                flags.append(
+                    f"scene {si}: caption describes production mechanics "
+                    f"({phrase!r}) instead of teaching the topic: "
+                    f"{beat.caption!r}"
+                )
     return flags
 
 
