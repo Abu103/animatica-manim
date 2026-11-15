@@ -12,10 +12,15 @@
     --c-muted: #a9bfb9;
     --c-accent: #a5f5cc;
     --c-rule: #b0d9ce33;
-    /* Bundling OFL webfonts (@font-face from local .woff2) is the next typography step;
-     until then name only fonts a render machine already has, or the linter errors. */
+    /* DejaVu Sans is bundled (fonts/, Bitstream Vera licence in DEJAVU-LICENSE.txt) so a
+       render looks the same on every machine and matches the planner's glyph-width
+       assumption; the system fonts after it only cover glyphs DejaVu's latin subset lacks. */
     --font: "DejaVu Sans", "Segoe UI", system-ui, sans-serif;
   }
+  @font-face { font-family: "DejaVu Sans"; font-weight: 400; font-style: normal; font-display: block;
+    src: url("fonts/dejavu-sans-400.woff2") format("woff2"); }
+  @font-face { font-family: "DejaVu Sans"; font-weight: 700; font-style: normal; font-display: block;
+    src: url("fonts/dejavu-sans-700.woff2") format("woff2"); }
   * { box-sizing: border-box; }
   html, body { margin: 0; width: 100%; height: 100%; background: var(--c-bg); }
   body { font-family: var(--font); color: var(--c-text); -webkit-font-smoothing: antialiased; }
