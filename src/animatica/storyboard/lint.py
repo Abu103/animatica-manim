@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import re
 
+from animatica.ai.guidance import mechanics_phrase
 from animatica.storyboard.models import Beat, Scene, Storyboard
 
 MAX_MERGED_TERMS = 20
@@ -106,6 +107,22 @@ def _show_infinity(scenes: list[Scene], notes: list[str]) -> list[Scene]:
     return out
 
 
+def _title_card_caption(scenes: list[Scene], notes: list[str]) -> list[Scene]:
+    """A title_card whose caption describes the card ('Title card introducing X') is captioned
+    (and, with --narrate, narrated) with its own title instead: the one fix needing no model."""
+    out = []
+    for s in scenes:
+        beats = []
+        for b in s.beats:
+            title = str(b.params.get("title", "")).strip() if b.component == "title_card" else ""
+            if title and mechanics_phrase(b.caption) is not None:
+                notes.append(f"lint: title_card caption described the card; using its title instead: {b.caption!r}")
+                b = b.model_copy(update={"caption": title})
+            beats.append(b)
+        out.append(Scene(beats=beats) if beats != list(s.beats) else s)
+    return out
+
+
 def _warn_phantom_objects(scenes: list[Scene], notes: list[str]) -> None:
     for si, s in enumerate(scenes):
         for b in s.beats:
@@ -184,6 +201,7 @@ def lint_storyboard(sb: Storyboard) -> tuple[Storyboard, list[str]]:
     scenes = _merge_sequences(list(sb.scenes), notes)
     scenes = _drop_redundant_charts(scenes, notes)
     scenes = _show_infinity(scenes, notes)
+    scenes = _title_card_caption(scenes, notes)
     _warn_phantom_objects(scenes, notes)
     _scene_component_order(scenes, notes)
     if scenes == list(sb.scenes):
