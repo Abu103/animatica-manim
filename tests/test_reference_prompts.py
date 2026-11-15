@@ -49,6 +49,7 @@ _RULES: list[tuple[str, str]] = [
     ("stat callout", "stat_callout"),
     ("derive", "formula_derivation"),
     ("parametric graph", "parametric_graph"),
+    ("probability tree", "probability_tree"),
     ("ball", "bounce_sequence"),
 ]
 

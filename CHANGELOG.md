@@ -1,6 +1,7 @@
 # Changelog
 
 ## Unreleased
+- New: `probability_tree` component (T27): a root, up to 3 branches with up to 3 sub-branches each, every edge labelled with its probability, and the probability of each whole path at the end. Sibling probabilities must sum to 1 (checked, with the branch named in the error). Duration 2.0 s + 0.5 s per node.
 - Fix: captions that describe the production instead of teaching ("Two columns contrast...", "A statistic callout...", "Show final distances...") are now all reported, not just "title card" ones: `--narrate` speaks the caption, so they were audible. A `title_card` whose caption describes the card is captioned (and narrated) with its own title by the lint pass.
 - Fix: `--narrate` on Windows/macOS no longer runs the Linux Piper binary (`OSError: [WinError 193]`). Off Linux, `animatica doctor --fix` / the first `--narrate` pip-installs `piper-tts` (the maintained OHF-Voice/piper1-gpl engine, **GPL-3.0-or-later**; run as a separate process) and uses the `piper` entry point pip puts next to the interpreter; a Linux binary left in the narration cache by an older version is ignored off Linux. Linux still uses the sha256-pinned rhasspy/piper v1.2.0 binary (MIT).
 - Fix: NIM replies cut off by the token limit (a reasoning model spending all of `max_tokens` thinking) no longer fail the two-stage run: `max_tokens` 4096 -> 16384, thinking off by default (`ANIMATICA_NIM_THINKING=1` turns it on), and the one retry doubles `max_tokens` (cap 32768) instead of resending the same request.

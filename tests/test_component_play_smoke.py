@@ -28,6 +28,7 @@ _EXTRA_EXAMPLES: dict[str, dict] = {
     "formula_derivation": {"title": "Derivation", "steps": ["start", "finish"]},
     "matrix": {"title": "Matrix", "values": [[1, 2], [3, 4]]},
     "parametric_graph": {"title": "Curve", "x_expr": "t", "y_expr": "t**2"},
+    "probability_tree": {"title": "Coin", "branches": [{"label": "H", "p": 0.5, "children": [{"label": "H", "p": 0.5}, {"label": "T", "p": 0.5}]}, {"label": "T", "p": 0.5}]},
     "stat_callout": {"value": "42", "label": "answers"},
 }
 
