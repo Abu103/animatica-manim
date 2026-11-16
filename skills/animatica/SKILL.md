@@ -1,6 +1,15 @@
+---
+name: animatica
+description: Use when asked to make or fix an explainer video with Animatica, add a component, or repair a storyboard.json (validate, lint, render, inspect frames).
+version: 1.0.0
+---
 # Animatica skill — build explainer-video components as an agent
 
-Use this when asked to add a component, fix a storyboard, or improve an Animatica video.
+## When to Use
+- Making or fixing an explainer video: writing a `storyboard.json`, validating, linting, rendering, checking frames.
+- Adding or fixing an Animatica component (needs a checkout of the animatica-manim repo).
+
+Everything under "For component development" refers to files in that checkout (`docs/`, `src/`, `tests/`). If the skill was installed from the hub and no checkout exists, use only the storyboard loop and the tools below.
 
 ## The loop (never skip validation)
 
@@ -15,10 +24,22 @@ Use this when asked to add a component, fix a storyboard, or improve an Animatic
 ### For storyboard-driven video creation (agent loop)
 1. **Outline**: Ask the model for a scene list (component + intent per beat) via `build_outline_prompt`.
 2. **Validate**: `animatica validate storyboard.json` — must return empty errors.
-3. **Lint**: `animatica lint storyboard.json` — review notes, fix narrative-order issues.
+3. **Lint**: `animatica lint storyboard.json` (MCP: `lint_storyboard`) — review notes, fix narrative-order issues.
 4. **Render**: `animatica make --from storyboard.json -o out/` — verify video plays.
 5. **Preview frame**: `animatica mcp` tool `preview_frame` — inspect a frame at time t to verify visual quality.
 6. **Fix**: Edit storyboard.json directly or via `animatica edit out/ "instruction"`, then re-render.
+
+## Pitfalls
+- `render_storyboard` is slow. Validate and lint first, render with `preview` before a full-quality render.
+- A malformed storyboard comes back as a `load error:` entry from `validate_storyboard`, not as a failed call: read `errors`, fix the JSON, validate again.
+- `preview_frame` needs the `report.json` the render wrote next to the video; `scene_index` is 0-based.
+- `--narrate` needs the manim backend and Piper; on a missing Piper it fails closed rather than rendering silent.
+- Do not write Manim code to get around a component limit. Pick another component or split the beat.
+
+## Verification
+- `validate_storyboard` returns `valid: true` with no errors.
+- `render_storyboard` returns a `video` path and an empty or understood `warnings` list.
+- `preview_frame` on at least one early and one late scene shows what the storyboard says.
 
 ## Hard rules
 - One task card at a time (see `docs/TASKS_FOR_HERMES.md`). Do NOT touch files not listed on the card.
@@ -40,9 +61,10 @@ Use this when asked to add a component, fix a storyboard, or improve an Animatic
 Tools:
 - `list_components` — list registered component names
 - `component_schema {name}` — JSON params schema for a component
-- `validate_storyboard {path}` — validate a storyboard; returns errors
-- `render_storyboard {path, out_dir?, preview?}` — render to video
-- `preview_frame {video, scene_index, t, out?}` — extract a frame PNG
+- `validate_storyboard {path}` — returns `{valid, errors}`; a malformed file comes back as a `load error:` entry, not a crash
+- `lint_storyboard {path}` — returns `{storyboard, notes}` (deterministic, no render)
+- `render_storyboard {path, out_dir?, preview?, narrate?, voice?}` — render to video (slow; use `preview` first)
+- `preview_frame {video, scene_index, t, out?}` — extract a frame PNG (`scene_index` is 0-based)
 - `lint_video {video, scene_durations?}` — frame-level quality checks
 
 Example MCP session (stdio):

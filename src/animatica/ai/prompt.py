@@ -44,6 +44,35 @@ _EXAMPLE = {
 }
 
 
+#: Same example, with the spoken line the model should write when ``--narrate`` is on: a short
+#: caption on screen, a longer and different sentence for the voice.
+_EXAMPLE_NARRATED = {
+    **_EXAMPLE,
+    "scenes": [
+        {"beats": [{**b, "narration": n}]}
+        for s, n in zip(
+            _EXAMPLE["scenes"],
+            ("Let's start with a rule that shows up everywhere in geometry.",
+             "Square the two short sides, add them up, and you get the square of the long side. "
+             "That's the whole theorem."),
+            strict=True,
+        )
+        for b in s["beats"]
+    ],
+}
+
+_NARRATION_RULES = (
+    '- Also give each beat a "narration": the spoken line, what a friendly teacher would SAY aloud while this '
+    "beat is on screen. A text-to-speech voice reads it; it is never shown.",
+    "- Keep the caption short (under 12 words). The narration is 1 to 3 sentences that add something the caption "
+    "does not: the why, an intuition, or what to watch for. Never repeat the caption.",
+    "- Write narration for the ear: contractions are fine; no LaTeX, no symbols like ^ or =, no markdown. "
+    'Say math in words ("x squared"). At most 250 characters.',
+    "- Narration is held to the same honesty rule as captions: mention only what the component draws, and never "
+    'describe the video itself ("this scene", "the title card").',
+)
+
+
 def _catalog(registry: ComponentRegistry) -> str:
     lines = []
     for name, schema in registry.json_schema().items():
@@ -53,8 +82,25 @@ def _catalog(registry: ComponentRegistry) -> str:
     return "\n".join(lines)
 
 
-def build_prompt(request: str, registry: ComponentRegistry, errors: list[str] | None = None) -> str:
-    """Return the full prompt: instructions + catalog + example + request (+ repair errors)."""
+def _add_narration(parts: list[str], *, rules_before: str) -> list[str]:
+    """Rewrite a prompt's ``parts`` so it also asks for a spoken ``narration`` per beat."""
+    out = []
+    for p in parts:
+        p = p.replace('"caption":"..."}', '"caption":"...","narration":"..."}')
+        p = p.replace("component, params, caption.", "component, params, caption, narration.")
+        if p.startswith(rules_before):
+            out.extend(_NARRATION_RULES)
+        out.append(p)
+    return out
+
+
+def build_prompt(
+    request: str, registry: ComponentRegistry, errors: list[str] | None = None, narrate: bool = False
+) -> str:
+    """Return the full prompt: instructions + catalog + example + request (+ repair errors).
+
+    ``narrate`` also asks for a separate spoken ``narration`` per beat (only worth the tokens
+    when the video will be narrated)."""
     parts = [
         "You turn a topic into a short explainer-video storyboard.",
         "Reply with ONE JSON object and nothing else: no markdown fences, no commentary.",
@@ -99,10 +145,12 @@ def build_prompt(request: str, registry: ComponentRegistry, errors: list[str] | 
         _catalog(registry),
         "",
         "Example output:",
-        json.dumps(_EXAMPLE, separators=(",", ":")),
+        json.dumps(_EXAMPLE_NARRATED if narrate else _EXAMPLE, separators=(",", ":")),
         "",
         f"Topic to explain: {request}",
     ]
+    if narrate:
+        parts = _add_narration(parts, rules_before="- Do not use steps_list or diagram just to repeat")
     if errors:
         parts += [
             "",
@@ -140,7 +188,13 @@ def build_outline_prompt(request: str, registry: ComponentRegistry, errors: list
     return "\n".join(parts)
 
 
-def build_fill_prompt(request: str, registry: ComponentRegistry, outline_scene: dict, errors: list[str] | None = None) -> str:
+def build_fill_prompt(
+    request: str,
+    registry: ComponentRegistry,
+    outline_scene: dict,
+    errors: list[str] | None = None,
+    narrate: bool = False,
+) -> str:
     """Stage 2: fill params for ONE scene. Short output, validated and retried alone."""
     parts = [
         "Fill in the params for ONE scene of an explainer-video storyboard. Reply with ONE JSON object and nothing else.",
@@ -161,6 +215,8 @@ def build_fill_prompt(request: str, registry: ComponentRegistry, outline_scene: 
         "",
         f"Topic to explain: {request}",
     ]
+    if narrate:
+        parts = _add_narration(parts, rules_before="- One-sentence caption per beat")
     if errors:
         parts += ["", "Your previous reply was rejected. Fix these problems and reply with the corrected JSON object only.", "Errors:", *errors[:6]]
     return "\n".join(parts)

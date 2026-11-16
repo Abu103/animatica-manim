@@ -14,6 +14,7 @@ def generate_storyboard(
     provider: AIProvider,
     registry: ComponentRegistry,
     max_retries: int = 2,
+    narrate: bool = False,
 ) -> Storyboard:
     """Ask `provider` for a storyboard, repairing parse/validation failures.
 
@@ -22,7 +23,7 @@ def generate_storyboard(
     `StoryboardGenerationError` after `max_retries` unsuccessful attempts.
     """
     schema = registry.json_schema()
-    current_prompt = build_prompt(prompt, registry)
+    current_prompt = build_prompt(prompt, registry, narrate=narrate)
     last_errors: list[str] = []
 
     for _ in range(max_retries + 1):
@@ -35,18 +36,18 @@ def generate_storyboard(
                 "parse error: field '{}': {}".format(".".join(str(x) for x in e["loc"]) or "storyboard", e["msg"])
                 for e in exc.errors()
             ]
-            current_prompt = build_prompt(prompt, registry, last_errors)
+            current_prompt = build_prompt(prompt, registry, last_errors, narrate=narrate)
             continue
         except Exception as exc:  # not JSON at all -> repair
             last_errors = [f"parse error: {' '.join(str(exc).split())[:200]}"]
-            current_prompt = build_prompt(prompt, registry, last_errors)
+            current_prompt = build_prompt(prompt, registry, last_errors, narrate=narrate)
             continue
 
         errors = registry.validate(sb)
         if not errors:
             return sb
         last_errors = errors
-        current_prompt = build_prompt(prompt, registry, errors)
+        current_prompt = build_prompt(prompt, registry, errors, narrate=narrate)
 
     raise StoryboardGenerationError(
         f"failed to generate a valid storyboard after retries (provider: {provider.name})",
@@ -89,6 +90,7 @@ def generate_storyboard_two_stage(
     provider: AIProvider,
     registry: ComponentRegistry,
     max_retries: int = 2,
+    narrate: bool = False,
 ) -> Storyboard:
     """Stage 1: outline (component+intent per beat). Stage 2: fill params per scene,
     each fill validated and retried alone. Raises StoryboardGenerationError with the
@@ -120,7 +122,7 @@ def generate_storyboard_two_stage(
     scenes: list[Scene] = []
     all_errors: list[str] = []
     for si, oscene in enumerate(outline.scenes, 1):
-        scene_prompt = build_fill_prompt(prompt, registry, oscene.model_dump())
+        scene_prompt = build_fill_prompt(prompt, registry, oscene.model_dump(), narrate=narrate)
         scene: Scene | None = None
         for _ in range(max_retries + 1):
             text = provider.generate(scene_prompt, registry.json_schema())
@@ -138,7 +140,7 @@ def generate_storyboard_two_stage(
             if not errs:
                 errs = [f"fill must return exactly one scene, got {len(sb.scenes)}"]
             last_errors = errs
-            scene_prompt = build_fill_prompt(prompt, registry, oscene.model_dump(), errs)
+            scene_prompt = build_fill_prompt(prompt, registry, oscene.model_dump(), errs, narrate=narrate)
         if scene is None:
             all_errors.extend(f"scene {si}: {e}" for e in last_errors)
             continue  # keep the scenes that worked; report the failure

@@ -139,3 +139,104 @@ def test_mcp_render_storyboard_no_stdout(tmp_path, capsys):
 
     captured = capsys.readouterr()
     assert captured.out == "", f"MCP render_storyboard code path wrote to stdout: {captured.out!r}"
+
+# ---------------------------------------------------------------------------
+# T33: agent-surface polish
+# ---------------------------------------------------------------------------
+
+def test_mcp_lists_lint_storyboard_and_narrate_option():
+    async def check(session):
+        tools = {t.name: t for t in (await session.list_tools()).tools}
+        assert "lint_storyboard" in tools
+        props = tools["render_storyboard"].input_schema["properties"]
+        assert "narrate" in props and "voice" in props
+        assert "0-based" in tools["preview_frame"].description
+
+    asyncio.run(_run_mcp_session(check))
+
+
+def test_mcp_validate_malformed_json_is_fixable_not_a_crash(tmp_path):
+    bad = tmp_path / "bad.json"
+    bad.write_text("{not json", encoding="utf-8")
+
+    async def check(session):
+        result = await session.call_tool("validate_storyboard", {"path": str(bad)})
+        sc = result.structured_content
+        assert sc["valid"] is False
+        assert sc["errors"][0].startswith("load error:")
+        assert not result.is_error
+
+    asyncio.run(_run_mcp_session(check))
+
+
+def test_mcp_validate_unknown_component_lists_valid_names(tmp_path):
+    import json
+
+    sb = {"version": "1", "title": "t", "scenes": [{"beats": [{"component": "nope", "params": {}}]}]}
+    p = tmp_path / "sb.json"
+    p.write_text(json.dumps(sb), encoding="utf-8")
+
+    async def check(session):
+        result = await session.call_tool("validate_storyboard", {"path": str(p)})
+        sc = result.structured_content
+        assert sc["valid"] is False
+        assert "bounce_sequence" in sc["errors"][0]
+
+    asyncio.run(_run_mcp_session(check))
+
+
+def test_mcp_lint_storyboard_returns_storyboard_and_notes():
+    async def check(session):
+        result = await session.call_tool("lint_storyboard", {"path": "docs/gallery/howto.json"})
+        sc = result.structured_content
+        assert isinstance(sc["notes"], list)
+        assert sc["storyboard"]["scenes"]
+
+    asyncio.run(_run_mcp_session(check))
+
+
+def test_mcp_lint_storyboard_bad_inputs(tmp_path):
+    bad = tmp_path / "bad.json"
+    bad.write_text("{not json", encoding="utf-8")
+
+    async def check(session):
+        malformed = await session.call_tool("lint_storyboard", {"path": str(bad)})
+        assert malformed.structured_content["errors"][0].startswith("load error:")
+        missing = await session.call_tool("lint_storyboard", {"path": str(tmp_path / "nope.json")})
+        assert "error" in missing.structured_content
+        no_arg = await session.call_tool("lint_storyboard", {})
+        assert "error" in no_arg.structured_content
+
+    asyncio.run(_run_mcp_session(check))
+
+
+def test_mcp_component_schema_unknown_name_lists_valid_names():
+    async def check(session):
+        result = await session.call_tool("component_schema", {"name": "nope"})
+        assert "bounce_sequence" in result.structured_content["error"]
+
+    asyncio.run(_run_mcp_session(check))
+
+
+def test_skill_md_documents_every_mcp_tool():
+    """skills/animatica/SKILL.md must name every tool the server exposes."""
+    from pathlib import Path
+
+    skill = Path("skills/animatica/SKILL.md").read_text(encoding="utf-8")
+    assert skill.startswith("---\nname: animatica\n")
+
+    async def check(session):
+        for tool in (await session.list_tools()).tools:
+            assert f"`{tool.name}" in skill, f"SKILL.md does not document MCP tool {tool.name}"
+
+    asyncio.run(_run_mcp_session(check))
+
+
+def test_skill_md_has_hermes_recommended_sections():
+    """Hermes' skill guide recommends these sections; the hub-installed copy has no repo around it."""
+    from pathlib import Path
+
+    skill = Path("skills/animatica/SKILL.md").read_text(encoding="utf-8")
+    for heading in ("## When to Use", "## Pitfalls", "## Verification"):
+        assert heading in skill, f"SKILL.md is missing {heading}"
+    assert "version:" in skill.split("---")[1] and "description:" in skill.split("---")[1]

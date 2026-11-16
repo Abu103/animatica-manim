@@ -136,6 +136,15 @@ def beat_text(beat, comp, params=None) -> str:
     return beat.caption or comp.fallback_text(params)
 
 
+def spoken_text(beat, comp, params=None) -> str:
+    """What ``--narrate`` says for a beat: its own ``narration``, else the caption text.
+
+    The burned-in caption and ``captions.vtt`` keep using ``beat_text`` -- a narration
+    script is allowed to differ from what is on screen, the caption is not.
+    """
+    return beat.narration.strip() or beat_text(beat, comp, params)
+
+
 def _write_captions(sb: Storyboard, registry, path: Path, beat_durations: list[list[float]] | None = None) -> None:
     """``beat_durations`` (``--narrate``) overrides the visual durations so cues follow the extended beats."""
     lines = ["WEBVTT", ""]
@@ -176,11 +185,12 @@ def resolve_backend(name: str) -> RenderBackend:
     return backends[name]
 
 
-def cache_variant(prov, two_stage: bool, registry) -> str:
+def cache_variant(prov, two_stage: bool, registry, narrate: bool = False) -> str:
     """Cache qualifier for a storyboard: provider+model, one/two-stage mode,
     and the registry fingerprint — a model, mode, or component-schema change
     never resumes another entry's cached storyboard."""
-    return f"{prov.name}:{prov.model}|{'two' if two_stage else 'one'}|{registry.fingerprint()}"
+    base = f"{prov.name}:{prov.model}|{'two' if two_stage else 'one'}|{registry.fingerprint()}"
+    return base + "|narr" if narrate else base  # a narrated storyboard carries `narration`; plain keys unchanged
 
 
 def make_video(
@@ -245,7 +255,7 @@ def make_video(
                 raise ValueError("no AI provider available; run 'animatica setup'")
             provider_used = prov.name
             cache = StoryboardCache(out_dir / ".animatica_cache")
-            key = cache.key(prompt, cache_variant(prov, two_stage, registry), "1")
+            key = cache.key(prompt, cache_variant(prov, two_stage, registry, narrate), "1")
             try:
                 sb = cache.get(key)
             except Exception:  # corrupt/stale cache entry: regenerate
@@ -253,8 +263,8 @@ def make_video(
             if sb is not None:
                 provider_used = f"{prov.name} (cached)"
             else:
-                sb = (generate_storyboard_two_stage(prompt, prov, registry) if two_stage
-                      else generate_storyboard(prompt, prov, registry))
+                sb = (generate_storyboard_two_stage(prompt, prov, registry, narrate=narrate) if two_stage
+                      else generate_storyboard(prompt, prov, registry, narrate=narrate))
                 cache.put(key, sb)
 
     if storyboard_path is None and not provider_used.startswith("template"):
