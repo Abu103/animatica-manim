@@ -1,0 +1,1 @@
+{"version": "1", "title": "Even and prime", "scenes": [{"beats": [{"component": "venn", "params": {"title": "Even numbers and primes", "sets": [{"label": "Even", "items": ["4", "6", "8"]}, {"label": "Prime", "items": ["3", "5", "7"]}], "shared": [{"of": [0, 1], "items": ["2"]}]}, "caption": "The number 2 is the only number that is both even and prime."}]}]}

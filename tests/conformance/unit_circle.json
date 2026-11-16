@@ -1,0 +1,1 @@
+{"version": "1", "title": "Unit circle", "scenes": [{"beats": [{"component": "unit_circle", "params": {"title": "The unit circle at special angles", "angles": [30, 45, 60]}, "caption": "Cosine is the x-coordinate and sine is the y-coordinate of each point."}]}]}

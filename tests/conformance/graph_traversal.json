@@ -1,0 +1,1 @@
+{"version": "1", "title": "BFS", "scenes": [{"beats": [{"component": "graph_traversal", "params": {"title": "Breadth-first search from A", "nodes": ["A", "B", "C", "D", "E"], "edges": [["A", "B"], ["A", "C"], ["B", "D"], ["C", "D"], ["D", "E"]], "start": "A", "order": "bfs"}, "caption": "Breadth-first search visits every neighbour before going deeper."}]}]}

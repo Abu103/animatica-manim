@@ -28,6 +28,11 @@ _EXTRA_EXAMPLES: dict[str, dict] = {
     "formula_derivation": {"title": "Derivation", "steps": ["start", "finish"]},
     "matrix": {"title": "Matrix", "values": [[1, 2], [3, 4]]},
     "parametric_graph": {"title": "Curve", "x_expr": "t", "y_expr": "t**2"},
+    "venn": {"title": "Sets", "sets": [{"label": "A", "items": ["1"]}, {"label": "B"}], "shared": [{"of": [0, 1], "items": ["2"]}]},
+    "pie_donut": {"title": "Share", "slices": [{"label": "A", "value": 60}, {"label": "B", "value": 40}], "donut": True, "center": "x"},
+    "code_diff": {"title": "Diff", "before": "def f():\n\n    return 1", "after": "def f():\n\n    return 2"},
+    "graph_traversal": {"title": "BFS", "nodes": ["A", "B", "C"], "edges": [["A", "B"], ["A", "C"]]},
+    "unit_circle": {"title": "Circle", "angles": [30, 90]},
     "probability_tree": {"title": "Coin", "branches": [{"label": "H", "p": 0.5, "children": [{"label": "H", "p": 0.5}, {"label": "T", "p": 0.5}]}, {"label": "T", "p": 0.5}]},
     "stat_callout": {"value": "42", "label": "answers"},
 }
