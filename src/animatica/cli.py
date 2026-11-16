@@ -945,11 +945,12 @@ def make(
         if result.warnings:
             typer.echo(f"({len(result.warnings)} warning(s); details in {result.report})")
     except StoryboardGenerationError as exc:
-        if debug:
-            raise
+        # The reasons are the point; the traceback only says "failed after retries".
         typer.echo(f"Error: {exc}")
         for line in exc.errors[:6]:
             typer.echo(f"  - {line}")
+        if debug:
+            raise
         typer.echo("Tip: try again, pick another --provider/model, or use --debug for the full traceback.")
         raise typer.Exit(code=1)
     except (ProviderError, RateLimited, NarrationUnavailable) as exc:
