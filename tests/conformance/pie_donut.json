@@ -1,0 +1,1 @@
+{"version": "1", "title": "Browser share", "scenes": [{"beats": [{"component": "pie_donut", "params": {"title": "Browser market share", "donut": true, "center": "2024", "slices": [{"label": "Chrome", "value": 65}, {"label": "Safari", "value": 20}, {"label": "Other", "value": 15}]}, "caption": "Chrome holds about two thirds of the market, far ahead of Safari."}]}]}

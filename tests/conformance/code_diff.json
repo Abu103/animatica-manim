@@ -1,0 +1,1 @@
+{"version": "1", "title": "Use math.pi", "scenes": [{"beats": [{"component": "code_diff", "params": {"title": "Replace 3.14 with math.pi", "before": "def area(r):\n    return 3.14 * r * r\n", "after": "import math\n\ndef area(r):\n    return math.pi * r * r\n"}, "caption": "Using math.pi removes the rounding error from the hard-coded constant."}]}]}

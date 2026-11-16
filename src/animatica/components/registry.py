@@ -79,6 +79,11 @@ class ComponentRegistry:
 
 
 def _builtins() -> list[type[Component]]:
+    from animatica.components.unit_circle import UnitCircle
+    from animatica.components.graph_traversal import GraphTraversal
+    from animatica.components.code_diff import CodeDiff
+    from animatica.components.pie_donut import PieDonut
+    from animatica.components.venn import Venn
     from animatica.components.probability_tree import ProbabilityTree
     from animatica.components.compare import Compare
     from animatica.components.code_walkthrough import CodeWalkthrough
@@ -102,6 +107,11 @@ def _builtins() -> list[type[Component]]:
     from animatica.components.steps_list import StepsList
     from animatica.components.title_card import TitleCard
     return [
+        UnitCircle,
+        GraphTraversal,
+        CodeDiff,
+        PieDonut,
+        Venn,
         ProbabilityTree,
         Compare,
         Timeline,

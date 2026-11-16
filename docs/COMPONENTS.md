@@ -29,6 +29,11 @@ sync with the code: the test suite compares this document against
 | `timeline` | `title`, `events[]` (1-8), each `{label, text}` (both keys required) | 2.0 s + 0.8 s per event |
 | `compare` | `title`, `left` and `right`, each `{heading, bullets[]}` (1-6 bullets per side) | 2.2 s + 0.6 s per bullet (both sides) |
 | `probability_tree` | `title`, optional `root` (default "Start"), `branches[]` (1-3), each `{label, p, children[]}` (<=3 `{label, p}` each); `0 < p <= 1`, siblings must sum to 1, labels <=40 chars | 2.0 s + 0.5 s per node |
+| `venn` | `title`, `sets[]` (2-3) of `{label, items[]}`, optional `shared[]` of `{of: [set indices], items[]}`; items <=14 chars, <=3 per region (3 sets: 1 per shared region of <=7 chars, <=2 per set) | 2.0 s + 0.7 s per set + 0.5 s per shared region |
+| `pie_donut` | `title`, `slices[]` (2-6) of `{label, value > 0}`, optional `donut` (bool) and `center` (text in the hole, <=16 chars); slices under 3% are rejected (merge into "Other"); percents are whole numbers summing to 100 | 2.0 s + 0.5 s per slice |
+| `code_diff` | `title`, `before`, `after` (full code text; the diff is computed; <=12 diff lines of <=48 chars; not syntax-highlighted) | 2.5 s + 0.5 s per changed line |
+| `graph_traversal` | `title`, `nodes[]` (2-8 labels, <=4 chars), `edges[]` (pairs of labels, <=12), optional `start` (default first node), `order` (`bfs`\|`dfs`), `directed`; the visit order is computed, neighbours in `nodes` order | 2.5 s + 0.6 s per visited node |
+| `unit_circle` | `title`, `angles[]` (1-4 special angles in degrees: multiples of 30 or 45 in [0, 360)), optional `units` (`degrees`\|`radians`); exact cos/sin are looked up, not typed | 2.5 s + 0.9 s per angle |
 | `bounce_sequence` | `title`, `values[]` (2-20), optional `scale` (auto/linear/sqrt/log), `labels[]` (optional) | 2.0 s + 0.8 s per term |
 
 Registered component names:
@@ -41,6 +46,11 @@ Registered component names:
 - diagram
 - code_highlight
 - bounce_sequence
+- unit_circle
+- graph_traversal
+- code_diff
+- pie_donut
+- venn
 - probability_tree
 - compare
 - timeline

@@ -50,6 +50,11 @@ _RULES: list[tuple[str, str]] = [
     ("derive", "formula_derivation"),
     ("parametric graph", "parametric_graph"),
     ("probability tree", "probability_tree"),
+    ("unit circle", "unit_circle"),
+    ("traversal", "graph_traversal"),
+    ("code diff", "code_diff"),
+    ("pie chart", "pie_donut"),
+    ("venn", "venn"),
     ("ball", "bounce_sequence"),
 ]
 
