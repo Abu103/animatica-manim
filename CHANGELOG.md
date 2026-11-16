@@ -1,6 +1,7 @@
 # Changelog
 
 ## Unreleased
+- Fix: `animatica make --debug` now prints the validation errors before the traceback when storyboard generation fails. It used to show only "failed to fill 1 scene(s) after retries" with no reason.
 - New: with `--narrate`, the model is asked to write a separate spoken `narration` per beat (T34b): a short caption on screen, 1 to 3 sentences for the voice that add the why or an intuition, written for the ear (no symbols, math in words, at most 250 characters). Both generation modes (one-stage, two-stage fill) do it; without `--narrate` the prompt is unchanged. Narrated storyboards cache under their own key, so a plain run never resumes one.
 - New: lint checks the spoken line (T34c). Narration that describes the production ("this scene shows...") is dropped and the caption is spoken instead; narration with symbols a voice would read literally (`^`, `=`, `_`...), over 250 characters, or mentioning a ball on a component that draws none only warns. Hand-written `--from` storyboards are never touched.
 - New: a beat can carry its own `narration` (T34). `--narrate` speaks it instead of the caption; blank keeps the old behaviour (read the caption), so existing storyboards render the same. The burned-in caption and `captions.vtt` still show the caption.

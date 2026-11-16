@@ -183,3 +183,18 @@ def test_preview_t_beyond_scene_duration(tmp_path):
     result = runner.invoke(app, ["preview", str(video), "0", "5.0", "--report", str(report)])
     assert result.exit_code != 0
 
+
+
+def test_debug_still_lists_why_generation_failed(monkeypatch, tmp_path):
+    """--debug used to re-raise before printing the validation errors, leaving only
+    'failed to fill 1 scene(s)' with no reason. The reasons must be visible either way."""
+    from animatica.ai.base import StoryboardGenerationError
+
+    def boom(**kwargs):
+        raise StoryboardGenerationError("failed to fill 1 scene(s)", ["scene 2: narration too long", "scene 2: bad param"])
+
+    monkeypatch.setattr("animatica.cli.make_video", boom)
+    for extra in ([], ["--debug"]):
+        r = CliRunner().invoke(app, ["make", "explain fourier transform", "-o", str(tmp_path), *extra])
+        assert r.exit_code != 0
+        assert "scene 2: narration too long" in r.output and "scene 2: bad param" in r.output
