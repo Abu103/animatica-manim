@@ -123,6 +123,46 @@ def _title_card_caption(scenes: list[Scene], notes: list[str]) -> list[Scene]:
     return out
 
 
+#: What a text-to-speech voice would read literally ("caret", "backslash", "equals").
+_SPOKEN_SYMBOLS = re.compile(r"[\\^_{}$=*#<>]")
+_SPOKEN_OBJECT = re.compile(r"\b(ball|bounc\w*|hop|hops|hopping)\b", re.IGNORECASE)
+#: The prompt asks for at most 250 characters; ~15 characters are spoken per second.
+_NARRATION_LONG = 250
+_CHARS_PER_SECOND = 15
+
+
+def _check_narration(scenes: list[Scene], notes: list[str]) -> list[Scene]:
+    """Checks on the spoken line. Narration that describes the production is dropped (the
+    caption is spoken instead, as before narration existed); the rest only warn."""
+    out = []
+    for si, s in enumerate(scenes):
+        beats = []
+        for b in s.beats:
+            text = b.narration.strip()
+            if text:
+                phrase = mechanics_phrase(text)
+                if phrase is not None:
+                    notes.append(
+                        f"lint: scene {si} narration describes the production ({phrase!r}); "
+                        f"dropped it, the caption is spoken instead: {text!r}"
+                    )
+                    b = b.model_copy(update={"narration": ""})
+                else:
+                    found = sorted(set(_SPOKEN_SYMBOLS.findall(text)))
+                    if found:
+                        notes.append(f"lint: scene {si} narration has symbols a voice reads literally: {' '.join(found)}")
+                    if len(text) > _NARRATION_LONG:
+                        notes.append(
+                            f"lint: scene {si} narration is long ({len(text)} chars, about "
+                            f"{len(text) // _CHARS_PER_SECOND} s spoken); the beat is held that long"
+                        )
+                    if b.component != "bounce_sequence" and _SPOKEN_OBJECT.search(text):
+                        notes.append(f"lint: scene {si} narration mentions a ball/hop but {b.component} draws none")
+            beats.append(b)
+        out.append(Scene(beats=beats) if beats != list(s.beats) else s)
+    return out
+
+
 def _warn_phantom_objects(scenes: list[Scene], notes: list[str]) -> None:
     for si, s in enumerate(scenes):
         for b in s.beats:
@@ -202,6 +242,7 @@ def lint_storyboard(sb: Storyboard) -> tuple[Storyboard, list[str]]:
     scenes = _drop_redundant_charts(scenes, notes)
     scenes = _show_infinity(scenes, notes)
     scenes = _title_card_caption(scenes, notes)
+    scenes = _check_narration(scenes, notes)
     _warn_phantom_objects(scenes, notes)
     _scene_component_order(scenes, notes)
     if scenes == list(sb.scenes):

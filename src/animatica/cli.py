@@ -354,7 +354,7 @@ def mcp() -> None:
     """Run the Animatica MCP server on stdio (Model Context Protocol).
 
     Exposes tools: list_components, component_schema, validate_storyboard,
-    render_storyboard, preview_frame, lint_video.
+    lint_storyboard, render_storyboard, preview_frame, lint_video.
     Hermes (or any MCP client) connects via stdio and calls tools via JSON-RPC.
     """
     import asyncio
@@ -373,6 +373,7 @@ def mcp() -> None:
     from animatica.components.registry import default_registry
     from animatica.frame_lint import FrameLintConfig, lint_video, lint_result_to_warnings
     from animatica.pipeline import make_video, preview_frame
+    from animatica.storyboard.lint import lint_storyboard
     from animatica.storyboard.models import load_storyboard
 
     reg = default_registry()
@@ -390,7 +391,7 @@ def mcp() -> None:
         ),
         Tool(
             name="component_schema",
-            description="Get the JSON params schema for a component",
+            description="Get the JSON params schema for a component (names come from list_components)",
             input_schema={
                 "type": "object",
                 "properties": {"name": {"type": "string", "description": "Component name"}},
@@ -400,7 +401,25 @@ def mcp() -> None:
         ),
         Tool(
             name="validate_storyboard",
-            description="Validate a storyboard JSON file; returns errors if invalid",
+            description=(
+                "Validate a storyboard JSON file. Returns {valid, errors}; an unreadable or "
+                "malformed file is reported as a 'load error:' entry in errors, each error names "
+                "the scene, beat and field to fix"
+            ),
+            input_schema={
+                "type": "object",
+                "properties": {"path": {"type": "string", "description": "Path to storyboard.json"}},
+                "required": ["path"],
+                "additionalProperties": False,
+            },
+        ),
+        Tool(
+            name="lint_storyboard",
+            description=(
+                "Run the deterministic storyboard lint (no model, no render). Returns "
+                "{storyboard, notes}: the cleaned storyboard and what was changed or flagged. "
+                "Call after validate_storyboard, before render_storyboard"
+            ),
             input_schema={
                 "type": "object",
                 "properties": {"path": {"type": "string", "description": "Path to storyboard.json"}},
@@ -410,13 +429,19 @@ def mcp() -> None:
         ),
         Tool(
             name="render_storyboard",
-            description="Render a storyboard JSON file into a video",
+            description="Render a storyboard JSON file into a video (slow: seconds to minutes; use preview for a fast check)",
             input_schema={
                 "type": "object",
                 "properties": {
                     "path": {"type": "string", "description": "Path to storyboard.json"},
                     "out_dir": {"type": "string", "description": "Output directory", "default": "."},
                     "preview": {"type": "boolean", "description": "Preview quality", "default": False},
+                    "narrate": {
+                        "type": "boolean",
+                        "description": "Add spoken narration (needs the manim backend and Piper)",
+                        "default": False,
+                    },
+                    "voice": {"type": "string", "description": "Narration voice (default voice only in 0.3)"},
                 },
                 "required": ["path"],
                 "additionalProperties": False,
@@ -424,12 +449,12 @@ def mcp() -> None:
         ),
         Tool(
             name="preview_frame",
-            description="Extract a single frame from a rendered video at scene+t",
+            description="Extract a single frame from a rendered video at scene+t (scene_index is 0-based; report.json next to the video supplies scene durations)",
             input_schema={
                 "type": "object",
                 "properties": {
                     "video": {"type": "string", "description": "Path to video.mp4"},
-                    "scene_index": {"type": "integer", "description": "Scene index"},
+                    "scene_index": {"type": "integer", "description": "Scene index, 0-based"},
                     "t": {"type": "number", "description": "Seconds within the scene", "default": 0.0},
                     "out": {"type": "string", "description": "Output PNG path (optional)"},
                 },
@@ -479,17 +504,39 @@ def mcp() -> None:
             elif name == "component_schema":
                 comp_name = arguments.get("name")
                 if comp_name not in reg.names():
-                    structured = {"error": f"unknown component {comp_name!r}"}
+                    structured = {
+                        "error": f"unknown component {comp_name!r}. Valid components: {', '.join(reg.names())}"
+                    }
                 else:
                     structured = {"schema": reg.get(comp_name).Params.model_json_schema()}
             elif name == "validate_storyboard":
                 path = arguments.get("path")
                 if not path:
                     structured = {"error": "missing 'path' argument"}
+                elif not _Path(path).is_file():
+                    structured = {"error": f"no such file: {path}"}
                 else:
-                    sb = load_storyboard(_Path(path))
-                    errors = reg.validate(sb)
-                    structured = {"valid": not errors, "errors": errors}
+                    try:
+                        sb = load_storyboard(_Path(path))
+                    except Exception as exc:  # noqa: BLE001 - malformed input is an answer, not a crash
+                        structured = {"valid": False, "errors": [f"load error: {exc}"]}
+                    else:
+                        errors = reg.validate(sb)
+                        structured = {"valid": not errors, "errors": errors}
+            elif name == "lint_storyboard":
+                path = arguments.get("path")
+                if not path:
+                    structured = {"error": "missing 'path' argument"}
+                elif not _Path(path).is_file():
+                    structured = {"error": f"no such file: {path}"}
+                else:
+                    try:
+                        sb = load_storyboard(_Path(path))
+                    except Exception as exc:  # noqa: BLE001 - malformed input is an answer, not a crash
+                        structured = {"valid": False, "errors": [f"load error: {exc}"]}
+                    else:
+                        linted, notes = lint_storyboard(sb)
+                        structured = {"storyboard": _json.loads(linted.model_dump_json()), "notes": notes}
             elif name == "render_storyboard":
                 path = arguments.get("path")
                 out_dir = arguments.get("out_dir", ".")
@@ -501,6 +548,8 @@ def mcp() -> None:
                         storyboard_path=_Path(path),
                         out_dir=_Path(out_dir),
                         preview=preview,
+                        narrate=bool(arguments.get("narrate", False)),
+                        voice=arguments.get("voice"),
                     )
                     structured = {
                         "video": str(result_obj.video),

@@ -147,3 +147,54 @@ def test_narrate_storyboard_uses_fallback_text_when_caption_is_empty(tmp_path):
 
     narration.narrate_storyboard(sb, registry, tmp_path, synthesize_fn=fake_synthesize)
     assert seen_text["text"] == expected
+
+
+# ---------------------------------------------------------------------------
+# T34: a beat can carry its own spoken text, separate from the caption
+# ---------------------------------------------------------------------------
+
+def _spoken(sb, tmp_path):
+    seen = []
+
+    def fake_synthesize(text, out_path, voice=narration.DEFAULT_VOICE, voice_model_path=None):
+        seen.append(text)
+        return out_path
+
+    narration.narrate_storyboard(sb, default_registry(), tmp_path, synthesize_fn=fake_synthesize)
+    return seen
+
+
+def test_beat_narration_defaults_empty_and_old_storyboards_still_load():
+    beat = Beat(component="title_card", params={"title": "hi"}, caption="c")
+    assert beat.narration == ""
+
+
+def test_narration_field_is_spoken_but_caption_stays_on_screen(tmp_path):
+    from animatica.pipeline import _write_captions
+
+    sb = Storyboard(
+        title="t",
+        scenes=[Scene(beats=[Beat(component="title_card", params={"title": "hi"},
+                                  caption="Two pointers", narration="Now watch how the two pointers walk toward each other.")])],
+    )
+    assert _spoken(sb, tmp_path) == ["Now watch how the two pointers walk toward each other."]
+    vtt = tmp_path / "c.vtt"
+    _write_captions(sb, default_registry(), vtt)
+    assert "Two pointers" in vtt.read_text(encoding="utf-8")
+    assert "walk toward" not in vtt.read_text(encoding="utf-8")
+
+
+def test_blank_narration_falls_back_to_caption(tmp_path):
+    sb = Storyboard(
+        title="t",
+        scenes=[Scene(beats=[Beat(component="title_card", params={"title": "hi"}, caption="cap", narration="   ")])],
+    )
+    assert _spoken(sb, tmp_path) == ["cap"]
+
+
+def test_narration_without_caption_is_still_spoken(tmp_path):
+    sb = Storyboard(
+        title="t",
+        scenes=[Scene(beats=[Beat(component="title_card", params={"title": "hi"}, narration="Say this.")])],
+    )
+    assert _spoken(sb, tmp_path) == ["Say this."]

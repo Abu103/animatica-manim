@@ -407,3 +407,31 @@ out2 video (real nemotron run, user's machine):
 - Unverified: Windows CI; portrait/other frame sizes; monospace font resolution on Windows for `code_diff` (`font="Monospace"`, as Manim's own `Code` uses); a model choosing any of these components for a real prompt (T16 eval not run).
 - Not done / open: feeding the caption-mechanics notes into the repair loop (B5 follow-up, extra model calls); T33 agent surface.
 
+## Status (2026-11-16, Claude session, card T33: agent surface, MCP polish half)
+- Branch off main eb9e15f (batch 2 merged as #62). Changed: `src/animatica/cli.py` (MCP tools), `tests/test_mcp_protocol.py` (+7 tests, each failed first except the unknown-component guard), `skills/animatica/SKILL.md`, `CHANGELOG.md`, this file.
+- Why: `validate_storyboard` raised on a malformed file ("tool failed: JSONDecodeError") where the CLI returns a fixable `load error:`; `lint` existed on the CLI and in the skill's loop but not as an MCP tool; `render_storyboard` could not narrate.
+- Verified here: `tests/test_mcp_protocol.py` 15 passed; `ruff check src scripts tests` clean; the non-render suite fails only in tui (textual not installed), graph, caption_room and scheduler, the same files as on clean main (checked below).
+- NOT done: publishing `skills/animatica` to the Hermes skills hub. ROADMAP.md still says Hermes' skill/hub format is unverified, and this sandbox cannot read Hermes' docs, so I did not invent a hub path or manifest. I only matched the frontmatter of `skills/external-docs-lookup`. Needs someone with Hermes docs (or `hermes skills --help`) to read the real format.
+- NOT verified: the new `narrate` option through a real MCP render (no Piper here); Windows CI.
+
+## Status (2026-11-16, Claude session, card T33b: skill for the Hermes hub)
+- Stacked on T33 (`t33-mcp-polish.patch`). Changed: `skills/animatica/SKILL.md`, `tests/test_mcp_protocol.py`, `CHANGELOG.md`, this file.
+- Hermes' format, from its skills docs (hermes-agent.nousresearch.com/docs/user-guide/features/skills) and a third-party tutorial (fast.io): `SKILL.md` with `name`, `description` (required), `version`; recommended sections When to Use / Quick Reference / Procedure / Pitfalls / Verification; installed skills live in `~/.hermes/skills/<category>/<name>/`. Skill now has the first, third-to-last and last of those; the loop and tool list play the role of Procedure/Quick Reference.
+- Publish command per the fast.io tutorial, NOT run and NOT confirmed against `hermes skills publish --help`: `hermes skills publish skills/animatica --to github --repo <org>/<repo>`; install `hermes skills install <org>/<repo>/skills/animatica`. Owner to run `--help` first.
+- Verified: `tests/test_mcp_protocol.py` 16 passed; the new section test fails on the T33 SKILL.md and passes now; ruff clean.
+- NOT verified: that Hermes loads this file (never ran Hermes); the hub publish/install path; the security scanner's verdict on the skill.
+
+## Status (2026-11-16, Claude session, card T34a: `narration` field)
+- Stacked on T33 and T33b. Changed: `storyboard/models.py` (Beat.narration, default ""), `pipeline.py` (`spoken_text`), `narration.py` (speaks it), narration spec section 6 amended, `tests/test_narration.py` (+4, all failed first), CHANGELOG, this file.
+- Why: `--narrate` read each caption verbatim (spec section 6 non-goal), which sounded flat. Reversed that non-goal on the user's request.
+- Verified: test_narration, test_narrate_make, test_pipeline 41 passed 3 skipped; ruff clean.
+- NOT done (next cards): LLM prompt writing `narration` (T34b), lint for narration that describes the production or is empty/too long (T34c), TUI narrate toggle (T35), Piper pacing flags.
+- NOT verified: a real narrated render (no Piper here). Old storyboards load unchanged (extra="forbid" still holds; the field has a default).
+
+## Status (2026-11-16, Claude session, cards T34b + T34c: model writes and lint checks `narration`)
+- Stacked on T33, T33b, T34a; rebased on main eb9e15f (#62). Changed: `ai/prompt.py` (`narrate` flag on `build_prompt` / `build_fill_prompt`, narrated example, narration rules), `ai/repair.py` and `pipeline.py` (thread `narrate`, cache key gets `|narr` only when narrating), `storyboard/lint.py` (`_check_narration`), new `tests/test_narration_authoring.py` (13, all failed first), CHANGELOG, this file.
+- Why: after T34a the field existed but nothing wrote it, so narration still read the caption unless hand-authored.
+- Verified: new file 13 passed; full suite has the same 361 failures with and without the change (this sandbox has no Manim: manimpango will not build), 1159 -> 1172 passed; ruff clean.
+- NOT verified: a real model reply (no provider key here), so the prompt wording is untested against nemotron/groq; the `_EXAMPLE_NARRATED` JSON validates against `Storyboard`. No Manim render and no Piper, so audio pacing is unchanged and unchecked.
+- NOT done: TUI narrate toggle (T35), Piper pacing flags, burned-in caption styling.
+

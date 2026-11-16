@@ -24,6 +24,8 @@ class Beat(BaseModel):
     component: str = Field(max_length=MAX_TEXT)
     params: dict[str, Any] = Field(default_factory=dict)
     caption: str = Field("", max_length=MAX_TEXT)
+    #: What ``--narrate`` speaks for this beat. Blank means "read the caption" (the old behaviour).
+    narration: str = Field("", max_length=MAX_TEXT)
 
 
 class Scene(BaseModel):

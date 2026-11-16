@@ -144,6 +144,10 @@ render pipeline's timing math doesn't change; it gets one more input.
 
 ## 6. Non-goals, restated
 
-No SSML, no cloning, no cloud providers, no per-beat voice override. A
-narrated video is not required to sound different from the burned-in caption
-text — narration reads the caption, it doesn't get its own script.
+No SSML, no cloning, no cloud providers, no per-beat voice override.
+
+**Amended 2026-11-16 (T34):** a beat may carry an optional `narration` string.
+Blank means narration reads the caption, as originally designed; set, it is
+what gets spoken, while the burned-in caption and `captions.vtt` keep showing
+the caption. Reason: speaking the caption word for word sounded flat, and the
+on-screen text should be short while the voice can carry the detail.

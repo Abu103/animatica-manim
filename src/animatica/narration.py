@@ -1,4 +1,4 @@
-"""Offline narration: Piper TTS synthesized per beat, from the exact caption text.
+"""Offline narration: Piper TTS synthesized per beat, from the beat's ``narration`` (else its caption).
 
 docs/superpowers/specs/2026-11-14-narration-design.md is the design record
 this implements. Two things from that spec that matter here:
@@ -41,7 +41,7 @@ import wave
 from pathlib import Path
 
 from animatica.config import config_dir
-from animatica.pipeline import beat_text
+from animatica.pipeline import spoken_text
 from animatica.storyboard.models import Storyboard
 from animatica.tex_bundle import download, sha256_file
 
@@ -297,15 +297,15 @@ def narrate_storyboard(
 ) -> list[list[Path]]:
     """One WAV per beat, same nested shape and order as ``pipeline._beat_durations``.
 
-    Reuses ``pipeline.beat_text`` so a narrated beat is never saying something
-    other than what its caption shows.
+    Speaks ``pipeline.spoken_text``: the beat's own ``narration`` when it has one,
+    otherwise its caption, so a storyboard with no narration reads exactly as before.
     """
     out: list[list[Path]] = []
     for s_idx, scene in enumerate(sb.scenes):
         paths: list[Path] = []
         for b_idx, beat in enumerate(scene.beats):
             comp = registry.get(beat.component)
-            text = beat_text(beat, comp)
+            text = spoken_text(beat, comp)
             wav = out_dir / f"scene{s_idx:02d}_beat{b_idx:02d}.wav"
             paths.append(
                 synthesize_fn(text, wav, voice=voice, voice_model_path=voice_model_path)
