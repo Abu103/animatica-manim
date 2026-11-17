@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import functools
 import math
+import sys
 from dataclasses import dataclass
 from typing import ClassVar
 
@@ -136,9 +137,22 @@ def _data(p: BaseModel) -> GraphData:
     return GraphData(segs=segs, approx_segs=approx_segs)
 
 
-#: How many extrema of each kind, and how many zeros, a fact keeps.
+#: How many extrema and zeros a fact's *text* lists. The value keeps them all,
+#: so "has N local maxima" is never a truncated count.
 MAX_EXTREMA = 8
 MAX_ZEROS = 12
+
+#: An extremum must clear both neighbours by more than a tolerance with two
+#: parts, so each part models a different thing: a fraction of the curve's span
+#: ignores features that are tiny compared with its own range, and a small
+#: number of ULPs of the largest value ignores floating-point jitter, whose
+#: size grows with the magnitudes being added. Without the second part,
+#: sin^2+cos^2 (constant 1) reports 21 maxima and 53 minima. Without the first,
+#: 1e-6*sin(x) (peak only 1e-10 above its neighbours) reports no maximum under
+#: a caption naming a peak.
+EXTREMUM_EPS = 1e-9
+#: Facts only see samples with |y| <= 1e9 -- native.sampling drops the rest, and the drawing sees those same samples.
+NOISE_ULPS = 64
 
 #: Slack on the y limits when deciding whether a sample is outside them.
 #: Floating point puts some samples a ULP over the limit a curve exactly
@@ -150,29 +164,59 @@ DOMAIN_TEXT = "graph draws y against x (time or position); it never draws a freq
 
 
 def _local_extrema(segs: list[list[tuple[float, float]]]) -> tuple[list[float], list[float]]:
-    """x of the local maxima and minima, each strictly above/below both
-    neighbours **inside one segment** (never across a gap), rounded to 2 dp."""
+    """x of the local maxima and minima, each clearing both neighbours by more
+    than a tolerance that combines ``EXTREMUM_EPS`` times the curve's span with
+    ``NOISE_ULPS`` ULPs of its largest magnitude, **inside one segment** (never
+    across a gap), rounded to 2 dp. Returns all of them: capping is the text's
+    job, not the count's.
+
+    A curve offset by 1e12 or more cannot be resolved: one ULP there is already
+    about the size of a real peak's neighbour difference. Its facts may be
+    missing, so callers must not treat "no extrema" as proof of a flat curve.
+    """
+    ys_all = [y for seg in segs for _, y in seg]
+    if not ys_all:
+        return [], []
+    span = max(ys_all) - min(ys_all)
+    max_abs = max(abs(y) for y in ys_all)
+    tol = max(EXTREMUM_EPS * span, NOISE_ULPS * sys.float_info.epsilon * max_abs)
     maxima: list[float] = []
     minima: list[float] = []
     for seg in segs:
         ys = [y for _, y in seg]
         for i in range(1, len(seg) - 1):
-            if ys[i] > ys[i - 1] and ys[i] > ys[i + 1]:
+            if ys[i] - max(ys[i - 1], ys[i + 1]) > tol:
                 maxima.append(round(seg[i][0], 2))
-            elif ys[i] < ys[i - 1] and ys[i] < ys[i + 1]:
+            elif min(ys[i - 1], ys[i + 1]) - ys[i] > tol:
                 minima.append(round(seg[i][0], 2))
-    return maxima[:MAX_EXTREMA], minima[:MAX_EXTREMA]
+    return maxima, minima
 
 
 def _zero_crossings(segs: list[list[tuple[float, float]]]) -> list[float]:
-    """x where consecutive samples inside one segment change sign, linearly
-    interpolated and rounded to 2 dp. Endpoint zeros are not sign changes."""
+    """x where the curve crosses zero inside one segment, rounded to 2 dp.
+
+    Two cases: a sign change between two nonzero samples is interpolated; a
+    sample that is exactly 0 is a crossing when the nearest nonzero samples on
+    each side have opposite signs, and a touch (same sign both sides, or the
+    segment ending there) when they do not. Returns all of them.
+    """
     out: list[float] = []
     for seg in segs:
-        for (xa, ya), (xb, yb) in zip(seg, seg[1:]):
-            if ya * yb < 0:
-                out.append(round(xa - ya * (xb - xa) / (yb - ya), 2))
-    return out[:MAX_ZEROS]
+        prev: tuple[float, float] | None = None  # last nonzero sample
+        zeros: list[float] = []  # exact-zero samples waiting for a right neighbour
+        for x, y in seg:
+            if y == 0:
+                zeros.append(x)
+                continue
+            if prev is not None and (prev[1] < 0) != (y < 0):
+                if zeros:
+                    out.append(round(zeros[0], 2))
+                else:
+                    xa, ya = prev
+                    out.append(round(xa - ya * (x - xa) / (y - ya), 2))
+            zeros = []
+            prev = (x, y)
+    return out
 
 
 def _x_list(xs: list[float]) -> str:
@@ -184,7 +228,17 @@ def _extremum_text(name: str, xs: list[float]) -> str:
     if not xs:
         return f"fn has no local {name} in the visible window"
     one = {"maxima": "maximum", "minima": "minimum"}[name] if len(xs) == 1 else name
-    return f"fn has {len(xs)} local {one} at x = {_x_list(xs)}"
+    if len(xs) <= MAX_EXTREMA:
+        return f"fn has {len(xs)} local {one} at x = {_x_list(xs)}"
+    return f"fn has {len(xs)} local {one}, the first {MAX_EXTREMA} at x = {_x_list(xs[:MAX_EXTREMA])}"
+
+
+def _zero_text(xs: list[float]) -> str:
+    if not xs:
+        return "fn does not cross zero in the visible window"
+    if len(xs) <= MAX_ZEROS:
+        return f"fn crosses zero at x = {_x_list(xs)}"
+    return f"fn crosses zero {len(xs)} times, the first {MAX_ZEROS} at x = {_x_list(xs[:MAX_ZEROS])}"
 
 
 def _is_clipped(p: BaseModel) -> bool:
@@ -278,12 +332,7 @@ class Graph(Component):
         facts.append(Fact("extremum", "fn", tuple(maxima), _extremum_text("maxima", maxima)))
         facts.append(Fact("extremum", "fn", tuple(minima), _extremum_text("minima", minima)))
         zeros = _zero_crossings(data.segs)
-        zero_text = (
-            f"fn crosses zero at x = {_x_list(zeros)}"
-            if zeros
-            else "fn does not cross zero in the visible window"
-        )
-        facts.append(Fact("zero", "fn", tuple(zeros), zero_text))
+        facts.append(Fact("zero", "fn", tuple(zeros), _zero_text(zeros)))
         clipped = _is_clipped(p)
         facts.append(
             Fact(
