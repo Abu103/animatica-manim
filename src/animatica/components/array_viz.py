@@ -15,10 +15,34 @@ from animatica.components._draw import FADE_OUT, MIN_FONT_SIZE, Clock, fit, prep
 from animatica.components._draw import caption_band_top as caption_band_top_of
 from animatica.components.base import Component
 from animatica.storyboard.models import MAX_TEXT
+from animatica.verify.facts import Fact, format_number
 
 MAX_VALUES = 12
 
 Point = tuple[float, float, float]
+
+
+def _data(p: BaseModel) -> tuple[list[float], list[float]]:
+    """The initial values play() draws, and the final state after the steps.
+
+    Only steps that carry ``swap`` change the array (``i == j`` is a no-op,
+    exactly as ``swap_targets`` treats it); ``highlight``/``low``/``high``/
+    ``mid`` steps only change the drawing.
+    """
+    final = list(p.values)  # type: ignore[attr-defined]
+    for st in p.steps:  # type: ignore[attr-defined]
+        sw = st.get("swap") or []
+        if len(sw) == 2 and sw[0] != sw[1]:
+            i, j = sw
+            final[i], final[j] = final[j], final[i]
+    return list(p.values), final  # type: ignore[attr-defined]
+
+
+def _number_text(v: float) -> str:
+    """How a fact text writes a box value: ``inf`` is spelled out."""
+    if math.isinf(v):
+        return "negative infinity" if v < 0 else "infinity"
+    return format_number(v)
 
 
 def value_label(v: float) -> str:
@@ -61,6 +85,7 @@ def opacity_for(ix: int, low: int | None, high: int | None) -> float:
 
 class ArrayViz(Component):
     name: ClassVar[str] = "array_viz"
+    domain: ClassVar[str] = "plain axes"
 
     class Params(BaseModel):
         title: str = Field(max_length=MAX_TEXT)
@@ -100,6 +125,29 @@ class ArrayViz(Component):
     def fallback_text(self, p: BaseModel) -> str:
         return f"{p.title}: [{', '.join(value_label(v) for v in p.values)}]"  # type: ignore[attr-defined]
 
+    def facts(self, p: BaseModel) -> list[Fact]:
+        _, final = _data(p)
+        swaps = sum(
+            1 for st in p.steps  # type: ignore[attr-defined]
+            if len(st.get("swap") or []) == 2 and st["swap"][0] != st["swap"][1]
+        )
+        sorted_ok = all(a <= b for a, b in zip(final, final[1:]))
+        facts = [
+            Fact("sorted", "final_state", sorted_ok,
+                 "the array is sorted in ascending order at the end" if sorted_ok
+                 else "the array is not sorted in ascending order at the end"),
+            Fact("swaps", "steps", swaps,
+                 f"the steps swap two boxes {swaps} times"),
+            Fact("value", "final_state", tuple(final),
+                 "final order is [" + ", ".join(_number_text(v) for v in final) + "]"),
+        ]
+        for word, val in (("largest", max(final)), ("smallest", min(final))):
+            ix = final.index(val)  # first occurrence: the first box with that value
+            facts.append(Fact("extremum", "final_state", (ix, val),
+                              f"{word} value is {_number_text(val)} at position {ix}"
+                              " (position 0 is the first box)"))
+        return facts
+
     def play(self, scene, p, colors) -> None:
         from manim import UP, FadeIn, Text, VGroup, config
 
@@ -109,9 +157,10 @@ class ArrayViz(Component):
         # the place the layout gave it, which left the whole top of the
         # frame empty.
         title.to_edge(UP, buff=0.6).set_x(0)
+        initial, _ = _data(p)
         boxes = VGroup(*[
-            Text(value_label(v), font_size=MIN_FONT_SIZE + 4, color=colors.text) for v in p.values  # type: ignore[attr-defined]
-        ]).arrange_in_grid(1, len(p.values), buff=0.9)  # type: ignore[attr-defined]
+            Text(value_label(v), font_size=MIN_FONT_SIZE + 4, color=colors.text) for v in initial
+        ]).arrange_in_grid(1, len(initial), buff=0.9)
         # The boxes fill the stage. The cap keeps them inside the safe area:
         # at most 70% of the frame width.
         fit(boxes, max_width=config.frame_width * 0.7, max_height=config.frame_height - 2.4, scale_up=True)
