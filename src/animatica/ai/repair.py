@@ -7,6 +7,7 @@ from animatica.ai.base import AIProvider, StoryboardGenerationError, extract_jso
 from animatica.ai.prompt import build_fill_prompt, build_outline_prompt, build_prompt
 from animatica.components.registry import ComponentRegistry
 from animatica.storyboard.models import Scene, Storyboard
+from animatica.verify.facts import try_facts
 
 
 def generate_storyboard(
@@ -54,6 +55,84 @@ def generate_storyboard(
         last_errors,
     )
 
+
+# ---- V2b: facts-based verify repair loop -------------------------------
+
+
+def _finding_error(sb, finding, registry) -> str:
+    """One repair error for build_prompt's existing ``errors`` channel.
+
+    Names the beat, the claim sentence and the computed fact texts, so a weak
+    model is told *what* was wrong rather than just "a claim failed".
+    """
+    beat = sb.scenes[finding.beat[0]].beats[finding.beat[1]]
+    claim = (beat.narration if finding.field == "narration" else beat.caption) or beat.caption or beat.narration
+    facts, _note = try_facts(registry, beat)
+    computed = "; ".join(f.text for f in facts) or "no computed facts for this beat"
+    return (
+        f"scene {finding.beat[0]} beat {finding.beat[1]} {finding.field}: "
+        f'"{claim}" ; the code computed: {computed}'
+    )
+
+
+def repair_with_facts(
+    prompt: str,
+    sb: Storyboard,
+    provider: AIProvider,
+    registry: ComponentRegistry,
+    *,
+    narrate: bool = False,
+    max_verify_retries: int = 2,
+) -> tuple[Storyboard, dict]:
+    """Generate -> lint -> verify -> fixes -> send back -> degrade, for models.
+
+    Starts from a schema-valid storyboard already produced by the provider. The
+    verify retries here are a budget of their own, separate from the schema
+    retries in :func:`generate_storyboard`. Each retry goes through
+    ``build_prompt(..., errors=...)``; there is no separate repair template.
+    After the budget is spent, surviving error beats have their narration
+    blanked (captions are never rewritten) and the run warns.
+    """
+    from animatica.verify import verify_storyboard  # noqa: PLC0415 - avoid an import cycle
+    from animatica.verify.fix import apply_fixes  # noqa: PLC0415
+
+    sb, fix_records = apply_fixes(sb, registry)
+    sent_back = 0
+    errors: list[str] = []
+    for _ in range(max_verify_retries + 1):
+        result = verify_storyboard(sb, registry)
+        errors = [_finding_error(sb, f, registry) for f in result.findings if f.severity == "error"]
+        if not errors or sent_back >= max_verify_retries:
+            break
+        sent_back += 1
+        text = provider.generate(build_prompt(prompt, registry, errors, narrate=narrate), registry.json_schema())
+        try:
+            candidate = Storyboard.model_validate(extract_json(text))
+        except Exception:  # a bad repair reply just burns one verify retry
+            continue
+        if registry.validate(candidate):
+            continue
+        sb = candidate
+        sb, more = apply_fixes(sb, registry)
+        fix_records.extend(more)
+
+    # End state: degrade only the beats that still have an error finding.
+    surviving = [f for f in verify_storyboard(sb, registry).findings if f.severity == "error"]
+    degraded: list[list[int]] = []
+    if surviving:
+        for f in surviving:
+            beat = sb.scenes[f.beat[0]].beats[f.beat[1]]
+            if beat.narration:
+                beat.narration = ""
+                degraded.append([f.beat[0], f.beat[1]])
+
+    return sb, {
+        "verify": verify_storyboard(sb, registry),
+        "fixes": fix_records,
+        "sent_back": sent_back,
+        "degraded": degraded,
+        "errors": errors,
+    }
 
 
 # ---- P1.1: two-stage generation (outline -> per-scene fill) ----

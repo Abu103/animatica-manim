@@ -234,6 +234,10 @@ def make_video(
     progress.announce("storyboard", "resolving storyboard")
 
     # ---- storyboard: cache -> template -> provider ----
+    prov = None
+    cache = None
+    key = None
+    fresh_model = False  # only a fresh model answer may be sent back / degraded
     if storyboard_path is not None:
         sb = load_storyboard(Path(storyboard_path))
         provider_used = "none (--from storyboard.json)"
@@ -269,7 +273,7 @@ def make_video(
             else:
                 sb = (generate_storyboard_two_stage(prompt, prov, registry, narrate=narrate) if two_stage
                       else generate_storyboard(prompt, prov, registry, narrate=narrate))
-                cache.put(key, sb)
+                fresh_model = True  # cache the final storyboard only after verify/repair
 
     if storyboard_path is None and not provider_used.startswith("template"):
         sb, lint_notes = lint_storyboard(sb)  # model output only; never touch a hand-written --from file
@@ -285,31 +289,53 @@ def make_video(
     if errors:
         raise ValueError("invalid storyboard: " + "; ".join(errors[:6]))
 
-    # ---- compute-and-verify (V1: warnings only, no mutation) ----
-    # Runs for template, --from and model-generated storyboards alike. Facts
-    # are computed once per beat inside verify_storyboard; a beat whose facts
-    # fail is unchecked, never passed. Nothing here can break the run.
+    # ---- compute-and-verify: fixes -> (models only) repair loop -> report ----
+    # Runs for template, --from and model-generated storyboards alike. A beat
+    # whose facts fail is unchecked, never passed. Only a fresh model answer
+    # may be sent back or degraded; --from and templates are warn-only.
     verification: dict | None = None
     fixes: list = []
     if verify:
         from animatica.verify import verify_storyboard  # noqa: PLC0415 - avoid a render-time import cycle
+        from animatica.verify.fix import apply_fixes  # noqa: PLC0415
 
-        verify_result = verify_storyboard(sb, registry)
+        sent_back = 0
+        degraded: list[list[int]] = []
+        if fresh_model and prov is not None:
+            from animatica.ai.repair import repair_with_facts  # noqa: PLC0415
+
+            sb, repair_info = repair_with_facts(prompt, sb, prov, registry, narrate=narrate)
+            verify_result = repair_info["verify"]
+            fix_records = repair_info["fixes"]
+            sent_back = repair_info["sent_back"]
+            degraded = repair_info["degraded"]
+        else:
+            sb, fix_records = apply_fixes(sb, registry)
+            verify_result = verify_storyboard(sb, registry)
+
         for f in verify_result.findings:
             warnings.append(
                 f"verify: scene {f.beat[0]} beat {f.beat[1]} {f.field}: {f.message}"
             )
+        fixes = [f.as_dict() for f in fix_records]
         verification = {
             "checked": verify_result.checked,
             "passed": verify_result.checked - verify_result.by_severity["error"],
-            "fixed": 0,
-            "sent_back": 0,
-            # Warns are shown in the report only (design 5.3): they neither
-            # fail the run nor lower the passed count.
+            "fixed": len(fix_records),
+            "fixes": list(fixes),
+            "sent_back": sent_back,
+            "degraded": degraded,
+            # Warns are shown in the report only (design 5.3).
             "failed": verify_result.by_severity["error"],
             "warned": verify_result.by_severity["warn"],
             "unchecked": list(verify_result.unchecked),
         }
+        if fix_records:
+            progress.announce("verify", f"Fixed {len(fix_records)} issue(s) (see report.json)")
+        if sent_back:
+            progress.announce("verify", f"Sent back {sent_back} finding(s) to the model (see report.json)")
+        if degraded:
+            progress.announce("verify", f"Degraded {len(degraded)} beat(s): narration blanked (see report.json)")
         if verify_result.checked:
             progress.announce("verify", (
                 f"Verified {verify_result.checked} claims, "
@@ -319,24 +345,9 @@ def make_video(
         else:
             progress.announce("verify", "Nothing to verify")
 
-        # Mechanical fixes are meaning-preserving, so they run on every
-        # storyboard (including --from and templates). The post-fix storyboard
-        # is what gets written below; captions are never touched.
-        from animatica.verify.fix import apply_fixes  # noqa: PLC0415 - same import cycle caution
-
-        sb, fix_records = apply_fixes(sb, registry)
-        if fix_records:
-            fixes = [f.as_dict() for f in fix_records]
-            verification["fixed"] = len(fix_records)
-            verification["fixes"] = list(fixes)
-            for f in fix_records:
-                warnings.append(
-                    f"verify: scene {f.beat[0]} beat {f.beat[1]} fixed {f.field}: "
-                    f"{f.before} -> {f.after}"
-                )
-            progress.announce("verify", f"Fixed {len(fix_records)} issue(s) (see report.json)")
-    else:
-        fixes = []
+    # The cache stores the FINAL storyboard (post-fix / post-repair / post-degrade).
+    if fresh_model and cache is not None and key is not None:
+        cache.put(key, sb)
 
     # Apply CLI theme override if specified
     if theme is not None:
