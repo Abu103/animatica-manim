@@ -254,6 +254,22 @@ def _is_clipped(p: BaseModel) -> bool:
     return any(y < lo - CLIP_EPS or y > hi + CLIP_EPS for _, y in points)
 
 
+def unclipped_range(p: BaseModel) -> tuple[float, float] | None:
+    """Min/max of the finite ``fn`` samples over x_range, sampled WITHOUT y_range.
+
+    Same second sampling pass as :func:`_is_clipped`: the points removed from
+    the picture by ``clip_segments`` exist only in the unclipped sample, so the
+    ``range`` fact (built from clipped points) cannot be used to widen a window.
+    ``None`` means there are no finite samples to widen to.
+    """
+    x0, x1 = p.x_range  # type: ignore[attr-defined]
+    points = [pt for seg in sample_function(parse_function(p.fn), (x0, x1), SAMPLES) for pt in seg]  # type: ignore[attr-defined]
+    if not points:
+        return None
+    ys = [y for _, y in points]
+    return min(ys), max(ys)
+
+
 def nice_step(span: float, target: int = 6) -> float:
     raw = span / target
     mag = 10 ** math.floor(math.log10(raw))

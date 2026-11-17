@@ -290,6 +290,7 @@ def make_video(
     # are computed once per beat inside verify_storyboard; a beat whose facts
     # fail is unchecked, never passed. Nothing here can break the run.
     verification: dict | None = None
+    fixes: list = []
     if verify:
         from animatica.verify import verify_storyboard  # noqa: PLC0415 - avoid a render-time import cycle
 
@@ -317,6 +318,25 @@ def make_video(
             ))
         else:
             progress.announce("verify", "Nothing to verify")
+
+        # Mechanical fixes are meaning-preserving, so they run on every
+        # storyboard (including --from and templates). The post-fix storyboard
+        # is what gets written below; captions are never touched.
+        from animatica.verify.fix import apply_fixes  # noqa: PLC0415 - same import cycle caution
+
+        sb, fix_records = apply_fixes(sb, registry)
+        if fix_records:
+            fixes = [f.as_dict() for f in fix_records]
+            verification["fixed"] = len(fix_records)
+            verification["fixes"] = list(fixes)
+            for f in fix_records:
+                warnings.append(
+                    f"verify: scene {f.beat[0]} beat {f.beat[1]} fixed {f.field}: "
+                    f"{f.before} -> {f.after}"
+                )
+            progress.announce("verify", f"Fixed {len(fix_records)} issue(s) (see report.json)")
+    else:
+        fixes = []
 
     # Apply CLI theme override if specified
     if theme is not None:
@@ -428,6 +448,7 @@ def make_video(
         fallbacks=fallbacks,
         narration=narration_info,
         verification=verification,
+        fixes=fixes,
     )
 
     if strict and verification is not None and verification["failed"]:
