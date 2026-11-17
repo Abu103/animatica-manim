@@ -25,3 +25,4 @@ pie chart of browser market share
 code diff of replacing 3.14 with math.pi in an area function
 breadth-first search traversal of a small graph
 unit circle with the sine and cosine of the special angles
+explain the Fourier transform with two sine waves
