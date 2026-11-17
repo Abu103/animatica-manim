@@ -81,7 +81,8 @@ def verify_storyboard(sb, registry) -> VerifyResult:
         "error": sum(1 for f in findings if f.severity == "error"),
         "warn": sum(1 for f in findings if f.severity == "warn"),
     }
-    notes = [f"scene {si} beat {bi}: {note}" for (si, bi), note in sorted(skipped.items())]
+    notes = [f"scene {si} beat {bi} ({sb.scenes[si].beats[bi].component}): {note}"
+             for (si, bi), note in sorted(skipped.items())]
     return VerifyResult(
         findings=findings,
         checked=n_numbers + n_claims,

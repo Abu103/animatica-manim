@@ -13,7 +13,7 @@ import re
 from typing import Any
 
 from animatica.verify import Finding
-from animatica.verify.facts import facts_for, format_number
+from animatica.verify.facts import facts_for, format_number, parse_number
 
 #: A digit token: grouped thousands, decimals, and an optional %/x/k/K/M/B
 #: suffix. The lookarounds keep it out of words ("3D", "2nd"), out of the
@@ -44,6 +44,12 @@ _MULTIPLIERS = {"k": 1e3, "K": 1e3, "M": 1e6, "B": 1e9}
 
 
 def _digit_value(m: Any) -> float:
+    # parse_number owns the number semantics (sign, grouped thousands,
+    # decimals, %/x suffixes and k/K/M/B multipliers): do not reimplement
+    # them here or grounding can drift from the facts it checks.
+    shared = parse_number(m.group(0))
+    if shared is not None:
+        return shared
     digits = m.group("digits").replace(",", "")
     value = float(digits + ("." + m.group("frac") if m.group("frac") else ""))
     suffix = m.group("suffix")

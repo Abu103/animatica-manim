@@ -48,6 +48,7 @@ class _CountingFacts(Component):
 
 class _BrokenFacts(Component):
     name: ClassVar[str] = "broken_facts"
+    domain: ClassVar[str] = "plain axes"
 
     class Params(BaseModel):
         pass
@@ -153,6 +154,41 @@ def test_make_video_no_verify_writes_no_block(tmp_path):
     assert not [w for w in result.warnings if w.startswith("verify:")]
     report = json.loads((tmp_path / "report.json").read_text(encoding="utf-8"))
     assert "verification" not in report
+
+
+def test_warn_only_is_not_a_failure_and_does_not_trigger_strict(tmp_path):
+    # array_viz [3, 1, 2] with "the array is sorted" is a warn, not an error:
+    # warn-only findings are shown in the report but never block a strict run.
+    data = {
+        "version": "1",
+        "title": "T",
+        "scenes": [{"beats": [{
+            "component": "array_viz",
+            "params": {"title": "t", "values": [3, 1, 2]},
+            "caption": "the array is sorted",
+        }]}],
+    }
+    sb_path = tmp_path / "warn.json"
+    sb_path.write_text(json.dumps(data), encoding="utf-8")
+    out = tmp_path / "warn-out"
+    result = make_video(storyboard_path=sb_path, out_dir=out,
+                        preview=True, strict=True)
+    report = json.loads((out / "report.json").read_text(encoding="utf-8"))
+    assert report["verification"]["failed"] == 0
+    assert report["verification"]["warned"] == 1
+    assert any("verify:" in w and "not sorted" in w for w in result.warnings)
+
+
+def test_domain_rule_runs_even_when_facts_fail():
+    reg = ComponentRegistry()
+    reg.register(_BrokenFacts)
+    sb = _sb(Beat(component="broken_facts", params={}, caption="the frequency domain"))
+    result = verify_storyboard(sb, reg)
+    # The domain rule needs no facts, so a facts-failure beat can still be
+    # caught on its domain wording; its numbers stay unchecked.
+    assert any(f.severity == "error" and "frequency domain" in f.message
+               for f in result.findings)
+    assert any("broken_facts" in s for s in result.unchecked)
 
 
 def test_strict_exits_nonzero_after_writing_the_report(tmp_path):

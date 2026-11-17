@@ -64,8 +64,9 @@ def scan_claims(sb: Any, registry: Any,
             else "no component currently draws a frequency spectrum")
     for si, scene in enumerate(sb.scenes):
         for bi, beat in enumerate(scene.beats):
-            if skipped and (si, bi) in skipped:
-                continue
+            # A facts-failure beat is unchecked for facts-based patterns, but
+            # the domain rule needs no facts and must still run on it.
+            no_facts = bool(skipped and (si, bi) in skipped)
             try:
                 comp = registry.get(beat.component)
             except KeyError:
@@ -85,6 +86,8 @@ def scan_claims(sb: Any, registry: Any,
                             f"draws plain axes, {tail}",
                         )))
             for regex, gate, kind, severity in _PATTERNS:
+                if no_facts:
+                    break  # patterns need facts; the domain rule above does not
                 if gate is not None and beat.component != gate:
                     continue
                 for field, text in _fields(beat):
@@ -183,11 +186,16 @@ def unchecked_sentences(sb: Any, registry: Any,
                 facts = facts_for(registry, beat)
             has_peak_facts = any(f.kind == "peak" for f in facts)
             for field, text in _fields(beat):
-                if skipped and (si, bi) in skipped:
-                    out.append((beat, text))
-                    continue
                 for sentence in _SENTENCE_SPLIT.split(text):
                     if not sentence:
+                        continue
+                    if skipped and (si, bi) in skipped:
+                        # Only the domain rule could look at a facts-failure
+                        # beat; its other sentences remain unchecked.
+                        if (comp is not None and comp.domain == "plain axes"
+                                and _DOMAIN_PATTERN.search(sentence)):
+                            continue
+                        out.append((beat, sentence))
                         continue
                     if comp is not None and _looked_at(sentence, beat.component, comp,
                                                        facts, has_peak_facts):

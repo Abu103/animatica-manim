@@ -94,9 +94,10 @@ def test_percent_matches_a_fraction_source():
 
 
 def test_word_number_grounded_by_multiplier_param():
-    # "2.5M" grounds both 2500000 and 2.5, so "2.5 million" is grounded.
-    sb = _sb(_beat("stat_callout", {"value": "2.5M", "label": "users"},
-                   caption="2.5 million users"))
+    # "1M" grounds 1000000, so the word "million" mid-sentence is checked
+    # (not skipped as a sentence-opening count or a number compound).
+    sb = _sb(_beat("stat_callout", {"value": "1M", "label": "users"},
+                   caption="the value is a million users"))
     assert check_numbers(sb, default_registry()) == []
 
 
@@ -107,8 +108,10 @@ def test_numbers_inside_param_strings_ground():
 
 
 def test_title_grounded():
+    # "three" is mid-sentence here, so this tests the title as a real source
+    # rather than the sentence-opening count exemption.
     sb = _sb(_beat("title_card", {"title": "Chapter 3", "subtitle": ""},
-                   caption="three steps"), title="Chapter 3")
+                   caption="the story has three steps"), title="Chapter 3")
     assert check_numbers(sb, default_registry()) == []
 
 

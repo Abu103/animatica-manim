@@ -226,8 +226,9 @@ def make_video(
 
     # One unit per post-processing step the user actually asked for; the render
     # backend contributes its own scene units and fixes the total when it starts.
-    post_units = (1 + (1 if encoder != "auto" else 0) + (1 if frame_lint else 0)
-                  + (1 if narrate else 0) + (1 if verify else 0))
+    # Verify is not a post unit: it runs before the render declares its scale,
+    # and counting it here would make progress.done go backwards.
+    post_units = 1 + (1 if encoder != "auto" else 0) + (1 if frame_lint else 0) + (1 if narrate else 0)
     progress = ProgressTracker(on_progress, post_units=post_units)
 
     progress.announce("storyboard", "resolving storyboard")
@@ -299,20 +300,23 @@ def make_video(
             )
         verification = {
             "checked": verify_result.checked,
-            "passed": verify_result.checked - len(verify_result.findings),
+            "passed": verify_result.checked - verify_result.by_severity["error"],
             "fixed": 0,
             "sent_back": 0,
-            "failed": len(verify_result.findings),
+            # Warns are shown in the report only (design 5.3): they neither
+            # fail the run nor lower the passed count.
+            "failed": verify_result.by_severity["error"],
+            "warned": verify_result.by_severity["warn"],
             "unchecked": list(verify_result.unchecked),
         }
         if verify_result.checked:
-            progress.advance("verify", (
+            progress.announce("verify", (
                 f"Verified {verify_result.checked} claims, "
-                f"{len(verify_result.findings)} failed, "
+                f"{verify_result.by_severity['error']} failed, "
                 f"{len(verify_result.unchecked)} unchecked (see report.json)"
             ))
         else:
-            progress.advance("verify", "Nothing to verify")
+            progress.announce("verify", "Nothing to verify")
 
     # Apply CLI theme override if specified
     if theme is not None:
@@ -428,7 +432,7 @@ def make_video(
 
     if strict and verification is not None and verification["failed"]:
         # The report is written first: --strict changes the exit code, not the
-        # evidence. Error findings survive V1 (no repair loop yet).
+        # evidence. Only surviving error findings block; warns are shown only.
         from animatica.verify import VerifyStrictError  # noqa: PLC0415
 
         raise VerifyStrictError(verify_result)  # type: ignore[possibly-undefined]
