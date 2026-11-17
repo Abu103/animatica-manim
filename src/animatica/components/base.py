@@ -8,6 +8,7 @@ from pydantic import BaseModel
 
 if TYPE_CHECKING:  # keep Manim out of import time for non-render code paths
     from animatica.components.theme import ThemeColors
+    from animatica.verify.facts import Fact
 
 API_VERSION = 1
 
@@ -17,6 +18,15 @@ class Component(ABC):
     api_version: ClassVar[int] = API_VERSION
     Params: ClassVar[type[BaseModel]]
     required_capabilities: ClassVar[list[str]] = []
+
+    #: What kind of picture this component draws, for the domain rule (5.3).
+    #: "" = not checked; "plain axes" | "frequency".
+    domain: ClassVar[str] = ""
+
+    def facts(self, p: BaseModel) -> "list[Fact]":
+        """What this beat draws, as checkable statements. Pure function of
+        params: no Manim, no I/O. Empty when the component has no facts."""
+        return []
 
     @abstractmethod
     def duration(self, p: BaseModel) -> float:
