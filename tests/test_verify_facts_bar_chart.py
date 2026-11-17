@@ -78,6 +78,16 @@ def test_facts_agree_with_the_data_the_drawing_uses():
     assert smallest.value == min(data, key=lambda pair: pair[1])
 
 
+def test_fact_texts_use_the_shared_plain_number_formatter():
+    # f"{v:g}" writes these totals as 3.73457e+06 / 2.5e+06. Fact texts must
+    # come from verify.facts.format_number: full digits, no exponent.
+    facts = _facts(["A", "B"], [1234567, 2500000])
+    assert "3734567" in _one(facts, "total").text
+    largest = [f for f in facts if f.kind == "extremum" and "largest" in f.text][0]
+    assert "2500000" in largest.text
+    assert all("e+" not in f.text for f in facts)
+
+
 def test_facts_for_a_bar_chart_beat():
     params = {"title": "t", "labels": ["A", "B", "C"], "values": [2, 8, 4]}
     beat = Beat(component="bar_chart", params=params)

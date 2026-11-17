@@ -24,12 +24,16 @@ from animatica.verify.facts import Fact, facts_for, parse_number
     ("1.2k", 1200.0),
     ("3B", 3e9),
     ("+€7", 7.0),
+    ("₹5", 5.0),
 ])
 def test_parse_number_accepts_supported_forms(text, expected):
     assert parse_number(text) == expected
 
 
-@pytest.mark.parametrize("text", ["abc", "", "12 million", "1e3", "1-2", "12 USD"])
+@pytest.mark.parametrize("text", [
+    "abc", "", "12 million", "1e3", "1-2", "12 USD",
+    "%5", "--5", "~5",  # only $ € £ ¥ ₹ may occupy the currency slot
+])
 def test_parse_number_rejects_everything_else(text):
     # "1e3" is an exponent, which we do not support: it must not become 1000.
     assert parse_number(text) is None

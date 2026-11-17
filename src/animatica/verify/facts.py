@@ -10,11 +10,11 @@ import re
 from dataclasses import dataclass
 from typing import Any
 
-#: One plain number: optional sign and single currency symbol, grouped
+#: One plain number: optional sign and one real currency symbol, grouped
 #: thousands, decimals, an optional k/K/M/B multiplier and %/x suffix.
 #: No exponents ("1e3" is rejected) and no word multipliers ("12 million").
 _NUMBER = re.compile(
-    r"^\s*(?P<sign>[+-])?(?P<currency>[^\w\s.,])?\s*"
+    r"^\s*(?P<sign>[+-])?(?P<currency>[$€£¥₹])?\s*"
     r"(?P<digits>\d{1,3}(?:,\d{3})+|\d+)(?:\.(?P<frac>\d+))?"
     r"(?P<mult>[kKMB])?(?P<suffix>[%x])?\s*$"
 )

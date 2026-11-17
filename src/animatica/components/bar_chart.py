@@ -11,7 +11,7 @@ from animatica.components._draw import caption_band_top as caption_band_top_of
 from animatica.components._scale import NOTES, Scale, scaled_heights
 from animatica.components.base import Component
 from animatica.storyboard.models import MAX_TEXT
-from animatica.verify.facts import Fact
+from animatica.verify.facts import Fact, format_number
 
 MAX_BARS = 12
 BASELINE_Y = -2.2
@@ -56,18 +56,18 @@ class BarChart(Component):
         largest_label, largest = max(data, key=lambda pair: pair[1])
         smallest_label, smallest = min(data, key=lambda pair: pair[1])
         facts = [
-            Fact("total", "bars", total, f"bars total {total:g}"),
+            Fact("total", "bars", total, f"bars total {format_number(total)}"),
             Fact("extremum", "bars", (largest_label, largest),
-                 f"largest bar is {largest_label} at {largest:g}"),
+                 f"largest bar is {largest_label} at {format_number(largest)}"),
             Fact("extremum", "bars", (smallest_label, smallest),
-                 f"smallest bar is {smallest_label} at {smallest:g}"),
+                 f"smallest bar is {smallest_label} at {format_number(smallest)}"),
         ]
         if smallest > 0:
             ratio = round(largest / smallest, 2)
             facts.append(Fact("ratio", "bars", ratio,
-                              f"largest bar is {ratio:g} times the smallest"))
+                              f"largest bar is {format_number(ratio)} times the smallest"))
         facts.extend(
-            Fact("value", "bars", (label, value), f"{label} is {value:g}")
+            Fact("value", "bars", (label, value), f"{label} is {format_number(value)}")
             for label, value in data
         )
         return facts
