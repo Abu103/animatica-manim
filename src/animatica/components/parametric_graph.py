@@ -142,6 +142,7 @@ def _sample_and_segment(
 
 class ParametricGraph(Component):
     name: ClassVar[str] = "parametric_graph"
+    domain: ClassVar[str] = "plain axes"
 
     class Params(BaseModel):
         title: str = Field(max_length=MAX_TEXT)

@@ -118,8 +118,10 @@ This is cheap, high precision, and catches invented figures regardless of topic.
   "frequency domain" or "spectrum" over any other component is an error. Until the
   `signal_spectrum` engine exists, such wording always fails and the repair prompt tells the
   model that no available component draws a frequency spectrum. This is how the Fourier
-  `graph` beat is caught: not by counting peaks (the time-domain wave happens to have two
-  maxima, so a peak count would pass it), but by the domain rule.
+  `graph` beat is caught: by the domain rule, not by counting peaks. The time-domain wave
+  `sin(x)+0.5*sin(3*x)` actually has **three** local maxima, and peak counting is wired only
+  against `signal_spectrum` peak facts (a graph's maxima are `extremum` facts, never peak
+  facts), so a peak count cannot be what catches a `graph` beat.
 - **Not covered before V3/V4:** the `array_viz` "Superposition" beat. No listed pattern or
   fact says that `1 0 -1 0 ...` is not two waves adding up. It is out of scope for V1 and V2
   and is a stated reason for the engines.
@@ -226,7 +228,8 @@ answered above and listed here so they can be overruled:
    grounded by the same beat, earlier beats' params and facts, and the title; earlier captions
    never ground (5.2). It is a consistency check, not truth, and the report says so.
 2. **Fourier acceptance:** the domain rule catches the `graph` beat; peak counting would not
-   (the wave has two maxima). The `array_viz` "Superposition" beat is explicitly not caught
+   (the wave has **three** maxima, and peak counting applies only to `signal_spectrum`
+   peak facts -- a `graph` beat's maxima are `extremum` facts). The `array_viz` "Superposition" beat is explicitly not caught
    until the engines (5.3, V1 row).
 3. **Warn versus loop:** the loop is on by default, "warn" means the end state after retries,
    `--strict` fails, `--no-verify` disables (5.4).

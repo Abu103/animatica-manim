@@ -18,6 +18,7 @@ MAX_JUMPS = 8
 
 class NumberLine(Component):
     name: ClassVar[str] = "number_line"
+    domain: ClassVar[str] = "plain axes"
 
     class Params(BaseModel):
         title: str = Field(max_length=MAX_TEXT)
