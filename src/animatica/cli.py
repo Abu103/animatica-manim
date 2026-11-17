@@ -335,7 +335,9 @@ def preview_cmd(
     if report_path and report_path.is_file():
         try:
             report_data = _json.loads(report_path.read_text(encoding="utf-8"))
-            scene_durations = report_data.get("stages", {}).get("durations", [])
+            # make writes scene_durations at the top level; old reports kept
+            # them under stages.durations. Accept both.
+            scene_durations = report_data.get("scene_durations") or report_data.get("stages", {}).get("durations", [])
         except Exception:
             scene_durations = []
 
@@ -576,11 +578,8 @@ def mcp() -> None:
                     durations: list[float] = []
                     if rp.is_file():
                         try:
-                            durations = (
-                                _json.loads(rp.read_text(encoding="utf-8"))
-                                .get("stages", {})
-                                .get("durations", [])
-                            )
+                            report_data = _json.loads(rp.read_text(encoding="utf-8"))
+                            durations = report_data.get("scene_durations") or report_data.get("stages", {}).get("durations", [])
                         except Exception:
                             durations = []
                     out_path = preview_frame(
