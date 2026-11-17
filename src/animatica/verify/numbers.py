@@ -76,13 +76,18 @@ def _collect(obj: Any, out: set[float]) -> None:
             _collect(item, out)
 
 
-def _sources_for(sb: Any, scene: Any, index: int, registry: Any) -> set[float]:
+def _sources_for(sb: Any, scene: Any, si: int, index: int, registry: Any,
+                 facts_map: dict[tuple[int, int], list] | None) -> set[float]:
     """Params and fact values of this beat and every earlier one, plus the title."""
     out: set[float] = set()
     _collect(sb.title, out)
-    for beat in scene.beats[: index + 1]:
+    for bi, beat in enumerate(scene.beats[: index + 1]):
         _collect(beat.params, out)
-        for fact in facts_for(registry, beat):
+        if facts_map is not None:
+            facts = facts_map.get((si, bi), [])
+        else:
+            facts = facts_for(registry, beat)
+        for fact in facts:
             _collect(fact.value, out)
     return out
 
@@ -118,13 +123,21 @@ def _compounded(spans: list[tuple[int, int]], i: int, text: str) -> bool:
     return False
 
 
-def scan_numbers(sb: Any, registry: Any) -> tuple[int, list[Finding]]:
-    """Numbers checked and findings, in beat order. V1e uses the count."""
+def scan_numbers(sb: Any, registry: Any,
+                 facts_map: dict[tuple[int, int], list] | None = None,
+                 skipped: set[tuple[int, int]] | None = None) -> tuple[int, list[Finding]]:
+    """Numbers checked and findings, in beat order. V1e uses the count.
+
+    ``facts_map`` carries facts computed once per beat by verify_storyboard;
+    beats in ``skipped`` (facts failed or params invalid) are unchecked.
+    """
     findings: list[tuple[int, str, int, Finding]] = []
     checked = 0
     for si, scene in enumerate(sb.scenes):
         for bi, beat in enumerate(scene.beats):
-            sources = _sources_for(sb, scene, bi, registry)
+            if skipped and (si, bi) in skipped:
+                continue
+            sources = _sources_for(sb, scene, si, bi, registry, facts_map)
             for field in ("caption", "narration"):
                 text: str = getattr(beat, field)
                 if not text:

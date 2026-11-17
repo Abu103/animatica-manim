@@ -46,23 +46,39 @@ def _frequency_capable(registry: Any) -> bool:
     return any(registry.get(name).domain == "frequency" for name in registry.names())
 
 
-def check_claims(sb: Any, registry: Any) -> list[Finding]:
+def check_claims(sb: Any, registry: Any,
+                 facts_map: dict[tuple[int, int], list] | None = None,
+                 skipped: set[tuple[int, int]] | None = None) -> list[Finding]:
     """Domain-rule and pattern-claim findings (design 5.3), in beat order."""
+    return scan_claims(sb, registry, facts_map, skipped)[1]
+
+
+def scan_claims(sb: Any, registry: Any,
+                facts_map: dict[tuple[int, int], list] | None = None,
+                skipped: set[tuple[int, int]] | None = None) -> tuple[int, list[Finding]]:
+    """Matches examined and findings, in beat order. V1e uses the count."""
     findings: list[tuple[int, int, int, int, Finding]] = []
+    checked = 0
     frequency_capable = _frequency_capable(registry)
     tail = ("use signal_spectrum" if frequency_capable
             else "no component currently draws a frequency spectrum")
     for si, scene in enumerate(sb.scenes):
         for bi, beat in enumerate(scene.beats):
+            if skipped and (si, bi) in skipped:
+                continue
             try:
                 comp = registry.get(beat.component)
             except KeyError:
                 continue
-            facts = facts_for(registry, beat)
+            if facts_map is not None:
+                facts = facts_map.get((si, bi), [])
+            else:
+                facts = facts_for(registry, beat)
             pending: list[tuple[int, int, Finding]] = []
             if comp.domain == "plain axes":
                 for field, text in _fields(beat):
                     for m in _DOMAIN_PATTERN.finditer(text):
+                        checked += 1
                         pending.append((0, m.start(), Finding(
                             "error", (si, bi), field,
                             f'{field} says "{m.group(0)}" but {beat.component} '
@@ -75,11 +91,26 @@ def check_claims(sb: Any, registry: Any) -> list[Finding]:
                     for m in regex.finditer(text):
                         finding = _check_pattern(m, severity, kind, facts,
                                                  (si, bi), field, regex)
+                        if finding is not None or _pattern_actually_checked(kind, facts, m):
+                            checked += 1
                         if finding is not None:
                             pending.append((1, m.start(), finding))
             findings.extend((si, bi, *item) for item in pending)
     findings.sort(key=lambda item: item[:4])
-    return [item[4] for item in findings]
+    return checked, [item[4] for item in findings]
+
+
+def _pattern_actually_checked(kind: str, facts: list[Any], m: re.Match[str]) -> bool:
+    """Whether the match was examined (vs left unchecked), for the checked count."""
+    if kind == "peak":
+        return any(f.kind == "peak" for f in facts)
+    if kind == "extremum":
+        labels = [f.value[0] for f in facts if f.kind == "value"]
+        sentence = _sentence_of(m)
+        return any(re.search(rf"\b{re.escape(label)}\b", sentence) for label in labels)
+    if kind == "sorted":
+        return any(f.kind == "sorted" for f in facts)
+    return False
 
 
 def _check_pattern(m: re.Match[str], severity: str, kind: str,
@@ -131,25 +162,35 @@ def _sentence_of(m: re.Match[str]) -> str:
     return text[start + 1:end]
 
 
-def unchecked_sentences(sb: Any, registry: Any) -> list[tuple[Any, str]]:
+def unchecked_sentences(sb: Any, registry: Any,
+                        facts_map: dict[tuple[int, int], list] | None = None,
+                        skipped: set[tuple[int, int]] | None = None) -> list[tuple[Any, str]]:
     """Caption/narration sentences that no rule above looked at.
 
-    V1e reports the count only.
+    V1e reports the count only. Beats in ``skipped`` (facts failed or params
+    invalid) were not checked at all: their sentences are unchecked too.
     """
     out: list[tuple[Any, str]] = []
-    for scene in sb.scenes:
-        for beat in scene.beats:
+    for si, scene in enumerate(sb.scenes):
+        for bi, beat in enumerate(scene.beats):
             try:
                 comp = registry.get(beat.component)
             except KeyError:
-                continue
-            facts = facts_for(registry, beat)
+                comp = None
+            if facts_map is not None:
+                facts = facts_map.get((si, bi), [])
+            else:
+                facts = facts_for(registry, beat)
             has_peak_facts = any(f.kind == "peak" for f in facts)
             for field, text in _fields(beat):
+                if skipped and (si, bi) in skipped:
+                    out.append((beat, text))
+                    continue
                 for sentence in _SENTENCE_SPLIT.split(text):
                     if not sentence:
                         continue
-                    if _looked_at(sentence, beat.component, comp, facts, has_peak_facts):
+                    if comp is not None and _looked_at(sentence, beat.component, comp,
+                                                       facts, has_peak_facts):
                         continue
                     out.append((beat, sentence))
     return out
@@ -175,4 +216,4 @@ def _looked_at(sentence: str, component: str, comp: Any,
     return False
 
 
-__all__ = ["check_claims", "unchecked_sentences"]
+__all__ = ["check_claims", "scan_claims", "unchecked_sentences"]

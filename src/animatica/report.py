@@ -26,7 +26,7 @@ class StageTimer:
         return sum(self.stages.values())
 
 
-def write_report(path: Path, stage_times: dict[str, float], warnings: list[str], backend: dict[str, str] | None = None, scene_durations: list[float] | None = None, fallbacks: list[str] | None = None, narration: dict[str, str] | None = None) -> None:
+def write_report(path: Path, stage_times: dict[str, float], warnings: list[str], backend: dict[str, str] | None = None, scene_durations: list[float] | None = None, fallbacks: list[str] | None = None, narration: dict[str, str] | None = None, verification: dict | None = None) -> None:
     """Write `report.json` with `stages`, `warnings`, `scene_durations`, and `backend` keys.
 
     `scene_durations` maps scene index to the cumulative duration of that scene in
@@ -36,6 +36,10 @@ def write_report(path: Path, stage_times: dict[str, float], warnings: list[str],
 
     Existing reports (without `scene_durations`) are still readable: `preview_frame`
     reports an actionable error if durations are missing.
+
+    `verification` (when given) adds a `verification` block: counts of checked,
+    passed, failed (findings), fixed, sent back, and the unchecked sentences.
+    Reports written without it still load unchanged.
     """
     report = {"stages": dict(stage_times), "warnings": list(warnings), "scene_durations": list(scene_durations or [])}
     if backend is not None:
@@ -44,5 +48,7 @@ def write_report(path: Path, stage_times: dict[str, float], warnings: list[str],
         report["fallbacks"] = list(fallbacks)
     if narration:
         report["narration"] = dict(narration)
+    if verification is not None:
+        report["verification"] = dict(verification)
     Path(path).write_text(json.dumps(report, indent=2) + "\n", encoding="utf-8")
 

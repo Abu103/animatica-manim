@@ -211,6 +211,8 @@ def make_video(
     theme: str | None = None,
     narrate: bool = False,
     voice: str | None = None,
+    verify: bool = True,
+    strict: bool = False,
     on_progress: ProgressFn | None = None,
 ) -> MakeResult:
     render_backend = resolve_backend(backend)  # fail fast: before any file write or LLM call
@@ -224,7 +226,8 @@ def make_video(
 
     # One unit per post-processing step the user actually asked for; the render
     # backend contributes its own scene units and fixes the total when it starts.
-    post_units = 1 + (1 if encoder != "auto" else 0) + (1 if frame_lint else 0) + (1 if narrate else 0)
+    post_units = (1 + (1 if encoder != "auto" else 0) + (1 if frame_lint else 0)
+                  + (1 if narrate else 0) + (1 if verify else 0))
     progress = ProgressTracker(on_progress, post_units=post_units)
 
     progress.announce("storyboard", "resolving storyboard")
@@ -280,6 +283,36 @@ def make_video(
     errors = registry.validate(sb)
     if errors:
         raise ValueError("invalid storyboard: " + "; ".join(errors[:6]))
+
+    # ---- compute-and-verify (V1: warnings only, no mutation) ----
+    # Runs for template, --from and model-generated storyboards alike. Facts
+    # are computed once per beat inside verify_storyboard; a beat whose facts
+    # fail is unchecked, never passed. Nothing here can break the run.
+    verification: dict | None = None
+    if verify:
+        from animatica.verify import verify_storyboard  # noqa: PLC0415 - avoid a render-time import cycle
+
+        verify_result = verify_storyboard(sb, registry)
+        for f in verify_result.findings:
+            warnings.append(
+                f"verify: scene {f.beat[0]} beat {f.beat[1]} {f.field}: {f.message}"
+            )
+        verification = {
+            "checked": verify_result.checked,
+            "passed": verify_result.checked - len(verify_result.findings),
+            "fixed": 0,
+            "sent_back": 0,
+            "failed": len(verify_result.findings),
+            "unchecked": list(verify_result.unchecked),
+        }
+        if verify_result.checked:
+            progress.advance("verify", (
+                f"Verified {verify_result.checked} claims, "
+                f"{len(verify_result.findings)} failed, "
+                f"{len(verify_result.unchecked)} unchecked (see report.json)"
+            ))
+        else:
+            progress.advance("verify", "Nothing to verify")
 
     # Apply CLI theme override if specified
     if theme is not None:
@@ -390,7 +423,15 @@ def make_video(
         scene_durations=render_result.durations,
         fallbacks=fallbacks,
         narration=narration_info,
+        verification=verification,
     )
+
+    if strict and verification is not None and verification["failed"]:
+        # The report is written first: --strict changes the exit code, not the
+        # evidence. Error findings survive V1 (no repair loop yet).
+        from animatica.verify import VerifyStrictError  # noqa: PLC0415
+
+        raise VerifyStrictError(verify_result)  # type: ignore[possibly-undefined]
 
     progress.finish(f"done: {video.name}")
 
