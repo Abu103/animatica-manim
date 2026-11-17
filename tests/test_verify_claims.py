@@ -86,7 +86,8 @@ def test_domain_rule_flags_graph_caption_and_narration():
     ]
     assert "frequency domain" in findings[0].message
     assert "draws plain axes" in findings[0].message
-    assert "no component currently draws a frequency spectrum" in findings[0].message
+    # V3b registers signal_spectrum, so the tail now points to it (owner decision 2).
+    assert "use signal_spectrum" in findings[0].message
 
 
 def test_domain_rule_covers_every_spectrum_wording():

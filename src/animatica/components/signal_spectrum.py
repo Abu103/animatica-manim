@@ -1,6 +1,6 @@
 """Signal spectrum engine: sum of sinusoids sampled over time, then its FFT.
 
-Pure data and facts live here (no Manim): the drawing in ``play()`` reads the
+Pure data and facts live here (no Manim at import time): the drawing reads the
 same ``_data`` the facts do, so a fact cannot drift from the picture (5.1).
 """
 from __future__ import annotations
@@ -11,6 +11,15 @@ from typing import ClassVar, Literal
 import numpy as np
 from pydantic import BaseModel, Field, model_validator
 
+from animatica.components._draw import (
+    MIN_FONT_SIZE,
+    Clock,
+    fit,
+    fit_in_room,
+    prepare,
+    text_card,
+    warn,
+)
 from animatica.components.base import Component
 from animatica.storyboard.models import MAX_TEXT
 from animatica.verify.facts import Fact
@@ -41,6 +50,51 @@ def _data(p: BaseModel) -> SpectrumData:
     mags[0] /= 2
     peaks = [k for k in range(1, len(mags)) if mags[k] > 0.05 * mags.max()]
     return SpectrumData(t=t, x=x, freqs=np.arange(len(mags)), mags=mags, peaks=peaks)
+
+
+def _time_panel(data: SpectrumData, colors, height: float = 2.1, width: float = 10.0):
+    """The time-domain curve and its axis, from the same samples as the facts."""
+    from manim import DOWN, RIGHT, Line, Text, VMobject, VGroup
+
+    lo, hi = float(data.x.min()), float(data.x.max())
+    span = max(hi - lo, 1e-9)
+    mid = (lo + hi) / 2
+    points = [(-width / 2 + width * float(t), height * (float(v) - mid) / span, 0)
+              for t, v in zip(data.t, data.x)]
+    curve = VMobject(stroke_color=colors.accent, stroke_width=6, fill_opacity=0)
+    curve.set_points_as_corners(points)
+    axis = Line([-width / 2, 0, 0], [width / 2, 0, 0], color=colors.muted, stroke_width=2)
+    label = (Text("Time", font_size=MIN_FONT_SIZE, color=colors.muted)
+             .next_to(axis, DOWN, buff=0.12).align_to(axis, RIGHT))
+    return VGroup(axis, curve, label), curve, [axis, label]
+
+
+def _spectrum_panel(data: SpectrumData, colors, height: float = 2.0, width: float = 10.0):
+    """One bar per peak, at its integer frequency; numbers come from _data."""
+    from manim import DOWN, Line, Rectangle, Text, VGroup
+
+    baseline = Line([-width / 2, 0, 0], [width / 2, 0, 0],
+                    color=colors.muted, stroke_width=2)
+    peaks = data.peaks
+    max_mag = max(float(data.mags.max()), 1e-9)
+    fmax = max(peaks) if peaks else 1
+    xs = [-width / 2 + width * k / (fmax + 1) for k in peaks]
+    if any(b - a < 1.2 for a, b in zip(xs, xs[1:])):
+        slot = width / (len(peaks) + 1)
+        xs = [-width / 2 + slot * (i + 1) for i in range(len(peaks))]
+    bars, numbers = [], []
+    for k, cx in zip(peaks, xs):
+        bar_h = 0.15 + height * float(data.mags[k]) / max_mag
+        bar = Rectangle(width=0.9, height=bar_h, stroke_width=0, fill_opacity=1.0,
+                        fill_color=colors.accent2)
+        bar.move_to([cx, bar_h / 2, 0])
+        number = Text(str(int(k)), font_size=MIN_FONT_SIZE, color=colors.text)
+        number.next_to(bar, DOWN, buff=0.12)
+        bars.append(bar)
+        numbers.append(number)
+    label = Text("Frequency (cycles per window)", font_size=MIN_FONT_SIZE, color=colors.muted)
+    label.next_to(VGroup(*numbers) if numbers else baseline, DOWN, buff=0.22)
+    return VGroup(baseline, *bars, *numbers, label), bars, [baseline, label, *numbers]
 
 
 class SignalSpectrum(Component):
@@ -82,4 +136,36 @@ class SignalSpectrum(Component):
         ]
 
     def play(self, scene, p, colors) -> None:
-        raise NotImplementedError  # V3b adds the drawing
+        from manim import DOWN, Create, FadeIn, GrowFromEdge, LaggedStart, Text, VGroup, config
+        prepare(scene, colors)
+        try:
+            data = _data(p)
+            total = self.duration(p)
+            curve = bars = None
+            time_static = spectrum_static = []
+            if p.show in ("time", "both"):
+                time_panel, curve, time_static = _time_panel(data, colors)
+            if p.show in ("spectrum", "both"):
+                spectrum_panel, bars, spectrum_static = _spectrum_panel(data, colors)
+            if p.show == "both":
+                panels = VGroup(time_panel, spectrum_panel).arrange(DOWN, buff=0.45)
+            else:
+                panels = time_panel if p.show == "time" else spectrum_panel
+            title = Text(p.title, font_size=MIN_FONT_SIZE + 6, color=colors.text)
+            fit(title, max_width=config.frame_width - 2.0, scale_up=False)
+            whole = VGroup(title, panels).arrange(DOWN, buff=0.3)
+            fit_in_room(scene, whole, scale_up=False)
+            static = [title, *time_static, *spectrum_static]
+        except Exception as exc:  # degrade, never abort the video (same policy as graph)
+            warn(scene, f"signal_spectrum: could not draw ({type(exc).__name__}: {exc}); showing plain text")
+            text_card(scene, self.fallback_text(p), colors, self.duration(p))
+            return
+
+        clock = Clock(scene, total)
+        clock.play(FadeIn(*static), run_time=0.6)
+        if curve is not None:
+            clock.play(Create(curve), run_time=2.0 if p.show == "both" else 1.8)
+        if bars:
+            clock.play(LaggedStart(*[GrowFromEdge(bar, DOWN) for bar in bars], lag_ratio=0.15),
+                       run_time=1.2)
+        clock.finish()

@@ -1,0 +1,15 @@
+{
+  "version": "1",
+  "title": "Conformance Signal Spectrum",
+  "scenes": [
+    {
+      "beats": [
+        {
+          "component": "signal_spectrum",
+          "params": {"title": "Two Tones", "waves": [{"freq": 3, "amp": 1.0}, {"freq": 5, "amp": 0.5}]},
+          "caption": "Two sine waves and their spectrum."
+        }
+      ]
+    }
+  ]
+}
