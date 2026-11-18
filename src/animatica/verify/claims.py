@@ -179,11 +179,15 @@ def _sentence_of(m: re.Match[str]) -> str:
 
 def unchecked_sentences(sb: Any, registry: Any,
                         facts_map: dict[tuple[int, int], list] | None = None,
-                        skipped: set[tuple[int, int]] | None = None) -> list[tuple[Any, str]]:
-    """Caption/narration sentences that no rule above looked at.
+                        skipped: set[tuple[int, int]] | None = None,
+                        checked_numbers: set[tuple[int, int, str]] | None = None) -> list[tuple[Any, str]]:
+    """Caption/narration sentences neither a number nor a claim rule looked at.
 
-    V1e reports the count only. Beats in ``skipped`` (facts failed or params
-    invalid) were not checked at all: their sentences are unchecked too.
+    ``checked_numbers`` carries ``(scene, beat, sentence)`` for every number
+    numbers.py examined. A sentence with a checked number is checked even when
+    no claim rule matched it. Beats in ``skipped`` (facts failed or params
+    invalid) were not checked by numbers at all: their sentences stay
+    unchecked unless a facts-free rule (domain / hertz) looked at them.
     """
     out: list[tuple[Any, str]] = []
     for si, scene in enumerate(sb.scenes):
@@ -212,6 +216,8 @@ def unchecked_sentences(sb: Any, registry: Any,
                         continue
                     if comp is not None and _looked_at(sentence, beat.component, comp,
                                                        facts, has_peak_facts):
+                        continue
+                    if checked_numbers and (si, bi, sentence) in checked_numbers:
                         continue
                     out.append((beat, sentence))
     return out

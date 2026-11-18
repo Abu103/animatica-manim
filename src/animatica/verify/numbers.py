@@ -41,6 +41,24 @@ _WORD_TOKEN = re.compile(r"\b(" + "|".join(_WORD_VALUE) + r")\b", re.IGNORECASE)
 #: compounds cannot be parsed reliably, and the anti-goal is over-rejecting.
 _FREE_WORDS = {"one", "two"}
 _MULTIPLIERS = {"k": 1e3, "K": 1e3, "M": 1e6, "B": 1e9}
+#: Same sentence boundary as claims.py: the unchecked list is sentence-based.
+_SENTENCE_SPLIT = re.compile(r"(?<=[.!?])\s+")
+
+
+def _sentence_spans(text: str) -> list[tuple[int, int, str]]:
+    """(start, end, sentence) spans that match ``_SENTENCE_SPLIT.split``."""
+    spans: list[tuple[int, int, str]] = []
+    start = 0
+    for m in _SENTENCE_SPLIT.finditer(text):
+        spans.append((start, m.start(), text[start:m.start()]))
+        start = m.end()
+    spans.append((start, len(text), text[start:]))
+    return spans
+
+
+def _sentence_at(pos: int, spans: list[tuple[int, int, str]]) -> str:
+    """The sentence containing character position ``pos``."""
+    return next((s for a, b, s in spans if a <= pos < b), "")
 
 
 def _digit_value(m: Any) -> float:
@@ -131,11 +149,16 @@ def _compounded(spans: list[tuple[int, int]], i: int, text: str) -> bool:
 
 def scan_numbers(sb: Any, registry: Any,
                  facts_map: dict[tuple[int, int], list] | None = None,
-                 skipped: set[tuple[int, int]] | None = None) -> tuple[int, list[Finding]]:
+                 skipped: set[tuple[int, int]] | None = None,
+                 checked_sentences: set[tuple[int, int, str]] | None = None) -> tuple[int, list[Finding]]:
     """Numbers checked and findings, in beat order. V1e uses the count.
 
     ``facts_map`` carries facts computed once per beat by verify_storyboard;
     beats in ``skipped`` (facts failed or params invalid) are unchecked.
+    ``checked_sentences``, when given, receives ``(scene, beat, sentence)`` for
+    every number actually examined, so the report can stop calling a sentence
+    "unchecked" just because no claim rule looked at it. The public return
+    type is unchanged.
     """
     findings: list[tuple[int, str, int, Finding]] = []
     checked = 0
@@ -172,11 +195,14 @@ def scan_numbers(sb: Any, registry: Any,
                 digits = list(_DIGIT_TOKEN.finditer(text))
                 words = list(_WORD_TOKEN.finditer(text))
                 spans = sorted([(m.start(), m.end()) for m in digits + words])
+                sentence_spans = _sentence_spans(text)
                 pending: list[tuple[int, Finding]] = []
                 for m in digits:
                     if _compounded(spans, spans.index((m.start(), m.end())), text):
                         continue
                     checked += 1
+                    if checked_sentences is not None:
+                        checked_sentences.add((si, bi, _sentence_at(m.start(), sentence_spans)))
                     value = _digit_value(m)
                     decimals = len(m.group("frac") or "")
                     percent = m.group("suffix") == "%"
@@ -201,6 +227,8 @@ def scan_numbers(sb: Any, registry: Any,
                     if _compounded(spans, spans.index((m.start(), m.end())), text):
                         continue
                     checked += 1
+                    if checked_sentences is not None:
+                        checked_sentences.add((si, bi, _sentence_at(m.start(), sentence_spans)))
                     value = _WORD_VALUE[word]
                     if _grounded(value, 0, sources, False):
                         continue

@@ -73,9 +73,10 @@ def verify_storyboard(sb, registry) -> VerifyResult:
             facts_map[(si, bi)] = facts
             if note:
                 skipped[(si, bi)] = note
-    n_numbers, number_findings = scan_numbers(sb, registry, facts_map, set(skipped))
+    checked_sentences: set[tuple[int, int, str]] = set()
+    n_numbers, number_findings = scan_numbers(sb, registry, facts_map, set(skipped), checked_sentences)
     n_claims, claim_findings = scan_claims(sb, registry, facts_map, set(skipped))
-    unchecked = unchecked_sentences(sb, registry, facts_map, set(skipped))
+    unchecked = unchecked_sentences(sb, registry, facts_map, set(skipped), checked_sentences)
     findings = sorted(number_findings + claim_findings, key=lambda f: (f.beat, f.field))
     by_severity = {
         "error": sum(1 for f in findings if f.severity == "error"),
