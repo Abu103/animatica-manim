@@ -4,6 +4,8 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from pydantic import ValidationError
+
 from animatica.ai.router import get_provider
 from animatica.ai.template import TemplateMatcher
 from animatica.ai.repair import generate_storyboard, generate_storyboard_two_stage
@@ -19,7 +21,7 @@ from animatica.progress import ProgressFn, ProgressTracker
 from animatica.report import write_report
 from animatica.storyboard.cache import StoryboardCache
 from animatica.storyboard.lint import lint_storyboard
-from animatica.storyboard.models import Storyboard, dump_storyboard
+from animatica.storyboard.models import Storyboard, dump_storyboard, load_storyboard
 
 # Frame lint is a non-fatal post-render quality check. Imported here so the
 # pipeline can wire it into ``make_video`` without the CLI knowing about PyAV.
@@ -241,9 +243,14 @@ def make_video(
     fresh_model = False  # only a fresh model answer may be sent back / degraded
     generation_notes: list[str] = []
     if storyboard_path is not None:
-        from animatica.storyboard.clamp import load_storyboard_clamped  # noqa: PLC0415
+        try:
+            sb = load_storyboard(Path(storyboard_path))
+            clamp_notes: list[str] = []
+        except ValidationError:
+            # Over-long text is fixed locally instead of failing the run.
+            from animatica.storyboard.clamp import load_storyboard_clamped  # noqa: PLC0415
 
-        sb, clamp_notes = load_storyboard_clamped(Path(storyboard_path))
+            sb, clamp_notes = load_storyboard_clamped(Path(storyboard_path))
         warnings.extend(clamp_notes)
         provider_used = "none (--from storyboard.json)"
     else:

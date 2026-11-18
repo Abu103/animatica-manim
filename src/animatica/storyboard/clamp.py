@@ -29,11 +29,13 @@ def _shorten(text: str, cap: int) -> str:
     return (window[:space] if space > 0 else window).rstrip()
 
 
-def clamp_lengths(data: Any) -> tuple[Any, list[str]]:
+def clamp_lengths(data: Any, *, scene_offset: int = 0) -> tuple[Any, list[str]]:
     """Clamp caption/narration in a raw storyboard dict; return it and notes.
 
-    Mutates only the dict it is given. Notes are written for the report,
-    e.g. ``scene 0 beat 6 narration: shortened from 412 to 296 chars``.
+    Mutates only the dict it is given. ``scene_offset`` fixes the note's
+    scene number for two-stage fills, whose single-scene reply will land at
+    a later index in the final storyboard. Notes are written for the report,
+    e.g. ``scene 6 beat 0 narration: shortened from 412 to 296 chars``.
     """
     if not isinstance(data, dict):
         return data, []
@@ -51,7 +53,7 @@ def clamp_lengths(data: Any) -> tuple[Any, list[str]]:
                 new = _shorten(value, MAX_TEXT)
                 beat[field] = new
                 notes.append(
-                    f"scene {si} beat {bi} {field}: shortened from "
+                    f"scene {si + scene_offset} beat {bi} {field}: shortened from "
                     f"{len(value)} to {len(new)} chars"
                 )
     return data, notes

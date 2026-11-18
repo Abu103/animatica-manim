@@ -38,11 +38,11 @@ def generate_storyboard(
 
     for attempt in range(1, max_retries + 2):
         text = provider.generate(current_prompt, schema)
+        pending_notes: list[str] = []
         try:
             data = extract_json(text)
             data, clamps = clamp_lengths(data)
-            if notes is not None:
-                notes.extend(clamps)
+            pending_notes.extend(clamps)
             sb = Storyboard.model_validate(data)
         except ValidationError as exc:  # well-formed JSON, wrong shape -> repair
             dump_parse_failure(text, out_dir=out_dir, stage="storyboard", scene=0,
@@ -62,6 +62,8 @@ def generate_storyboard(
 
         errors = registry.validate(sb)
         if not errors:
+            if notes is not None:
+                notes.extend(pending_notes)
             return sb
         last_errors = errors
         current_prompt = build_prompt(prompt, registry, errors, narrate=narrate)
@@ -101,7 +103,6 @@ def repair_with_facts(
     max_verify_retries: int = 2,
     debug: bool = False,
     out_dir: Path | None = None,
-    notes: list[str] | None = None,
 ) -> tuple[Storyboard, dict]:
     """Generate -> lint -> verify -> fixes -> send back -> degrade, for models.
 
@@ -167,6 +168,11 @@ def repair_with_facts(
             if beat.narration:
                 beat.narration = ""
                 degraded.append([f.beat[0], f.beat[1]])
+        # A clamp note for narration that has now been blanked describes a
+        # change that no longer exists: drop it from the report.
+        for si, bi in degraded:
+            prefix = f"scene {si} beat {bi} narration:"
+            clamps_all = [note for note in clamps_all if not note.startswith(prefix)]
 
     return sb, {
         "verify": verify_storyboard(sb, registry),
@@ -298,11 +304,11 @@ def generate_storyboard_two_stage(
         scene: Scene | None = None
         for attempt in range(1, max_retries + 2):
             text = provider.generate(scene_prompt, registry.json_schema())
+            pending_notes: list[str] = []
             try:
                 data = extract_json(text)
-                data, clamps = clamp_lengths(data)
-                if notes is not None:
-                    notes.extend(clamps)
+                data, clamps = clamp_lengths(data, scene_offset=si - 1)
+                pending_notes.extend(clamps)
                 sb = Storyboard.model_validate(data)
                 errs = registry.validate(sb)
             except ValidationError as exc:
@@ -315,6 +321,8 @@ def generate_storyboard_two_stage(
                 errs = [f"parse error: {' '.join(str(exc).split())[:200]}"]
             if not errs and len(sb.scenes) == 1:
                 scene = sb.scenes[0]
+                if notes is not None:
+                    notes.extend(pending_notes)
                 break
             if not errs:
                 errs = [f"fill must return exactly one scene, got {len(sb.scenes)}"]
