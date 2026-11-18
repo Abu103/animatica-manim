@@ -18,6 +18,10 @@ _DOMAIN_PATTERN = re.compile(
     re.IGNORECASE,
 )
 
+#: P1: a signal_spectrum axis is cycles per window, not hertz. A word match
+#: (case-insensitive) warns without blocking the run.
+_HERTZ_PATTERN = re.compile(r"\bhertz\b|\bHz\b", re.IGNORECASE)
+
 #: The pattern table. Each row: (regex, component gate or None for "any
 #: component that produced the row's fact kind", fact kind, severity).
 #: - Peak counting sees only kind-"peak" facts (signal_spectrum, V3); a
@@ -76,6 +80,14 @@ def scan_claims(sb: Any, registry: Any,
             else:
                 facts = facts_for(registry, beat)
             pending: list[tuple[int, int, Finding]] = []
+            if beat.component == "signal_spectrum":
+                for field, text in _fields(beat):
+                    for m in _HERTZ_PATTERN.finditer(text):
+                        pending.append((2, m.start(), Finding(
+                            "warn", (si, bi), field,
+                            f'says "{m.group(0)}" but the signal_spectrum axis is '
+                            "cycles per window, not hertz",
+                        )))
             if comp.domain == "plain axes":
                 for field, text in _fields(beat):
                     for m in _DOMAIN_PATTERN.finditer(text):
@@ -192,8 +204,9 @@ def unchecked_sentences(sb: Any, registry: Any,
                     if skipped and (si, bi) in skipped:
                         # Only the domain rule could look at a facts-failure
                         # beat; its other sentences remain unchecked.
-                        if (comp is not None and comp.domain == "plain axes"
-                                and _DOMAIN_PATTERN.search(sentence)):
+                        if ((beat.component == "signal_spectrum" and _HERTZ_PATTERN.search(sentence))
+                                or (comp is not None and comp.domain == "plain axes"
+                                    and _DOMAIN_PATTERN.search(sentence))):
                             continue
                         out.append((beat, sentence))
                         continue
@@ -206,6 +219,8 @@ def unchecked_sentences(sb: Any, registry: Any,
 
 def _looked_at(sentence: str, component: str, comp: Any,
                facts: list[Any], has_peak_facts: bool) -> bool:
+    if component == "signal_spectrum" and _HERTZ_PATTERN.search(sentence):
+        return True
     if comp.domain == "plain axes" and _DOMAIN_PATTERN.search(sentence):
         return True
     for regex, gate, kind, _severity in _PATTERNS:
