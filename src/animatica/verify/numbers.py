@@ -144,6 +144,27 @@ def scan_numbers(sb: Any, registry: Any,
             if skipped and (si, bi) in skipped:
                 continue
             sources = _sources_for(sb, scene, si, bi, registry, facts_map)
+            # A beat with no numeric source of its own cannot be expected to
+            # ground a number: flag it as a warn (the model had nothing to
+            # agree with). A beat that does have numbers is still an error.
+            own_sources: set[float] = set()
+            _collect(beat.params, own_sources)
+            own_facts = facts_map.get((si, bi), []) if facts_map is not None else facts_for(registry, beat)
+            for fact in own_facts:
+                _collect(fact.value, own_sources)
+            # A component with no facts implementation at all (title_card and
+            # other text-only beats) cannot supply a number, so a number in
+            # its caption is a warn. A numeric component whose instance has no
+            # parseable value is still an error: the claim is invented, not
+            # merely ungroundable (the V1c "laundering" case).
+            numeric_capable = True
+            try:
+                from animatica.components.base import Component  # noqa: PLC0415
+
+                numeric_capable = type(registry.get(beat.component)).facts is not Component.facts
+            except Exception:  # pragma: no cover - unknown component already skipped
+                pass
+            severity = "warn" if (not own_sources and not numeric_capable) else "error"
             for field in ("caption", "narration"):
                 text: str = getattr(beat, field)
                 if not text:
@@ -163,7 +184,7 @@ def scan_numbers(sb: Any, registry: Any,
                         continue
                     written = m.group(0)
                     pending.append((m.start(), Finding(
-                        "error", (si, bi), field,
+                        severity, (si, bi), field,
                         f'{field} says "{written}" but no param or computed fact '
                         f"for this beat equals {format_number(value)}",
                     )))
@@ -184,7 +205,7 @@ def scan_numbers(sb: Any, registry: Any,
                     if _grounded(value, 0, sources, False):
                         continue
                     pending.append((m.start(), Finding(
-                        "error", (si, bi), field,
+                        severity, (si, bi), field,
                         f'{field} says "{m.group(1)}" but no param or computed fact '
                         f"for this beat equals {format_number(value)}",
                     )))

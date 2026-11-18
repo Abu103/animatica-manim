@@ -1,4 +1,4 @@
-"""Merge fix F1: sign-aware number grounding."""
+"""Merge fixes F1/F2: sign-aware grounding and source-less number warnings."""
 from animatica.components.registry import default_registry
 from animatica.storyboard.models import Storyboard
 from animatica.verify.numbers import check_numbers
@@ -33,3 +33,18 @@ def test_negative_caption_number_mismatch_is_a_finding():
     findings = check_numbers(sb, REGISTRY)
     assert len(findings) == 1, findings
     assert "-5" in findings[0].message
+
+
+def test_no_numeric_source_makes_a_number_a_warn():
+    sb = _sb("title_card", {"title": "Intro"}, "Since 1903 we fly")
+    findings = check_numbers(sb, REGISTRY)
+    assert len(findings) == 1, findings
+    assert findings[0].severity == "warn"
+    assert "1903" in findings[0].message
+
+
+def test_with_a_numeric_source_a_mismatch_is_still_an_error():
+    sb = _sb("stat_callout", {"value": "12%", "label": "growth"}, "grew 40%")
+    findings = check_numbers(sb, REGISTRY)
+    assert len(findings) == 1, findings
+    assert findings[0].severity == "error"
