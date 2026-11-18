@@ -20,7 +20,7 @@ from animatica.verify.facts import facts_for, format_number, parse_number
 #: middle of other numbers ("234" inside "1,234", "28" in "6.28"), and out
 #: of identifier arguments ("fib(0)" is a name, not a number in prose).
 _DIGIT_TOKEN = re.compile(
-    r"(?<![\w.,])(?<!\w\()(?P<digits>\d{1,3}(?:,\d{3})+|\d+)(?:\.(?P<frac>\d+))?"
+    r"(?<![\w.,])(?<!\w\()(?P<sign>-)?(?P<digits>\d{1,3}(?:,\d{3})+|\d+)(?:\.(?P<frac>\d+))?"
     r"(?P<suffix>%|x|[kKMB])?(?![\w])"
 )
 
