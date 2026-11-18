@@ -90,7 +90,9 @@ def _fake_backend(monkeypatch):
     monkeypatch.setattr(pipeline, "default_backends", lambda: {"fake": FakeBackend()})
 
 
-def test_pipeline_writes_fixed_storyboard_and_records_fixes(tmp_path, monkeypatch):
+def test_pipeline_does_not_mechanically_fix_a_from_storyboard(tmp_path, monkeypatch):
+    # F5 supersedes the old "--from is fixed" contract: only fresh model output
+    # is mechanically fixed. --from is verified for warnings only.
     _fake_backend(monkeypatch)
     src = tmp_path / "sb.json"
     dump_storyboard(_graph_sb("x**2", (-2, 2), (0, 1)), src)
@@ -100,12 +102,11 @@ def test_pipeline_writes_fixed_storyboard_and_records_fixes(tmp_path, monkeypatc
         storyboard_path=src, out_dir=out, backend="fake", frame_lint=False
     )
     written = load_storyboard(out / "storyboard.json")
-    assert list(written.scenes[0].beats[0].params["y_range"]) == [-0.4, 4.4]
+    assert list(written.scenes[0].beats[0].params["y_range"]) == [0, 1]
     assert written.scenes[0].beats[0].caption == CAPTION
     report = json.loads((out / "report.json").read_text(encoding="utf-8"))
-    assert report["verification"]["fixed"] == 1
-    assert report["fixes"][0]["before"] == [0, 1]
-    assert report["fixes"][0]["after"] == [-0.4, 4.4]
+    assert report["verification"]["fixed"] == 0
+    assert report["verification"]["fixes"] == []
 
     # A --from re-run of the written storyboard gives the same result, zero fixes.
     out2 = tmp_path / "out2"
