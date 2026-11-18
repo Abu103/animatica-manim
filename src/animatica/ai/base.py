@@ -83,18 +83,86 @@ def _balanced_end(text: str, start: int) -> int | None:
     return None
 
 
+def _recover_json(text: str) -> str | None:
+    """Repair common model truncations: a missing ':' after a key, an
+    unterminated string, or brackets left open at the end of the output.
+
+    Brackets and quotes inside strings are ignored. Returns the repaired
+    text, or None when the bracket structure is beyond repair.
+    """
+    out: list[str] = []
+    stack: list[str] = []
+    in_string = escaped = False
+    prev = ""  # last significant char outside strings
+    before_string = ""
+    for i, ch in enumerate(text):
+        if in_string:
+            out.append(ch)
+            if escaped:
+                escaped = False
+            elif ch == "\\":
+                escaped = True
+            elif ch == '"':
+                in_string = False
+                # A string in key position ({ or , before it) must be
+                # followed by ':'; models sometimes drop it after a long value.
+                j = i + 1
+                while j < len(text) and text[j].isspace():
+                    j += 1
+                if before_string in "{," and j < len(text) and text[j] not in ":,}":
+                    out.append(":")
+                prev = '"'
+            continue
+        if ch.isspace():
+            out.append(ch)
+            continue
+        if ch == '"':
+            before_string = prev
+            in_string = True
+            out.append(ch)
+            prev = '"'
+        elif ch in "{[":
+            stack.append("}" if ch == "{" else "]")
+            out.append(ch)
+            prev = ch
+        elif ch in "}]":
+            if not stack or stack.pop() != ch:
+                return None
+            out.append(ch)
+            prev = ch
+        else:
+            out.append(ch)
+            prev = ch
+    if in_string:
+        # A string cut mid-value stays an error (tests/test_extract_json.py):
+        # closing it would invent text the model never produced.
+        return None
+    if stack:
+        out.extend(reversed(stack))
+    recovered = "".join(out)
+    return recovered if recovered != text else None
+
+
+def _cuts_trailing_prose(text: str) -> str | None:
+    """Drop everything after the last complete object, when there is one."""
+    end = text.rfind("}")
+    return text[: end + 1] if end > 0 else None
+
+
 def _loads_object(text: str) -> dict:
-    """json.loads for one object, finishing it when the model left closing brackets off."""
+    """json.loads for one object, repairing the usual malformed-output shapes."""
     try:
         return json.loads(text)
     except json.JSONDecodeError as exc:
-        closed = _close_open_brackets(text)
-        if closed is None:
-            raise
-        try:
-            return json.loads(closed)
-        except json.JSONDecodeError:
-            raise exc from None
+        for candidate in (_recover_json(text), _cuts_trailing_prose(text),
+                          _close_open_brackets(text)):
+            if not candidate or candidate == text:
+                continue
+            try:
+                return json.loads(candidate)
+            except json.JSONDecodeError:
+                continue
+        raise exc from None
 
 
 def extract_json(text: str) -> dict:
@@ -112,15 +180,11 @@ def extract_json(text: str) -> dict:
     start = text.find("{")
     if start == -1:
         raise ValueError("no JSON object found in provider output")
-    end = _balanced_end(text, start)
-    if end is not None:
-        return _loads_object(text[start:end])
-    closed = _close_open_brackets(text[start:].rstrip())
-    if closed is not None:
-        try:
-            return json.loads(closed)
-        except json.JSONDecodeError:
-            pass
+    body = text[start:].rstrip()
+    try:
+        return _loads_object(body)
+    except json.JSONDecodeError:
+        pass
     raise ValueError("JSON object is cut off or has unbalanced brackets (end of output reached before it was closed)")
 
 
