@@ -211,6 +211,7 @@ def make_video(
     theme: str | None = None,
     narrate: bool = False,
     voice: str | None = None,
+    debug: bool = False,
     verify: bool = True,
     strict: bool = False,
     on_progress: ProgressFn | None = None,
@@ -271,8 +272,10 @@ def make_video(
             if sb is not None:
                 provider_used = f"{prov.name} (cached)"
             else:
-                sb = (generate_storyboard_two_stage(prompt, prov, registry, narrate=narrate) if two_stage
-                      else generate_storyboard(prompt, prov, registry, narrate=narrate))
+                sb = (generate_storyboard_two_stage(prompt, prov, registry, narrate=narrate,
+                                                    debug=debug, out_dir=out_dir) if two_stage
+                      else generate_storyboard(prompt, prov, registry, narrate=narrate,
+                                               debug=debug, out_dir=out_dir))
                 fresh_model = True  # cache the final storyboard only after verify/repair
 
     if storyboard_path is None and not provider_used.startswith("template"):
@@ -303,7 +306,9 @@ def make_video(
         if fresh_model and prov is not None:
             from animatica.ai.repair import repair_with_facts  # noqa: PLC0415
 
-            sb, repair_info = repair_with_facts(prompt, sb, prov, registry, narrate=narrate)
+            sb, repair_info = repair_with_facts(prompt, sb, prov, registry,
+                                                narrate=narrate, debug=debug,
+                                                out_dir=out_dir)
             verify_result = repair_info["verify"]
             fix_records = repair_info["fixes"]
             sent_back = repair_info["sent_back"]
