@@ -297,7 +297,6 @@ def make_video(
     fixes: list = []
     if verify:
         from animatica.verify import verify_storyboard  # noqa: PLC0415 - avoid a render-time import cycle
-        from animatica.verify.fix import apply_fixes  # noqa: PLC0415
 
         sent_back = 0
         degraded: list[list[int]] = []
@@ -313,7 +312,9 @@ def make_video(
             if repair_error:
                 warnings.append(f"verify: {repair_error}")
         else:
-            sb, fix_records = apply_fixes(sb, registry)
+            # --from and template storyboards are never mechanically changed:
+            # they are verified for warnings only, and fixed == 0 in the report.
+            fix_records = []
             verify_result = verify_storyboard(sb, registry)
 
         for f in verify_result.findings:
