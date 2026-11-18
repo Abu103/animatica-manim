@@ -1,5 +1,16 @@
 # Animatica session log (live, edit as you go)
-Updated: 2026-11-17. Newest status on top. "Not pushed" in an entry means as of when it was written; `gh pr list --state all` is the source of truth for what merged. Any Claude session can resume from here.
+Updated: 2026-11-18. Newest status on top. "Not pushed" in an entry means as of when it was written; `gh pr list --state all` is the source of truth for what merged. Any Claude session can resume from here.
+
+## Status (2026-11-18, opencode session, cards N1-N5: nim robustness, branch `hermes/nim-robust` off `main` @ `bf0d1b2`)
+- Five task commits, all **not pushed**: `a0dce5f` N1 JSON recovery (ai/base.py, ai/repair.py, new tests/test_n1_json_recovery.py), `83f95fc` N2 outline cap (ai/prompt.py, ai/repair.py, new tests/test_n2_outline_cap.py), `30cc0be` N3 F6 magnitude phrasing (verify/numbers.py, new tests/test_n3_magnitude.py), `ef0a7ee` N4 hertz units (verify/claims.py, new tests/test_n4_hertz.py), `6b639f7` N5 param-vs-claim warnings (verify/claims.py, new tests/test_n5_param_claims.py). Final review-fix commit follows; no existing test was edited.
+- N1: extract_json repairs a dropped ':' after a key (nim repro columns 2155 and 3083), keeps the first balanced object when trailing prose contains braces, and never corrupts string arrays; a string cut mid-value stays an error (existing contract). repair_with_facts retries on parse/validation failures with the error text appended, but a provider exception still stops immediately with sent_back == 0.
+- N2: the outline prompt states "max 8 beats per scene"; outlines with more are split into consecutive <=8-beat scenes, or each scene is capped at 8 if splitting would break MAX_SCENES (12). No retry burned.
+- N3: "fell by 4"/"down 4"/"a drop of 4" ground a param of -4; the sign relaxation applies only to the number right after a decrease phrase and only accepts -value ("fell by 4" is not grounded by +4, unrelated numbers stay strict).
+- N4: the hertz warning on signal_spectrum now covers Hz/kHz/MHz/GHz and hertz/kilo-/mega-/gigahertz; still a warn, still only on signal_spectrum.
+- N5: bounce_sequence ordinal spike claims check 1-based positions against the largest values (out-8/v1 [1,1,1,2,1,1,1,4,1,1] "fourth and eighth" is correct), with clause scoping so unrelated ordinals are ignored; graph labels naming cost/"per append" over identity lines warn. Both are warn-only and count as checked.
+- Verified: RED first each task (details in the report); fast loops green (28/41/41/32/47 and 84 after the fix pass); `ruff check src tests` clean. First full gate: 1715 passed, 2 failed (provider-error retries from N1); fixed, second gate below.
+- Known limits: JSON recovery closes missing ':' and brackets but not unterminated strings (existing contract); N3 phrases are a small list; costs claims are warn-only and identity detection is a small spelling table; hertz warning is word-based.
+- Unverified: Windows/Linux CI; patches not applied to `main`; no push.
 
 ## Status (2026-11-18, opencode session, polish P1-P4)
 - Branch `hermes/polish` off `dev` (`8ab78ff`), one commit per fix, not pushed. Patch: `polish.patch`. Added fixture `tests/fixtures/verify/fourier_signal_spectrum_2026_11_18.json` (copied from the owner's `out-5/v3-dev/storyboard.json`).

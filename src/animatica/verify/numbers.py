@@ -41,6 +41,16 @@ _WORD_TOKEN = re.compile(r"\b(" + "|".join(_WORD_VALUE) + r")\b", re.IGNORECASE)
 #: compounds cannot be parsed reliably, and the anti-goal is over-rejecting.
 _FREE_WORDS = {"one", "two"}
 _MULTIPLIERS = {"k": 1e3, "K": 1e3, "M": 1e6, "B": 1e9}
+#: Magnitude phrasing: a number right after one of these words names the
+#: size of a signed decrease ("fell by 4", "down 4"), so a param of -4
+#: grounds it. Applied only to that number, never to numbers elsewhere.
+_DECREASE_BEFORE = re.compile(
+    r"\b(?:fell|fall|dropped|drop|decreased|decrease|declined|decline|slipped|down|lost|lose)"
+    r"\b(?:\s+\w+ly)?(?:\s+by)?\s+$"
+    r"|\b(?:a\s+)?(?:drop|decline|decrease)\s+of\s+$",
+    re.IGNORECASE,
+)
+
 #: Same sentence boundary as claims.py: the unchecked list is sentence-based.
 _SENTENCE_SPLIT = re.compile(r"(?<=[.!?])\s+")
 
@@ -206,7 +216,12 @@ def scan_numbers(sb: Any, registry: Any,
                     value = _digit_value(m)
                     decimals = len(m.group("frac") or "")
                     percent = m.group("suffix") == "%"
-                    if _grounded(value, decimals, sources, percent):
+                    # A decrease phrase fixes the sign: only -value may
+                    # ground it, so +4 cannot explain "fell by 4".
+                    if _DECREASE_BEFORE.search(text[max(0, m.start() - 40):m.start()]):
+                        if _grounded(-value, decimals, sources, percent):
+                            continue
+                    elif _grounded(value, decimals, sources, percent):
                         continue
                     written = m.group(0)
                     pending.append((m.start(), Finding(
@@ -230,7 +245,10 @@ def scan_numbers(sb: Any, registry: Any,
                     if checked_sentences is not None:
                         checked_sentences.add((si, bi, _sentence_at(m.start(), sentence_spans)))
                     value = _WORD_VALUE[word]
-                    if _grounded(value, 0, sources, False):
+                    if _DECREASE_BEFORE.search(text[max(0, m.start() - 40):m.start()]):
+                        if _grounded(-value, 0, sources, False):
+                            continue
+                    elif _grounded(value, 0, sources, False):
                         continue
                     pending.append((m.start(), Finding(
                         severity, (si, bi), field,

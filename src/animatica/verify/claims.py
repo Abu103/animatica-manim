@@ -20,7 +20,10 @@ _DOMAIN_PATTERN = re.compile(
 
 #: P1: a signal_spectrum axis is cycles per window, not hertz. A word match
 #: (case-insensitive) warns without blocking the run.
-_HERTZ_PATTERN = re.compile(r"\bhertz\b|\bHz\b", re.IGNORECASE)
+_HERTZ_PATTERN = re.compile(
+    r"\bhertz\b|\bkilohertz\b|\bmegahertz\b|\bgigahertz\b|\bHz\b|\bkHz\b|\bMHz\b|\bGHz\b",
+    re.IGNORECASE,
+)
 
 #: The pattern table. Each row: (regex, component gate or None for "any
 #: component that produced the row's fact kind", fact kind, severity).
@@ -40,6 +43,28 @@ _PATTERNS: list[tuple[re.Pattern[str], str | None, str, str]] = [
 _COUNT_WORDS = {"two": 2, "three": 3, "four": 4, "five": 5}
 _SENTENCE_SPLIT = re.compile(r"(?<=[.!?])\s+")
 
+#: Param-vs-claim checks (N5). Ordinal spike claims name 1-based term
+#: positions; graph labels that name cost over an identity line claim data
+#: the beat does not compute.
+_ORDINALS = {
+    "first": 1, "second": 2, "third": 3, "fourth": 4, "fifth": 5,
+    "sixth": 6, "seventh": 7, "eighth": 8, "ninth": 9, "tenth": 10,
+    "eleventh": 11, "twelfth": 12, "thirteenth": 13, "fourteenth": 14,
+    "fifteenth": 15, "sixteenth": 16, "seventeenth": 17, "eighteenth": 18,
+    "nineteenth": 19, "twentieth": 20,
+}
+_ORDINAL_TOKEN = re.compile(
+    r"\b(" + "|".join(_ORDINALS) + r"|\d+(?:st|nd|rd|th))\b", re.IGNORECASE)
+_SPIKE_WORD = re.compile(
+    r"\b(?:spike|spikes|spiked|jump|jumps|jumped|peak|peaks|surge|leap|"
+    r"largest|biggest|highest)\b", re.IGNORECASE)
+_COST_LABEL = re.compile(r"cost|per\s+append", re.IGNORECASE)
+_IDENTITY_LINE = re.compile(
+    r"^(?:y\s*=|f\s*\(\s*x\s*\)\s*=|g\s*\(\s*x\s*\)\s*=)?\s*"
+    r"(?:\(?\s*x\s*\)?|(?:[01](?:\.0+)?)\s*\*\s*x|x\s*\*\s*[01](?:\.0+)?|"
+    r"x\s*\+\s*0(?:\.0+)?|0(?:\.0+)?\s*\+\s*x|x\s*-\s*0(?:\.0+)?|x\s*/\s*1(?:\.0+)?)\s*$",
+    re.IGNORECASE)
+
 
 def _fields(beat: Any) -> list[tuple[str, str]]:
     return [(field, getattr(beat, field)) for field in ("caption", "narration")
@@ -48,6 +73,89 @@ def _fields(beat: Any) -> list[tuple[str, str]]:
 
 def _frequency_capable(registry: Any) -> bool:
     return any(registry.get(name).domain == "frequency" for name in registry.names())
+
+
+def _validated_params(comp: Any, beat: Any) -> Any:
+    try:
+        return comp.Params.model_validate(beat.params)
+    except Exception:
+        return None
+
+
+def _spike_indices(text: str, count: int) -> list[int]:
+    """0-based positions named by a spike claim in the clause that spikes.
+
+    Ordinals in unrelated clauses ("The first section sets up the problem;
+    the eighth term spikes") are not spike claims and are ignored.
+    """
+    if count <= 0:
+        return []
+    out: list[int] = []
+    for clause in re.split(r"[;.!?]", text):
+        if not _SPIKE_WORD.search(clause):
+            continue
+        for m in _ORDINAL_TOKEN.finditer(clause):
+            token = m.group(1).lower()
+            digits = re.match(r"\d+", token)
+            value = _ORDINALS.get(token) or (int(digits.group(0)) if digits else 0)
+            if 1 <= value <= count:
+                out.append(value - 1)
+    return out
+
+
+def _param_claims(beat: Any, comp: Any, position: tuple[int, int]) -> tuple[list[Finding], int]:
+    """Warns where prose names data that the beat's params do not contain.
+
+    Returns the findings and the number of claims actually examined, so a
+    correct claim counts as checked just like a failing one.
+    """
+    params = _validated_params(comp, beat)
+    if params is None:
+        return [], 0
+    findings: list[Finding] = []
+    examined = 0
+    if beat.component == "bounce_sequence":
+        values = list(params.values)
+        for field, text in _fields(beat):
+            indices = _spike_indices(text, len(values))
+            if not indices:
+                continue
+            examined += 1
+            top = set(sorted(range(len(values)), key=lambda i: values[i],
+                             reverse=True)[:len(indices)])
+            if set(indices) != top:
+                names = ", ".join(str(i + 1) for i in sorted(top))
+                findings.append(Finding(
+                    "warn", position, field,
+                    f'{field} says "{text.strip()[:120]}" but the largest '
+                    f"bounce_sequence values are at positions {names}",
+                ))
+    elif beat.component == "graph":
+        label = str(getattr(params, "label", "") or "")
+        fn = str(getattr(params, "fn", "") or "")
+        if _COST_LABEL.search(label) and _IDENTITY_LINE.match(fn.strip()):
+            examined += 1
+            for field, _text in _fields(beat):
+                findings.append(Finding(
+                    "warn", position, field,
+                    f'{field} label "{label}" describes cost but fn "{fn}" is a '
+                    "plain identity line: no cost data is computed",
+                ))
+    return findings, examined
+
+
+def _param_claim_looked(sentence: str, beat: Any, comp: Any) -> bool:
+    """Whether a param-vs-claim rule examined this sentence."""
+    params = _validated_params(comp, beat)
+    if params is None:
+        return False
+    if beat.component == "bounce_sequence":
+        return bool(_spike_indices(sentence, len(params.values)))
+    if beat.component == "graph":
+        label = str(getattr(params, "label", "") or "")
+        fn = str(getattr(params, "fn", "") or "")
+        return bool(_COST_LABEL.search(label) and _IDENTITY_LINE.match(fn.strip()))
+    return False
 
 
 def check_claims(sb: Any, registry: Any,
@@ -110,6 +218,10 @@ def scan_claims(sb: Any, registry: Any,
                             checked += 1
                         if finding is not None:
                             pending.append((1, m.start(), finding))
+            param_findings, param_checked = _param_claims(beat, comp, (si, bi))
+            checked += param_checked
+            for finding in param_findings:
+                pending.append((3, 0, finding))
             findings.extend((si, bi, *item) for item in pending)
     findings.sort(key=lambda item: item[:4])
     return checked, [item[4] for item in findings]
@@ -216,6 +328,8 @@ def unchecked_sentences(sb: Any, registry: Any,
                         continue
                     if comp is not None and _looked_at(sentence, beat.component, comp,
                                                        facts, has_peak_facts):
+                        continue
+                    if comp is not None and _param_claim_looked(sentence, beat, comp):
                         continue
                     if checked_numbers and (si, bi, sentence) in checked_numbers:
                         continue

@@ -1,12 +1,14 @@
 """Provider-based storyboard generation with a repair loop."""
 from __future__ import annotations
 
+from typing import Any
+
 from pydantic import BaseModel, Field, ValidationError
 
 from animatica.ai.base import AIProvider, StoryboardGenerationError, extract_json
 from animatica.ai.prompt import build_fill_prompt, build_outline_prompt, build_prompt
 from animatica.components.registry import ComponentRegistry
-from animatica.storyboard.models import Scene, Storyboard
+from animatica.storyboard.models import MAX_BEATS, MAX_SCENES, Scene, Storyboard
 from animatica.verify.facts import try_facts
 
 
@@ -99,20 +101,30 @@ def repair_with_facts(
     sb, fix_records = apply_fixes(sb, registry)
     sent_back = 0
     errors: list[str] = []
+    extra_errors: list[str] = []  # parse failures from a repair call, for the next prompt
     repair_error = ""
     for _ in range(max_verify_retries + 1):
         result = verify_storyboard(sb, registry)
-        errors = [_finding_error(sb, f, registry) for f in result.findings if f.severity == "error"]
-        if not errors or sent_back >= max_verify_retries:
+        real_errors = [_finding_error(sb, f, registry) for f in result.findings
+                       if f.severity == "error"]
+        errors = real_errors + extra_errors
+        if not real_errors or sent_back >= max_verify_retries:
             break
         sent_back += 1
         try:
             text = provider.generate(build_prompt(prompt, registry, errors, narrate=narrate), registry.json_schema())
-            candidate = Storyboard.model_validate(extract_json(text))
-        except Exception as exc:  # provider/parse failure stops the retries
+        except Exception as exc:  # a provider failure is not a parse failure: stop here
             sent_back -= 1  # a call that never produced a storyboard was not a send-back
             repair_error = f"repair error from {provider.name}: {type(exc).__name__}: {exc}"
             break
+        try:
+            candidate = Storyboard.model_validate(extract_json(text))
+        except Exception as exc:  # parse/validation failure: retry with the error text
+            extra_errors.append(f"parse error: {' '.join(str(exc).split())[:200]}")
+            repair_error = f"repair error from {provider.name}: {type(exc).__name__}: {exc}"
+            continue
+        extra_errors.clear()  # the parse problem is gone; report only real findings now
+        repair_error = ""
         if registry.validate(candidate):
             continue
         sb = candidate
@@ -162,6 +174,47 @@ class _Outline(BaseModel):
     scenes: list[_OutlineScene] = Field(min_length=1, max_length=12)
 
 
+def _fit_outline(data: Any) -> Any:
+    """Keep an outline within MAX_BEATS/MAX_SCENES before validation.
+
+    An oversized scene is split into consecutive scenes of at most 8 beats.
+    If that would exceed the scene cap, each original scene is truncated to
+    8 beats instead. Neither case burns a provider retry.
+    """
+    if not isinstance(data, dict) or not isinstance(data.get("scenes"), list):
+        return data
+    scenes: list[Any] = data["scenes"]
+    fits = True
+
+    def beat_list(scene: Any) -> list[Any] | None:
+        beats = scene.get("beats") if isinstance(scene, dict) else None
+        return beats if isinstance(beats, list) else None
+
+    total = 0
+    for scene in scenes:
+        beats = beat_list(scene)
+        if beats is None or len(beats) <= MAX_BEATS:
+            total += 1
+        else:
+            total += (len(beats) + MAX_BEATS - 1) // MAX_BEATS
+    if total > MAX_SCENES:  # splitting would break the scene cap: cap beats
+        fits = False
+
+    result: list[Any] = []
+    for scene in scenes:
+        beats = beat_list(scene)
+        if beats is None or len(beats) <= MAX_BEATS:
+            result.append(scene if fits else (dict(scene, beats=beats[:MAX_BEATS])
+                                              if beats is not None else scene))
+            continue
+        if not fits:
+            result.append(dict(scene, beats=beats[:MAX_BEATS]))
+            continue
+        result.extend(dict(scene, beats=beats[i:i + MAX_BEATS])
+                      for i in range(0, len(beats), MAX_BEATS))
+    return dict(data, scenes=result)
+
+
 def _outline_errors(outline: _Outline, registry: ComponentRegistry) -> list[str]:
     names = registry.names()
     errs = []
@@ -189,7 +242,7 @@ def generate_storyboard_two_stage(
     for _ in range(max_retries + 1):
         text = provider.generate(outline_prompt, registry.json_schema())
         try:
-            outline = _Outline.model_validate(extract_json(text))
+            outline = _Outline.model_validate(_fit_outline(extract_json(text)))
             errs = _outline_errors(outline, registry)
         except ValidationError as exc:
             errs = [f"parse error: field '{'.'.join(str(x) for x in e['loc']) or 'outline'}': {e['msg']}" for e in exc.errors()]
