@@ -66,6 +66,10 @@ def _time_panel(data: SpectrumData, colors, height: float = 2.1, width: float = 
     axis = Line([-width / 2, 0, 0], [width / 2, 0, 0], color=colors.muted, stroke_width=2)
     label = (Text("Time", font_size=MIN_FONT_SIZE, color=colors.muted)
              .next_to(axis, DOWN, buff=0.12).align_to(axis, RIGHT))
+    # The samples are drawn between -height/2 and +height/2, including at the
+    # right end of the axis. Parking the label a full half-height below the
+    # axis puts it past the curve's lowest point, so the two cannot touch.
+    label.shift(DOWN * (height / 2))
     return VGroup(axis, curve, label), curve, [axis, label]
 
 
