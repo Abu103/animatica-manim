@@ -1,4 +1,4 @@
-"""Merge fix F3: a provider error stops repair retries and warns in make_video."""
+"""Merge fixes F3/F4: provider errors in the repair loop, narration-only degradation."""
 import json
 from typing import ClassVar
 
@@ -11,6 +11,7 @@ from animatica.storyboard.models import Storyboard
 REGISTRY = default_registry()
 BAD_CAPTION = "This graph shows the frequency domain of the wave."
 BAD_NARRATION = "The frequency spectrum appears here."
+GOOD = "This graph plots a sine wave over time."
 
 
 def _sb(caption, narration):
@@ -94,3 +95,29 @@ def test_make_video_warns_on_repair_error_and_writes_report(monkeypatch, tmp_pat
     report = json.loads((out / "report.json").read_text(encoding="utf-8"))
     assert any("repair error" in w for w in report["warnings"]), report["warnings"]
     assert report["verification"]["sent_back"] == 0
+
+
+class NeverCalledProvider:
+    name = "never"
+    model = "m"
+
+    def generate(self, prompt, schema):
+        raise AssertionError("no send-back when max_verify_retries=0")
+
+
+def test_caption_only_error_keeps_narration():
+    sb, info = repair_with_facts(
+        "topic", _sb(BAD_CAPTION, GOOD), NeverCalledProvider(), REGISTRY,
+        max_verify_retries=0,
+    )
+    assert sb.scenes[0].beats[0].narration == GOOD
+    assert info["degraded"] == []
+
+
+def test_narration_error_blanks_narration():
+    sb, info = repair_with_facts(
+        "topic", _sb(GOOD, BAD_NARRATION), NeverCalledProvider(), REGISTRY,
+        max_verify_retries=0,
+    )
+    assert sb.scenes[0].beats[0].narration == ""
+    assert info["degraded"] == [[0, 0]]

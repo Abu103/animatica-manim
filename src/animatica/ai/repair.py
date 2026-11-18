@@ -119,8 +119,12 @@ def repair_with_facts(
         sb, more = apply_fixes(sb, registry)
         fix_records.extend(more)
 
-    # End state: degrade only the beats that still have an error finding.
-    surviving = [f for f in verify_storyboard(sb, registry).findings if f.severity == "error"]
+    # End state: degrade only narration claims that still fail. A caption
+    # finding is left as written and stays failed in the report.
+    surviving = [
+        f for f in verify_storyboard(sb, registry).findings
+        if f.severity == "error" and f.field == "narration"
+    ]
     degraded: list[list[int]] = []
     if surviving:
         for f in surviving:
