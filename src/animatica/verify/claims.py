@@ -21,7 +21,7 @@ _DOMAIN_PATTERN = re.compile(
 #: P1: a signal_spectrum axis is cycles per window, not hertz. A word match
 #: (case-insensitive) warns without blocking the run.
 _HERTZ_PATTERN = re.compile(
-    r"\bhertz\b|\bkilohertz\b|\bmegahertz\b|\bHz\b|\bkHz\b|\bMHz\b",
+    r"\bhertz\b|\bkilohertz\b|\bmegahertz\b|\bgigahertz\b|\bHz\b|\bkHz\b|\bMHz\b|\bGHz\b",
     re.IGNORECASE,
 )
 
@@ -61,7 +61,8 @@ _SPIKE_WORD = re.compile(
 _COST_LABEL = re.compile(r"cost|per\s+append", re.IGNORECASE)
 _IDENTITY_LINE = re.compile(
     r"^(?:y\s*=|f\s*\(\s*x\s*\)\s*=|g\s*\(\s*x\s*\)\s*=)?\s*"
-    r"(?:x|[01]\s*\*\s*x|x\s*\*\s*[01]|x\s*\+\s*0|0\s*\+\s*x|x\s*-\s*0|x\s*/\s*1)\s*$",
+    r"(?:\(?\s*x\s*\)?|(?:[01](?:\.0+)?)\s*\*\s*x|x\s*\*\s*[01](?:\.0+)?|"
+    r"x\s*\+\s*0(?:\.0+)?|0(?:\.0+)?\s*\+\s*x|x\s*-\s*0(?:\.0+)?|x\s*/\s*1(?:\.0+)?)\s*$",
     re.IGNORECASE)
 
 
@@ -82,31 +83,44 @@ def _validated_params(comp: Any, beat: Any) -> Any:
 
 
 def _spike_indices(text: str, count: int) -> list[int]:
-    """0-based positions named by an ordinal spike claim, or []."""
-    if count <= 0 or not _SPIKE_WORD.search(text):
+    """0-based positions named by a spike claim in the clause that spikes.
+
+    Ordinals in unrelated clauses ("The first section sets up the problem;
+    the eighth term spikes") are not spike claims and are ignored.
+    """
+    if count <= 0:
         return []
     out: list[int] = []
-    for m in _ORDINAL_TOKEN.finditer(text):
-        token = m.group(1).lower()
-        digits = re.match(r"\d+", token)
-        value = _ORDINALS.get(token) or (int(digits.group(0)) if digits else 0)
-        if 1 <= value <= count:
-            out.append(value - 1)
+    for clause in re.split(r"[;.!?]", text):
+        if not _SPIKE_WORD.search(clause):
+            continue
+        for m in _ORDINAL_TOKEN.finditer(clause):
+            token = m.group(1).lower()
+            digits = re.match(r"\d+", token)
+            value = _ORDINALS.get(token) or (int(digits.group(0)) if digits else 0)
+            if 1 <= value <= count:
+                out.append(value - 1)
     return out
 
 
-def _param_claims(beat: Any, comp: Any, position: tuple[int, int]) -> list[Finding]:
-    """Warns where prose names data that the beat's params do not contain."""
+def _param_claims(beat: Any, comp: Any, position: tuple[int, int]) -> tuple[list[Finding], int]:
+    """Warns where prose names data that the beat's params do not contain.
+
+    Returns the findings and the number of claims actually examined, so a
+    correct claim counts as checked just like a failing one.
+    """
     params = _validated_params(comp, beat)
     if params is None:
-        return []
+        return [], 0
     findings: list[Finding] = []
+    examined = 0
     if beat.component == "bounce_sequence":
         values = list(params.values)
         for field, text in _fields(beat):
             indices = _spike_indices(text, len(values))
             if not indices:
                 continue
+            examined += 1
             top = set(sorted(range(len(values)), key=lambda i: values[i],
                              reverse=True)[:len(indices)])
             if set(indices) != top:
@@ -120,13 +134,14 @@ def _param_claims(beat: Any, comp: Any, position: tuple[int, int]) -> list[Findi
         label = str(getattr(params, "label", "") or "")
         fn = str(getattr(params, "fn", "") or "")
         if _COST_LABEL.search(label) and _IDENTITY_LINE.match(fn.strip()):
+            examined += 1
             for field, _text in _fields(beat):
                 findings.append(Finding(
                     "warn", position, field,
                     f'{field} label "{label}" describes cost but fn "{fn}" is a '
                     "plain identity line: no cost data is computed",
                 ))
-    return findings
+    return findings, examined
 
 
 def _param_claim_looked(sentence: str, beat: Any, comp: Any) -> bool:
@@ -203,8 +218,9 @@ def scan_claims(sb: Any, registry: Any,
                             checked += 1
                         if finding is not None:
                             pending.append((1, m.start(), finding))
-            for finding in _param_claims(beat, comp, (si, bi)):
-                checked += 1
+            param_findings, param_checked = _param_claims(beat, comp, (si, bi))
+            checked += param_checked
+            for finding in param_findings:
                 pending.append((3, 0, finding))
             findings.extend((si, bi, *item) for item in pending)
     findings.sort(key=lambda item: item[:4])

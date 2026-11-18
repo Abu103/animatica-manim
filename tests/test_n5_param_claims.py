@@ -87,3 +87,28 @@ def test_param_claim_sentences_are_not_listed_as_unchecked():
     for sb in [_bounce(caption="The second and fifth terms spike."), _graph()]:
         sentences = [s for _, s in unchecked_sentences(sb, default_registry())]
         assert not any("Cost per append" in s or "spike" in s for s in sentences)
+
+
+def test_unrelated_ordinal_in_another_clause_is_ignored():
+    # "first section" is not a spike claim; only ordinals in the clause
+    # that actually mentions spiking are checked.
+    sb = _bounce(caption="The first section sets up the problem; the eighth term spikes.")
+    assert _findings(sb) == []
+
+
+@pytest.mark.parametrize("fn", ["1.0*x", "(x)", "x + 0.0"])
+def test_more_identity_spellings_warn(fn):
+    findings = _findings(_graph(fn=fn))
+    assert len(findings) == 1 and findings[0].severity == "warn"
+
+
+def test_correct_param_claims_still_count_as_checked():
+    from animatica.verify.claims import scan_claims
+
+    checked, findings = scan_claims(_bounce(caption="The fourth and eighth terms spike."),
+                                    default_registry())
+    assert findings == []
+    assert checked >= 1
+    checked, findings = scan_claims(_graph(), default_registry())
+    assert len(findings) == 1  # cost label over an identity line warns
+    assert checked >= 1

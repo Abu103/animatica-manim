@@ -45,8 +45,9 @@ _MULTIPLIERS = {"k": 1e3, "K": 1e3, "M": 1e6, "B": 1e9}
 #: size of a signed decrease ("fell by 4", "down 4"), so a param of -4
 #: grounds it. Applied only to that number, never to numbers elsewhere.
 _DECREASE_BEFORE = re.compile(
-    r"(?:fell|fall|dropped|drop|decreased|decrease|declined|decline|slipped|down|lost|lose)"
-    r"\b(?:\s+by)?\s+$",
+    r"\b(?:fell|fall|dropped|drop|decreased|decrease|declined|decline|slipped|down|lost|lose)"
+    r"\b(?:\s+\w+ly)?(?:\s+by)?\s+$"
+    r"|\b(?:a\s+)?(?:drop|decline|decrease)\s+of\s+$",
     re.IGNORECASE,
 )
 

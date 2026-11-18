@@ -6,6 +6,8 @@ phrase; positive-vs-negative matching stays strict everywhere else.
 """
 from __future__ import annotations
 
+import pytest
+
 from animatica.components.registry import default_registry
 from animatica.storyboard.models import Beat, Scene, Storyboard
 from animatica.verify.numbers import check_numbers
@@ -55,11 +57,20 @@ def test_decrease_phrasing_does_not_accept_a_positive_param():
 
 
 def test_other_numbers_in_the_same_sentence_stay_strict():
-    # Only the number right after the decrease phrase gets the sign
-    # relaxation; the second "4" has no phrase before it.
     sb = Storyboard(title="t", scenes=[Scene(beats=[Beat(
         component="stat_callout", params={"value": "-4", "label": "change"},
         caption="it fell by 4, then settled at 4",
     )])])
     findings = _findings(sb)
     assert len(findings) == 1 and "4" in findings[0].message
+
+
+@pytest.mark.parametrize("caption", ["it fell sharply by 4", "there was a drop of 4"])
+def test_adverb_and_drop_of_phrases_ground_a_signed_param(caption):
+    assert _findings(_sb(caption=caption)) == []
+
+
+def test_breakdown_is_not_a_decrease_phrase():
+    # "down" inside "breakdown" is part of a word, not phrasing.
+    findings = _findings(_sb(caption="the breakdown 4 is shown"))
+    assert len(findings) == 1

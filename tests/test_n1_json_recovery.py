@@ -111,9 +111,61 @@ def test_repair_with_facts_retries_with_the_parse_error():
     provider = _Provider("not json at all", _fixed_storyboard())
     sb, info = repair_with_facts("topic", _bad_number_storyboard(), provider,
                                  default_registry())
-    # The malformed parse attempt consumed a send-back; the next call then
-    # produced the corrected caption, so two send-backs were used in total.
     assert info["sent_back"] == 2
     assert info["repair_error"] == ""
     assert sb.scenes[0].beats[0].caption == "grew 12%"
     assert "parse error" in provider.prompts[1]
+
+
+def test_trailing_prose_with_another_object_is_ignored():
+    assert extract_json('{"a": 1} here is another dict {"b": 2}') == {"a": 1}
+
+
+def test_recovery_does_not_corrupt_string_arrays():
+    text = '{"a": ["x","y"], "b" "z"}'
+    with pytest.raises(json.JSONDecodeError, match="Expecting ':' delimiter"):
+        json.loads(text)
+    assert extract_json(text) == {"a": ["x", "y"], "b": "z"}
+
+
+def test_provider_error_stops_repair_retries():
+    class Exploding:
+        name = "exploding"
+        calls = 0
+
+        def generate(self, prompt, schema):
+            self.calls += 1
+            raise RuntimeError("provider offline")
+
+    provider = Exploding()
+    _, info = repair_with_facts("topic", _bad_number_storyboard(), provider,
+                                default_registry())
+    assert provider.calls == 1
+    assert "provider offline" in info["repair_error"]
+    assert info["sent_back"] == 0
+
+
+def test_parse_error_is_not_repeated_after_a_parsed_reply():
+    invalid_component = (
+        '{"version":"1","title":"T","scenes":[{"beats":['
+        '{"component":"stat_callout","params":{"value":"12%","label":"g"},'
+        '"caption":"grew 40%"},'
+        '{"component":"nope","params":{}}]}]}'
+    )
+
+    class Provider:
+        name = "fake"
+        calls = 0
+        prompts: list[str] = []
+
+        def generate(self, prompt, schema):
+            self.prompts.append(prompt)
+            self.calls += 1
+            return ["no json at all", invalid_component, _fixed_storyboard()][self.calls - 1]
+
+    provider = Provider()
+    repair_with_facts("topic", _bad_number_storyboard(), provider,
+                      default_registry(), max_verify_retries=3)
+    assert provider.calls == 3
+    assert "parse error" in provider.prompts[1]
+    assert "parse error" not in provider.prompts[2]

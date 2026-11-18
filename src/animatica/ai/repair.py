@@ -113,15 +113,20 @@ def repair_with_facts(
         sent_back += 1
         try:
             text = provider.generate(build_prompt(prompt, registry, errors, narrate=narrate), registry.json_schema())
+        except Exception as exc:  # a provider failure is not a parse failure: stop here
+            sent_back -= 1  # a call that never produced a storyboard was not a send-back
+            repair_error = f"repair error from {provider.name}: {type(exc).__name__}: {exc}"
+            break
+        try:
             candidate = Storyboard.model_validate(extract_json(text))
-        except Exception as exc:  # a parse failure is a retry, not the end of the loop
+        except Exception as exc:  # parse/validation failure: retry with the error text
             extra_errors.append(f"parse error: {' '.join(str(exc).split())[:200]}")
             repair_error = f"repair error from {provider.name}: {type(exc).__name__}: {exc}"
             continue
-        if registry.validate(candidate):
-            continue
         extra_errors.clear()  # the parse problem is gone; report only real findings now
         repair_error = ""
+        if registry.validate(candidate):
+            continue
         sb = candidate
         sb, more = apply_fixes(sb, registry)
         fix_records.extend(more)

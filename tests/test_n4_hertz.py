@@ -21,7 +21,7 @@ def _sb(caption="", component="signal_spectrum", params=None):
     ])])
 
 
-@pytest.mark.parametrize("word", ["Hz", "kHz", "MHz", "kilohertz", "megahertz", "hertz"])
+@pytest.mark.parametrize("word", ["Hz", "kHz", "MHz", "GHz", "kilohertz", "megahertz", "gigahertz", "hertz"])
 def test_every_hertz_spelling_warns(word):
     findings = check_claims(_sb(caption=f"the peak sits at 3 {word}"), default_registry())
     assert len(findings) == 1

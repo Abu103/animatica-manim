@@ -109,7 +109,7 @@ def _recover_json(text: str) -> str | None:
                 j = i + 1
                 while j < len(text) and text[j].isspace():
                     j += 1
-                if before_string in "{," and j < len(text) and text[j] not in ":,}":
+                if before_string in "{," and j < len(text) and text[j] not in ":,]}":
                     out.append(":")
                 prev = '"'
             continue
@@ -180,6 +180,9 @@ def extract_json(text: str) -> dict:
     start = text.find("{")
     if start == -1:
         raise ValueError("no JSON object found in provider output")
+    end = _balanced_end(text, start)
+    if end is not None:
+        return _loads_object(text[start:end])
     body = text[start:].rstrip()
     try:
         return _loads_object(body)
