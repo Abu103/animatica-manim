@@ -309,6 +309,9 @@ def make_video(
             fix_records = repair_info["fixes"]
             sent_back = repair_info["sent_back"]
             degraded = repair_info["degraded"]
+            repair_error = repair_info.get("repair_error", "")
+            if repair_error:
+                warnings.append(f"verify: {repair_error}")
         else:
             sb, fix_records = apply_fixes(sb, registry)
             verify_result = verify_storyboard(sb, registry)

@@ -99,17 +99,20 @@ def repair_with_facts(
     sb, fix_records = apply_fixes(sb, registry)
     sent_back = 0
     errors: list[str] = []
+    repair_error = ""
     for _ in range(max_verify_retries + 1):
         result = verify_storyboard(sb, registry)
         errors = [_finding_error(sb, f, registry) for f in result.findings if f.severity == "error"]
         if not errors or sent_back >= max_verify_retries:
             break
         sent_back += 1
-        text = provider.generate(build_prompt(prompt, registry, errors, narrate=narrate), registry.json_schema())
         try:
+            text = provider.generate(build_prompt(prompt, registry, errors, narrate=narrate), registry.json_schema())
             candidate = Storyboard.model_validate(extract_json(text))
-        except Exception:  # a bad repair reply just burns one verify retry
-            continue
+        except Exception as exc:  # provider/parse failure stops the retries
+            sent_back -= 1  # a call that never produced a storyboard was not a send-back
+            repair_error = f"repair error from {provider.name}: {type(exc).__name__}: {exc}"
+            break
         if registry.validate(candidate):
             continue
         sb = candidate
@@ -132,6 +135,7 @@ def repair_with_facts(
         "sent_back": sent_back,
         "degraded": degraded,
         "errors": errors,
+        "repair_error": repair_error,
     }
 
 
