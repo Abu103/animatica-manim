@@ -20,7 +20,10 @@ _DOMAIN_PATTERN = re.compile(
 
 #: P1: a signal_spectrum axis is cycles per window, not hertz. A word match
 #: (case-insensitive) warns without blocking the run.
-_HERTZ_PATTERN = re.compile(r"\bhertz\b|\bHz\b", re.IGNORECASE)
+_HERTZ_PATTERN = re.compile(
+    r"\bhertz\b|\bkilohertz\b|\bmegahertz\b|\bHz\b|\bkHz\b|\bMHz\b",
+    re.IGNORECASE,
+)
 
 #: The pattern table. Each row: (regex, component gate or None for "any
 #: component that produced the row's fact kind", fact kind, severity).
