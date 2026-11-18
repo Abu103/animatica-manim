@@ -19,7 +19,7 @@ from animatica.progress import ProgressFn, ProgressTracker
 from animatica.report import write_report
 from animatica.storyboard.cache import StoryboardCache
 from animatica.storyboard.lint import lint_storyboard
-from animatica.storyboard.models import Storyboard, dump_storyboard, load_storyboard
+from animatica.storyboard.models import Storyboard, dump_storyboard
 
 # Frame lint is a non-fatal post-render quality check. Imported here so the
 # pipeline can wire it into ``make_video`` without the CLI knowing about PyAV.
@@ -239,8 +239,12 @@ def make_video(
     cache = None
     key = None
     fresh_model = False  # only a fresh model answer may be sent back / degraded
+    generation_notes: list[str] = []
     if storyboard_path is not None:
-        sb = load_storyboard(Path(storyboard_path))
+        from animatica.storyboard.clamp import load_storyboard_clamped  # noqa: PLC0415
+
+        sb, clamp_notes = load_storyboard_clamped(Path(storyboard_path))
+        warnings.extend(clamp_notes)
         provider_used = "none (--from storyboard.json)"
     else:
         if not prompt or not str(prompt).strip():
@@ -273,14 +277,17 @@ def make_video(
                 provider_used = f"{prov.name} (cached)"
             else:
                 sb = (generate_storyboard_two_stage(prompt, prov, registry, narrate=narrate,
-                                                    debug=debug, out_dir=out_dir) if two_stage
+                                                    debug=debug, out_dir=out_dir,
+                                                    notes=generation_notes) if two_stage
                       else generate_storyboard(prompt, prov, registry, narrate=narrate,
-                                               debug=debug, out_dir=out_dir))
+                                               debug=debug, out_dir=out_dir,
+                                               notes=generation_notes))
                 fresh_model = True  # cache the final storyboard only after verify/repair
 
     if storyboard_path is None and not provider_used.startswith("template"):
         sb, lint_notes = lint_storyboard(sb)  # model output only; never touch a hand-written --from file
         warnings.extend(lint_notes)
+    warnings.extend(generation_notes)  # local length fixes from provider output
 
     # Generation guidance applies to any storyboard: flag captions that
     # describe production mechanics instead of teaching, and comparisons
@@ -316,6 +323,7 @@ def make_video(
             repair_error = repair_info.get("repair_error", "")
             if repair_error:
                 warnings.append(f"verify: {repair_error}")
+            warnings.extend(repair_info.get("clamps", []))
         else:
             # --from and template storyboards are never mechanically changed:
             # they are verified for warnings only, and fixed == 0 in the report.

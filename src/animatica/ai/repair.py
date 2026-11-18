@@ -10,6 +10,7 @@ from animatica.ai.base import AIProvider, StoryboardGenerationError, extract_jso
 from animatica.ai.debug_dump import dump_parse_failure
 from animatica.ai.prompt import build_fill_prompt, build_outline_prompt, build_prompt
 from animatica.components.registry import ComponentRegistry
+from animatica.storyboard.clamp import clamp_lengths
 from animatica.storyboard.models import MAX_BEATS, MAX_SCENES, Scene, Storyboard
 from animatica.verify.facts import try_facts
 
@@ -23,6 +24,7 @@ def generate_storyboard(
     *,
     debug: bool = False,
     out_dir: Path | None = None,
+    notes: list[str] | None = None,
 ) -> Storyboard:
     """Ask `provider` for a storyboard, repairing parse/validation failures.
 
@@ -38,6 +40,9 @@ def generate_storyboard(
         text = provider.generate(current_prompt, schema)
         try:
             data = extract_json(text)
+            data, clamps = clamp_lengths(data)
+            if notes is not None:
+                notes.extend(clamps)
             sb = Storyboard.model_validate(data)
         except ValidationError as exc:  # well-formed JSON, wrong shape -> repair
             dump_parse_failure(text, out_dir=out_dir, stage="storyboard", scene=0,
@@ -96,6 +101,7 @@ def repair_with_facts(
     max_verify_retries: int = 2,
     debug: bool = False,
     out_dir: Path | None = None,
+    notes: list[str] | None = None,
 ) -> tuple[Storyboard, dict]:
     """Generate -> lint -> verify -> fixes -> send back -> degrade, for models.
 
@@ -110,6 +116,7 @@ def repair_with_facts(
     from animatica.verify.fix import apply_fixes  # noqa: PLC0415
 
     sb, fix_records = apply_fixes(sb, registry)
+    clamps_all: list[str] = []
     sent_back = 0
     errors: list[str] = []
     extra_errors: list[str] = []  # parse failures from a repair call, for the next prompt
@@ -129,7 +136,9 @@ def repair_with_facts(
             repair_error = f"repair error from {provider.name}: {type(exc).__name__}: {exc}"
             break
         try:
-            candidate = Storyboard.model_validate(extract_json(text))
+            candidate_data = extract_json(text)
+            candidate_data, clamps = clamp_lengths(candidate_data)
+            candidate = Storyboard.model_validate(candidate_data)
         except Exception as exc:  # parse/validation failure: retry with the error text
             dump_parse_failure(text, out_dir=out_dir, stage="repair", scene=0,
                                attempt=attempt, error=exc, debug=debug)
@@ -140,6 +149,7 @@ def repair_with_facts(
         repair_error = ""
         if registry.validate(candidate):
             continue
+        clamps_all.extend(clamps)
         sb = candidate
         sb, more = apply_fixes(sb, registry)
         fix_records.extend(more)
@@ -165,6 +175,7 @@ def repair_with_facts(
         "degraded": degraded,
         "errors": errors,
         "repair_error": repair_error,
+        "clamps": clamps_all,
     }
 
 
@@ -247,6 +258,7 @@ def generate_storyboard_two_stage(
     *,
     debug: bool = False,
     out_dir: Path | None = None,
+    notes: list[str] | None = None,
 ) -> Storyboard:
     """Stage 1: outline (component+intent per beat). Stage 2: fill params per scene,
     each fill validated and retried alone. Raises StoryboardGenerationError with the
@@ -288,6 +300,9 @@ def generate_storyboard_two_stage(
             text = provider.generate(scene_prompt, registry.json_schema())
             try:
                 data = extract_json(text)
+                data, clamps = clamp_lengths(data)
+                if notes is not None:
+                    notes.extend(clamps)
                 sb = Storyboard.model_validate(data)
                 errs = registry.validate(sb)
             except ValidationError as exc:
