@@ -180,6 +180,7 @@ def build_outline_prompt(request: str, registry: ComponentRegistry, errors: list
         "",
         "Rules:",
         f"- 1 to {MAX_SCENES} scenes; each scene has 1 to {MAX_BEATS} beats.",
+        f"- Hard limit: max {MAX_BEATS} beats per scene; if you planned more, split into more scenes.",
         '- "version" must be the string "1". No params yet -- only component and intent per beat.',
         "- Use ONLY these components: " + ", ".join(sorted(registry.json_schema())),
         "- Start with title_card, then definition/equation, then the demo, then at most one summary.",
