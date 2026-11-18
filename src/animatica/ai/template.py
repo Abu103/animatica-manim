@@ -36,6 +36,34 @@ _TEMPLATES: list[dict] = [
         },
     },
     {
+        # First match wins: keep engine keywords ahead of the generic graph/plot rule,
+        # but after title_card, which the TUI tests use as the first template.
+        "name": "signal_spectrum",
+        "example": "explain the Fourier transform with two sine waves",
+        "keywords": ["fourier", "frequency", "harmonic"],
+        "storyboard": {
+            "version": "1",
+            "title": "Two Sine Waves and Their Spectrum",
+            "scenes": [
+                {
+                    "beats": [
+                        {
+                            "component": "signal_spectrum",
+                            "params": {
+                                "title": "Two Sine Waves",
+                                "waves": [
+                                    {"freq": 3, "amp": 1.0},
+                                    {"freq": 5, "amp": 0.5},
+                                ],
+                            },
+                            "caption": "Two sine waves and the spectrum they produce.",
+                        }
+                    ]
+                }
+            ],
+        },
+    },
+    {
         "name": "function_graph",
         "example": "graph of sin(x)",
         "keywords": ["graph", "plot", "function", "sin(x)"],

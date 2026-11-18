@@ -29,6 +29,7 @@ PROMPTS = [
 #: name (with underscores as spaces), or the intent that names it. The first
 #: rule that matches a prompt wins, so the specific ones come first.
 _RULES: list[tuple[str, str]] = [
+    ("fourier", "signal_spectrum"),
     ("title card", "title_card"),
     ("theorem", "equation"),
     ("steps to", "steps_list"),

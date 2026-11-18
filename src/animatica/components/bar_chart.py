@@ -11,14 +11,21 @@ from animatica.components._draw import caption_band_top as caption_band_top_of
 from animatica.components._scale import NOTES, Scale, scaled_heights
 from animatica.components.base import Component
 from animatica.storyboard.models import MAX_TEXT
+from animatica.verify.facts import Fact, format_number
 
 MAX_BARS = 12
 BASELINE_Y = -2.2
 MAX_BAR_HEIGHT = 3.6
 
 
+def _data(p: BaseModel) -> list[tuple[str, float]]:
+    """The labels and values play() draws from, paired once for facts and drawing."""
+    return list(zip(p.labels, p.values))  # type: ignore[attr-defined]
+
+
 class BarChart(Component):
     name: ClassVar[str] = "bar_chart"
+    domain: ClassVar[str] = "plain axes"
 
     class Params(BaseModel):
         title: str = Field(max_length=MAX_TEXT)
@@ -42,17 +49,41 @@ class BarChart(Component):
     def fallback_text(self, p: BaseModel) -> str:
         return "\n".join([p.title] + [f"{a}: {b:g}" for a, b in zip(p.labels, p.values)])  # type: ignore[attr-defined]
 
+    def facts(self, p: BaseModel) -> list[Fact]:
+        data = _data(p)
+        total = sum(v for _, v in data)
+        # max()/min() keep the first item on a tie: the first label wins.
+        largest_label, largest = max(data, key=lambda pair: pair[1])
+        smallest_label, smallest = min(data, key=lambda pair: pair[1])
+        facts = [
+            Fact("total", "bars", total, f"bars total {format_number(total)}"),
+            Fact("extremum", "bars", (largest_label, largest),
+                 f"largest bar is {largest_label} at {format_number(largest)}"),
+            Fact("extremum", "bars", (smallest_label, smallest),
+                 f"smallest bar is {smallest_label} at {format_number(smallest)}"),
+        ]
+        if smallest > 0:
+            ratio = round(largest / smallest, 2)
+            facts.append(Fact("ratio", "bars", ratio,
+                              f"largest bar is {format_number(ratio)} times the smallest"))
+        facts.extend(
+            Fact("value", "bars", (label, value), f"{label} is {format_number(value)}")
+            for label, value in data
+        )
+        return facts
+
     def play(self, scene, p, colors) -> None:
         from manim import DOWN, RIGHT, UP, FadeIn, GrowFromEdge, LaggedStart, Line, Rectangle, Text, VGroup, config
         prepare(scene, colors)
-        n = len(p.values)
+        data = _data(p)
+        n = len(data)
         total = self.duration(p)
         slot = 11.0 / n
         width = min(1.4, slot * 0.7)
         xs = [(-5.5 + slot * (i + 0.5)) for i in range(n)]
-        heights, used_scale = scaled_heights(list(p.values), MAX_BAR_HEIGHT, 0.12, p.scale)
+        heights, used_scale = scaled_heights([v for _, v in data], MAX_BAR_HEIGHT, 0.12, p.scale)
         bars, vals, cats = [], [], []
-        for i, (lab, v) in enumerate(zip(p.labels, p.values)):
+        for i, (lab, v) in enumerate(data):
             h = heights[i]
             bar = Rectangle(width=width, height=h, stroke_width=0, fill_opacity=1.0,
                             fill_color=colors.accent if i % 2 == 0 else colors.accent2)

@@ -26,6 +26,8 @@ from typing import Callable
 import av
 import numpy as np
 
+from animatica.components._draw import FADE_OUT
+
 __all__ = [
     "FrameLintConfig",
     "FrameFinding",
@@ -235,6 +237,37 @@ def _margin_band_mask(mask: np.ndarray, margin_y: int, margin_x: int) -> np.ndar
     return band
 
 
+# ---------------------------------------------------------------- sampling
+
+
+def _fade_out_windows(beats: list[tuple[int, float, float]]) -> list[tuple[float, float]]:
+    """The final FADE_OUT seconds of each beat, where the picture dims out."""
+    return [(max(start, end - FADE_OUT), end) for _, start, end in beats]
+
+
+def _sample_times(
+    duration: float,
+    sample_fps: float,
+    beats: list[tuple[int, float, float]] | None = None,
+) -> list[float]:
+    """Timestamps at which full frame analysis runs.
+
+    A sample inside a beat's final FADE_OUT window is skipped: a dim, mid-fade
+    equation is not a low-contrast defect, and an almost-blank frame at the
+    tail of a fade is not an empty beat. The sample interval and the fade
+    length are the only numbers involved -- no detection threshold changes.
+    """
+    interval = 1.0 / sample_fps
+    windows = _fade_out_windows(beats or [])
+    times: list[float] = []
+    t = 0.0
+    while t < duration:
+        if not any(lo <= t < hi for lo, hi in windows):
+            times.append(t)
+        t += interval
+    return times
+
+
 # ---------------------------------------------------------------- main entry
 
 def lint_video(
@@ -315,9 +348,11 @@ def lint_video(
         beats = _beats(list(scene_durations), beat_durations)
         best_coverage: dict[int, tuple[float, int, float, int]] = {}
 
-        # True sampling: analyze only every sample_interval seconds.
+        # True sampling: analyze only the allowed sample times. A sample in a
+        # beat's final FADE_OUT window never gets full per-pixel analysis.
         sample_interval = 1.0 / config.sample_fps
-        next_sample_ts = 0.0
+        sample_queue = iter(_sample_times(duration, config.sample_fps, beats))
+        next_sample_ts = next(sample_queue, None)
 
         # Time-based dedup: don't report the same kind of finding more than
         # once per sample_interval seconds.
@@ -367,7 +402,7 @@ def lint_video(
             scene_idx = _scene_at(duration_list, ts) if duration_list else None
 
             # Full per-pixel analysis only on sampled frames.
-            if ts < next_sample_ts:
+            if next_sample_ts is None or ts < next_sample_ts:
                 # Non-sampled frame: cheap subsampled emptiness check only,
                 # sufficient for blank-interval tracking.
                 rgb = frame.to_ndarray(format="rgb24")
@@ -383,7 +418,7 @@ def lint_video(
                 analyzed += 1
                 continue
 
-            next_sample_ts += sample_interval
+            next_sample_ts = next(sample_queue, None)
 
             # Sampled frame: full per-pixel analysis.
             rgb = frame.to_ndarray(format="rgb24")

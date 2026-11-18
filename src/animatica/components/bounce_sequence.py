@@ -40,6 +40,7 @@ def parabola_point(start: tuple[float, float], end: tuple[float, float], t: floa
 
 class BounceSequence(Component):
     name: ClassVar[str] = "bounce_sequence"
+    domain: ClassVar[str] = "plain axes"
 
     class Params(BaseModel):
         title: str = Field(max_length=MAX_TEXT)

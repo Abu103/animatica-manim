@@ -211,6 +211,8 @@ def make_video(
     theme: str | None = None,
     narrate: bool = False,
     voice: str | None = None,
+    verify: bool = True,
+    strict: bool = False,
     on_progress: ProgressFn | None = None,
 ) -> MakeResult:
     render_backend = resolve_backend(backend)  # fail fast: before any file write or LLM call
@@ -224,12 +226,18 @@ def make_video(
 
     # One unit per post-processing step the user actually asked for; the render
     # backend contributes its own scene units and fixes the total when it starts.
+    # Verify is not a post unit: it runs before the render declares its scale,
+    # and counting it here would make progress.done go backwards.
     post_units = 1 + (1 if encoder != "auto" else 0) + (1 if frame_lint else 0) + (1 if narrate else 0)
     progress = ProgressTracker(on_progress, post_units=post_units)
 
     progress.announce("storyboard", "resolving storyboard")
 
     # ---- storyboard: cache -> template -> provider ----
+    prov = None
+    cache = None
+    key = None
+    fresh_model = False  # only a fresh model answer may be sent back / degraded
     if storyboard_path is not None:
         sb = load_storyboard(Path(storyboard_path))
         provider_used = "none (--from storyboard.json)"
@@ -265,7 +273,7 @@ def make_video(
             else:
                 sb = (generate_storyboard_two_stage(prompt, prov, registry, narrate=narrate) if two_stage
                       else generate_storyboard(prompt, prov, registry, narrate=narrate))
-                cache.put(key, sb)
+                fresh_model = True  # cache the final storyboard only after verify/repair
 
     if storyboard_path is None and not provider_used.startswith("template"):
         sb, lint_notes = lint_storyboard(sb)  # model output only; never touch a hand-written --from file
@@ -280,6 +288,70 @@ def make_video(
     errors = registry.validate(sb)
     if errors:
         raise ValueError("invalid storyboard: " + "; ".join(errors[:6]))
+
+    # ---- compute-and-verify: fixes -> (models only) repair loop -> report ----
+    # Runs for template, --from and model-generated storyboards alike. A beat
+    # whose facts fail is unchecked, never passed. Only a fresh model answer
+    # may be sent back or degraded; --from and templates are warn-only.
+    verification: dict | None = None
+    fixes: list = []
+    if verify:
+        from animatica.verify import verify_storyboard  # noqa: PLC0415 - avoid a render-time import cycle
+
+        sent_back = 0
+        degraded: list[list[int]] = []
+        if fresh_model and prov is not None:
+            from animatica.ai.repair import repair_with_facts  # noqa: PLC0415
+
+            sb, repair_info = repair_with_facts(prompt, sb, prov, registry, narrate=narrate)
+            verify_result = repair_info["verify"]
+            fix_records = repair_info["fixes"]
+            sent_back = repair_info["sent_back"]
+            degraded = repair_info["degraded"]
+            repair_error = repair_info.get("repair_error", "")
+            if repair_error:
+                warnings.append(f"verify: {repair_error}")
+        else:
+            # --from and template storyboards are never mechanically changed:
+            # they are verified for warnings only, and fixed == 0 in the report.
+            fix_records = []
+            verify_result = verify_storyboard(sb, registry)
+
+        for f in verify_result.findings:
+            warnings.append(
+                f"verify: scene {f.beat[0]} beat {f.beat[1]} {f.field}: {f.message}"
+            )
+        fixes = [f.as_dict() for f in fix_records]
+        verification = {
+            "checked": verify_result.checked,
+            "passed": verify_result.checked - verify_result.by_severity["error"],
+            "fixed": len(fix_records),
+            "fixes": list(fixes),
+            "sent_back": sent_back,
+            "degraded": degraded,
+            # Warns are shown in the report only (design 5.3).
+            "failed": verify_result.by_severity["error"],
+            "warned": verify_result.by_severity["warn"],
+            "unchecked": list(verify_result.unchecked),
+        }
+        if fix_records:
+            progress.announce("verify", f"Fixed {len(fix_records)} issue(s) (see report.json)")
+        if sent_back:
+            progress.announce("verify", f"Sent back {sent_back} finding(s) to the model (see report.json)")
+        if degraded:
+            progress.announce("verify", f"Degraded {len(degraded)} beat(s): narration blanked (see report.json)")
+        if verify_result.checked:
+            progress.announce("verify", (
+                f"Verified {verify_result.checked} claims, "
+                f"{verify_result.by_severity['error']} failed, "
+                f"{len(verify_result.unchecked)} unchecked (see report.json)"
+            ))
+        else:
+            progress.announce("verify", "Nothing to verify")
+
+    # The cache stores the FINAL storyboard (post-fix / post-repair / post-degrade).
+    if fresh_model and cache is not None and key is not None:
+        cache.put(key, sb)
 
     # Apply CLI theme override if specified
     if theme is not None:
@@ -390,7 +462,16 @@ def make_video(
         scene_durations=render_result.durations,
         fallbacks=fallbacks,
         narration=narration_info,
+        verification=verification,
+        fixes=fixes,
     )
+
+    if strict and verification is not None and verification["failed"]:
+        # The report is written first: --strict changes the exit code, not the
+        # evidence. Only surviving error findings block; warns are shown only.
+        from animatica.verify import VerifyStrictError  # noqa: PLC0415
+
+        raise VerifyStrictError(verify_result)  # type: ignore[possibly-undefined]
 
     progress.finish(f"done: {video.name}")
 

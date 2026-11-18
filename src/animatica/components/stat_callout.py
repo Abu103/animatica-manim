@@ -14,6 +14,7 @@ from pydantic import BaseModel, Field
 from animatica.components._draw import Clock, fit, fit_in_room, prepare
 from animatica.components.base import Component
 from animatica.storyboard.models import MAX_TEXT
+from animatica.verify.facts import Fact, format_number, parse_number
 
 
 class StatCallout(Component):
@@ -36,6 +37,13 @@ class StatCallout(Component):
         if p.delta:
             parts.append(f"({p.delta})")
         return " ".join(parts)
+
+    def facts(self, p: BaseModel) -> list[Fact]:
+        number = parse_number(p.value)  # type: ignore[attr-defined]
+        if number is None:
+            return []
+        return [Fact("value", "value", number,
+                     f"headline value is {format_number(number)}")]
 
     def play(self, scene, p, colors) -> None:
         from manim import DOWN, FadeIn, Text, VGroup

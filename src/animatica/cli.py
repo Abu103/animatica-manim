@@ -16,6 +16,7 @@ from animatica.cli_progress import TerminalProgress
 from animatica.pipeline import MakeResult, make_video
 from animatica.setup_wizard import setup
 from animatica.storyboard.models import load_storyboard, dump_storyboard
+from animatica.verify import VerifyStrictError
 
 app = typer.Typer(add_completion=False, help="Turn a plain-language prompt into an explainer video.")
 
@@ -334,7 +335,9 @@ def preview_cmd(
     if report_path and report_path.is_file():
         try:
             report_data = _json.loads(report_path.read_text(encoding="utf-8"))
-            scene_durations = report_data.get("stages", {}).get("durations", [])
+            # make writes scene_durations at the top level; old reports kept
+            # them under stages.durations. Accept both.
+            scene_durations = report_data.get("scene_durations") or report_data.get("stages", {}).get("durations", [])
         except Exception:
             scene_durations = []
 
@@ -575,11 +578,8 @@ def mcp() -> None:
                     durations: list[float] = []
                     if rp.is_file():
                         try:
-                            durations = (
-                                _json.loads(rp.read_text(encoding="utf-8"))
-                                .get("stages", {})
-                                .get("durations", [])
-                            )
+                            report_data = _json.loads(rp.read_text(encoding="utf-8"))
+                            durations = report_data.get("scene_durations") or report_data.get("stages", {}).get("durations", [])
                         except Exception:
                             durations = []
                     out_path = preview_frame(
@@ -905,6 +905,8 @@ def make(
     frame_lint: bool = typer.Option(True, "--frame-lint/--no-frame-lint", help="Run non-fatal frame-quality checks on the rendered video"),
     vertical: bool = typer.Option(False, "--vertical", help="9:16 vertical aspect ratio for mobile/social"),
     narrate: bool = typer.Option(False, "--narrate", help="Add offline spoken narration (Piper) of each beat's caption; fetched on first use"),
+    verify: bool = typer.Option(True, "--verify/--no-verify", help="Check numbers and claims against the computed facts (warnings only unless --strict)"),
+    strict: bool = typer.Option(False, "--strict", help="Exit non-zero if verify findings survive; the report is written first"),
     voice: str = typer.Option("en_US-ljspeech-medium", "--voice", help="Narration voice (only license-checked voices are accepted)"),
     theme: str = typer.Option(None, "--theme", help="Color theme: dark-blue, light, high-contrast"),
     progress: bool = typer.Option(
@@ -935,6 +937,8 @@ def make(
             theme=theme,
             narrate=narrate,
             voice=voice,
+            verify=verify,
+            strict=strict,
             on_progress=reporter,
         )
         typer.echo(f"Provider: {result.provider_used}")
@@ -952,6 +956,11 @@ def make(
         if debug:
             raise
         typer.echo("Tip: try again, pick another --provider/model, or use --debug for the full traceback.")
+        raise typer.Exit(code=1)
+    except VerifyStrictError as exc:
+        # The report was already written by make_video: exit non-zero, keep
+        # the evidence, and never claim the findings were right.
+        typer.echo(f"Error: {exc}")
         raise typer.Exit(code=1)
     except (ProviderError, RateLimited, NarrationUnavailable) as exc:
         if debug:

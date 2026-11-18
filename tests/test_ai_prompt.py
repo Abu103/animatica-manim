@@ -286,3 +286,21 @@ def test_prompt_catalog_shows_the_compare_and_timeline_keys():
     text = build_prompt("anything", default_registry())
     assert '{"heading": "...", "bullets"' in text
     assert '{"label": "1969", "text"' in text
+
+
+# --- V3c: steer Fourier/frequency topics to the engine, not graph/array_viz ---
+def test_prompt_catalog_steers_frequency_topics_to_signal_spectrum():
+    text = build_prompt("explain the Fourier transform with two sine waves", default_registry())
+    hint = next(line for line in text.splitlines() if line.strip().startswith("- signal_spectrum:"))
+    assert "use it for Fourier" in hint
+    assert "never use graph or array_viz to show a frequency spectrum" in hint
+
+
+def test_template_picks_signal_spectrum_for_fourier_prompt():
+    from animatica.ai.template import TemplateMatcher
+
+    sb = TemplateMatcher().match("explain the Fourier transform with two sine waves")
+    assert sb is not None
+    beats = [beat for scene in sb.scenes for beat in scene.beats]
+    assert any(beat.component == "signal_spectrum" for beat in beats)
+    assert default_registry().validate(sb) == []

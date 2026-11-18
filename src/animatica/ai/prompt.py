@@ -29,6 +29,10 @@ _HINTS = {
     "bounce_sequence": "a ball hops along a number sequence, one pad per term (pad height = value); "
                        "use it whenever the request mentions a ball, bouncing or hopping over terms "
                        "(Fibonacci, powers of 2, squares...). values are the terms in order, up to 20; ONE scene holds the whole sequence, never split it",
+    "signal_spectrum": "sum of up to 4 sine waves drawn over time plus their frequency spectrum; "
+                       "use it for Fourier, frequency, harmonics, signals, 'two tones'; "
+                       "never use graph or array_viz to show a frequency spectrum; "
+                       "frequencies are cycles per window, not hertz; say 'cycles' not 'Hz' or 'hertz'",
 }
 
 _EXAMPLE = {

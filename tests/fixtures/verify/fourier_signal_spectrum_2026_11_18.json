@@ -1,0 +1,160 @@
+{
+  "version": "1",
+  "title": "The Fourier Transform",
+  "theme": {
+    "palette": "dark-blue",
+    "font": "default"
+  },
+  "scenes": [
+    {
+      "beats": [
+        {
+          "component": "title_card",
+          "params": {
+            "title": "The Fourier Transform",
+            "subtitle": "From time domain to frequency domain"
+          },
+          "caption": "Signals are made of waves added together.",
+          "narration": "Every sound or signal you hear is really a mix of simpler waves. Let's see how to pull those waves apart."
+        }
+      ]
+    },
+    {
+      "beats": [
+        {
+          "component": "signal_spectrum",
+          "params": {
+            "title": "Two tones in time and frequency",
+            "waves": [
+              {
+                "freq": 2,
+                "amp": 1.0,
+                "phase": 0.0
+              },
+              {
+                "freq": 5,
+                "amp": 0.5,
+                "phase": 0.0
+              }
+            ],
+            "show": "both"
+          },
+          "caption": "Two sine waves add into one combined signal.",
+          "narration": "Here are two pure tones, one slow and one fast. When we add them by superposition, we get a single wiggly signal that contains both frequencies at once."
+        }
+      ]
+    },
+    {
+      "beats": [
+        {
+          "component": "graph",
+          "params": {
+            "fn": "sin(2*x) + 0.5*sin(5*x)",
+            "approx_fn": "",
+            "x_range": [
+              0,
+              6.28
+            ],
+            "y_range": [
+              -2,
+              2
+            ],
+            "label": "Combined signal",
+            "approx_label": ""
+          },
+          "caption": "The combined signal in the time domain.",
+          "narration": "This is the time domain view. The vertical axis is amplitude, how strong the signal is, and the horizontal axis is time. Each peak and valley comes from the two waves reinforcing or canceling each other."
+        }
+      ]
+    },
+    {
+      "beats": [
+        {
+          "component": "signal_spectrum",
+          "params": {
+            "title": "Frequency spectrum of the signal",
+            "waves": [
+              {
+                "freq": 2,
+                "amp": 1.0,
+                "phase": 0.0
+              },
+              {
+                "freq": 5,
+                "amp": 0.5,
+                "phase": 0.0
+              }
+            ],
+            "show": "spectrum"
+          },
+          "caption": "The spectrum shows spikes at 2 and 5 hertz.",
+          "narration": "Switch to the frequency domain. The Fourier transform reveals two sharp spikes: one at 2 hertz with full strength, and one at 5 hertz at half strength. Phase tells us where each wave starts in its cycle."
+        }
+      ]
+    },
+    {
+      "beats": [
+        {
+          "component": "equation",
+          "params": {
+            "mode": "reveal",
+            "latex": [
+              "X(f) = \\int_{-\\infty}^{\\infty} x(t) e^{-2\\pi i f t} dt",
+              "x(t) = \\int_{-\\infty}^{\\infty} X(f) e^{2\\pi i f t} df"
+            ]
+          },
+          "caption": "The transform and its inverse move between domains.",
+          "narration": "The continuous Fourier transform turns a time signal into a frequency spectrum. The inverse transform does the opposite, rebuilding the original signal from its frequency parts."
+        }
+      ]
+    },
+    {
+      "beats": [
+        {
+          "component": "compare",
+          "params": {
+            "title": "Discrete transform versus FFT",
+            "left": {
+              "heading": "DFT",
+              "bullets": [
+                "Works on sampled data",
+                "Costs O(N squared) operations",
+                "Every frequency checks every sample"
+              ]
+            },
+            "right": {
+              "heading": "FFT",
+              "bullets": [
+                "Fast Fourier Transform",
+                "Costs O(N log N) operations",
+                "Reuses results to avoid repeated work"
+              ]
+            }
+          },
+          "caption": "The FFT is a faster way to compute the same transform.",
+          "narration": "Computers work with samples, so they use the discrete Fourier transform. The FFT is a clever algorithm that computes the same result much faster, dropping the cost from N squared to N log N."
+        }
+      ]
+    },
+    {
+      "beats": [
+        {
+          "component": "steps_list",
+          "params": {
+            "items": [
+              "Frequency is how fast a wave oscillates.",
+              "Amplitude is the wave's strength.",
+              "Phase is the wave's starting position.",
+              "Superposition means adding waves together.",
+              "The Fourier transform splits a signal into its frequencies.",
+              "The inverse transform rebuilds the signal.",
+              "The FFT makes this fast for computers."
+            ]
+          },
+          "caption": "Key ideas to remember.",
+          "narration": "To recap: frequency, amplitude, and phase describe each ingredient wave. Superposition adds them into one signal, and the Fourier transform lets us separate them again."
+        }
+      ]
+    }
+  ]
+}

@@ -1,3 +1,5 @@
+import json
+
 from typer.testing import CliRunner
 
 from animatica.cli import app
@@ -149,6 +151,32 @@ def test_preview_no_report(tmp_path):
     result = runner.invoke(app, ["preview", str(video), "0", "0.0"])
     assert result.exit_code != 0
     assert "no scene durations" in result.output.lower()
+
+
+def test_preview_reads_scene_durations_written_by_make(tmp_path):
+    """make writes scene_durations at the top level; preview must find them."""
+    runner = CliRunner()
+    made = runner.invoke(app, ["make", "make a title card about hello", "-o", str(tmp_path)])
+    assert made.exit_code == 0, made.output
+    report = json.loads((tmp_path / "report.json").read_text(encoding="utf-8"))
+    assert report.get("scene_durations"), report
+
+    preview = runner.invoke(
+        app,
+        ["preview", str(tmp_path / "video.mp4"), "0", "0.0", "-o", str(tmp_path / "frame.png")],
+    )
+    assert preview.exit_code == 0, preview.output
+    assert (tmp_path / "frame.png").is_file()
+
+    # Old reports kept the durations under stages; preview must still read them.
+    legacy = tmp_path / "legacy-report.json"
+    legacy.write_text(json.dumps({"stages": {"durations": report["scene_durations"]}}), encoding="utf-8")
+    old_preview = runner.invoke(
+        app,
+        ["preview", str(tmp_path / "video.mp4"), "0", "0.0", "--report", str(legacy), "-o", str(tmp_path / "legacy-frame.png")],
+    )
+    assert old_preview.exit_code == 0, old_preview.output
+    assert (tmp_path / "legacy-frame.png").is_file()
 
 
 def test_preview_invalid_scene_index(tmp_path):

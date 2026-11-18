@@ -79,6 +79,7 @@ class ComponentRegistry:
 
 
 def _builtins() -> list[type[Component]]:
+    from animatica.components.signal_spectrum import SignalSpectrum
     from animatica.components.unit_circle import UnitCircle
     from animatica.components.graph_traversal import GraphTraversal
     from animatica.components.code_diff import CodeDiff
@@ -107,6 +108,7 @@ def _builtins() -> list[type[Component]]:
     from animatica.components.steps_list import StepsList
     from animatica.components.title_card import TitleCard
     return [
+        SignalSpectrum,
         UnitCircle,
         GraphTraversal,
         CodeDiff,
@@ -240,6 +242,10 @@ _EXAMPLES: dict[str, dict[str, str]] = {
         "values": "[5, 2, 8, 1]",
         "steps": '[{"highlight": [0]}, {"swap": [0, 2]}]',
         "title": "'Array Viz'",
+    },
+    "signal_spectrum": {
+        "title": "'Two Tones'",
+        "waves": "[{'freq': 3, 'amp': 1.0}, {'freq': 5, 'amp': 0.5}]",
     },
 }
 

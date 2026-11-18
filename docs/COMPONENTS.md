@@ -35,6 +35,7 @@ sync with the code: the test suite compares this document against
 | `graph_traversal` | `title`, `nodes[]` (2-8 labels, <=4 chars), `edges[]` (pairs of labels, <=12), optional `start` (default first node), `order` (`bfs`\|`dfs`), `directed`; the visit order is computed, neighbours in `nodes` order | 2.5 s + 0.6 s per visited node |
 | `unit_circle` | `title`, `angles[]` (1-4 special angles in degrees: multiples of 30 or 45 in [0, 360)), optional `units` (`degrees`\|`radians`); exact cos/sin are looked up, not typed | 2.5 s + 0.9 s per angle |
 | `bounce_sequence` | `title`, `values[]` (2-20), optional `scale` (auto/linear/sqrt/log), `labels[]` (optional) | 2.0 s + 0.8 s per term |
+| `signal_spectrum` | `title`, `waves[]` (1-4) of `{freq: 1-40 (distinct), amp: 0.1-5.0, phase: -3.2..3.2 (default 0)}`, optional `show` (time/spectrum/both, default both) | 5.0 s (both) / 3.5 s (one panel) |
 
 Registered component names:
 - title_card
@@ -64,6 +65,7 @@ Registered component names:
 - parametric_graph
 - code_walkthrough
 - flow
+- signal_spectrum
 
 ## Stability
 

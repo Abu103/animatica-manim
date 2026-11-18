@@ -1,0 +1,163 @@
+{
+  "version": "1",
+  "title": "Fourier Transform Explained",
+  "theme": {
+    "palette": "dark-blue",
+    "font": "default"
+  },
+  "scenes": [
+    {
+      "beats": [
+        {
+          "component": "title_card",
+          "params": {
+            "title": "The Fourier Transform",
+            "subtitle": "From time domain to frequency domain"
+          },
+          "caption": "The Fourier Transform",
+          "narration": "Welcome. Today we explore how any signal can be broken down into its underlying frequencies."
+        },
+        {
+          "component": "diagram",
+          "params": {
+            "nodes": [
+              "Time",
+              "Signal",
+              "Frequency 1",
+              "Frequency 2"
+            ],
+            "edges": [
+              [
+                "Time",
+                "Signal"
+              ],
+              [
+                "Signal",
+                "Frequency 1"
+              ],
+              [
+                "Signal",
+                "Frequency 2"
+              ]
+            ]
+          },
+          "caption": "A signal built from two waves",
+          "narration": "Imagine a sound wave made by adding two simpler waves together. Each one has its own frequency and strength."
+        },
+        {
+          "component": "array_viz",
+          "params": {
+            "title": "Superposition",
+            "values": [
+              1,
+              0,
+              -1,
+              0,
+              1,
+              0,
+              -1,
+              0
+            ],
+            "steps": [
+              {
+                "highlight": [
+                  0,
+                  1,
+                  2
+                ]
+              },
+              {
+                "highlight": [
+                  3,
+                  4,
+                  5
+                ]
+              },
+              {
+                "highlight": [
+                  6,
+                  7
+                ]
+              }
+            ]
+          },
+          "caption": "Two waves add into one signal",
+          "narration": "When waves overlap, their heights add at every instant. That is superposition, and it creates the combined signal you see."
+        },
+        {
+          "component": "graph",
+          "params": {
+            "fn": "sin(x)+0.5*sin(3*x)",
+            "x_range": [
+              0,
+              6.28
+            ],
+            "y_range": [
+              -2,
+              2
+            ],
+            "label": "Combined signal"
+          },
+          "caption": "Frequency domain shows two peaks",
+          "narration": "In the frequency domain, the same signal appears as two distinct peaks, one for each ingredient frequency."
+        },
+        {
+          "component": "equation",
+          "params": {
+            "mode": "reveal",
+            "latex": [
+              "X(f)=\\int_{-\\infty}^{\\infty}x(t)e^{-i2\\pi ft}dt"
+            ]
+          },
+          "caption": "The Fourier transform",
+          "narration": "The Fourier transform converts a time signal into a function of frequency, revealing how much of each frequency is present."
+        },
+        {
+          "component": "equation",
+          "params": {
+            "mode": "reveal",
+            "latex": [
+              "x(t)=\\int_{-\\infty}^{\\infty}X(f)e^{i2\\pi ft}df"
+            ]
+          },
+          "caption": "The inverse Fourier transform",
+          "narration": "The inverse transform does the opposite, rebuilding the original time signal from its frequency ingredients."
+        },
+        {
+          "component": "compare",
+          "params": {
+            "title": "DFT versus FFT",
+            "left": {
+              "heading": "DFT",
+              "bullets": [
+                "Direct definition",
+                "Works on discrete samples",
+                "Cost grows as N squared"
+              ]
+            },
+            "right": {
+              "heading": "FFT",
+              "bullets": [
+                "Fast algorithm",
+                "Same result as DFT",
+                "Cost grows as N log N"
+              ]
+            }
+          },
+          "caption": "DFT and FFT give the same result",
+          "narration": "The discrete Fourier transform handles sampled signals directly. The FFT is a clever algorithm that produces the same output with far fewer operations."
+        },
+        {
+          "component": "stat_callout",
+          "params": {
+            "value": "O(N squared) to O(N log N)",
+            "label": "FFT complexity reduction",
+            "delta": "Huge savings for large N"
+          },
+          "caption": "FFT cuts the cost dramatically",
+          "narration": "For large data sets, dropping from N squared to N log N means the difference between minutes and milliseconds."
+        }
+      ]
+    }
+  ]
+}

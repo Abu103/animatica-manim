@@ -15,6 +15,8 @@ from __future__ import annotations
 
 import functools
 import math
+import sys
+from dataclasses import dataclass
 from typing import ClassVar
 
 from pydantic import BaseModel, Field, field_validator, model_validator
@@ -36,6 +38,7 @@ from animatica.components.base import Component
 from animatica.native import sample_function
 from animatica.storyboard.models import MAX_TEXT
 from animatica.storyboard.safety import parse_function
+from animatica.verify.facts import Fact
 
 SAMPLES = 400
 DURATION = 4.0
@@ -106,6 +109,167 @@ def clip_segments(segs: list[list[tuple[float, float]]], y_range: tuple[float, f
     return out
 
 
+@dataclass(frozen=True)
+class GraphData:
+    """The points ``play()`` draws: sampled and clipped, nothing else."""
+
+    segs: list[list[tuple[float, float]]]
+    approx_segs: list[list[tuple[float, float]]]
+
+
+def _data(p: BaseModel) -> GraphData:
+    """Sample and clip both curves exactly as the drawing does.
+
+    Single source of truth for the picture: ``play()`` and ``facts()`` both
+    read this, so a fact can never disagree with what is drawn.
+    """
+    (x0, x1), (y0, y1) = p.x_range, p.y_range  # type: ignore[attr-defined]
+    fn, approx_fn = p.fn, p.approx_fn  # type: ignore[attr-defined]
+    segs = clip_segments(
+        sample_function(parse_function(fn), (x0, x1), SAMPLES, y_range=(y0, y1)), (y0, y1)
+    )
+    approx_segs: list[list[tuple[float, float]]] = []
+    if approx_fn.strip():
+        approx_segs = clip_segments(
+            sample_function(parse_function(approx_fn), (x0, x1), SAMPLES, y_range=(y0, y1)),
+            (y0, y1),
+        )
+    return GraphData(segs=segs, approx_segs=approx_segs)
+
+
+#: How many extrema and zeros a fact's *text* lists. The value keeps them all,
+#: so "has N local maxima" is never a truncated count.
+MAX_EXTREMA = 8
+MAX_ZEROS = 12
+
+#: An extremum must clear both neighbours by more than a tolerance with two
+#: parts, so each part models a different thing: a fraction of the curve's span
+#: ignores features that are tiny compared with its own range, and a small
+#: number of ULPs of the largest value ignores floating-point jitter, whose
+#: size grows with the magnitudes being added. Without the second part,
+#: sin^2+cos^2 (constant 1) reports 21 maxima and 53 minima. Without the first,
+#: 1e-6*sin(x) (peak only 1e-10 above its neighbours) reports no maximum under
+#: a caption naming a peak.
+EXTREMUM_EPS = 1e-9
+#: Facts only see samples with |y| <= 1e9 -- native.sampling drops the rest, and the drawing sees those same samples.
+NOISE_ULPS = 64
+
+#: Slack on the y limits when deciding whether a sample is outside them.
+#: Floating point puts some samples a ULP over the limit a curve exactly
+#: touches (sin^2+cos^2 on y_range [0, 1] gives 1.0000000000000002); without
+#: this a curve is "clipped" by its own exact range.
+CLIP_EPS = 1e-9
+
+DOMAIN_TEXT = "graph draws y against x (time or position); it never draws a frequency spectrum"
+
+
+def _local_extrema(segs: list[list[tuple[float, float]]]) -> tuple[list[float], list[float]]:
+    """x of the local maxima and minima, each clearing both neighbours by more
+    than a tolerance that combines ``EXTREMUM_EPS`` times the curve's span with
+    ``NOISE_ULPS`` ULPs of its largest magnitude, **inside one segment** (never
+    across a gap), rounded to 2 dp. Returns all of them: capping is the text's
+    job, not the count's.
+
+    A curve offset by 1e12 or more cannot be resolved: one ULP there is already
+    about the size of a real peak's neighbour difference. Its facts may be
+    missing, so callers must not treat "no extrema" as proof of a flat curve.
+    """
+    ys_all = [y for seg in segs for _, y in seg]
+    if not ys_all:
+        return [], []
+    span = max(ys_all) - min(ys_all)
+    max_abs = max(abs(y) for y in ys_all)
+    tol = max(EXTREMUM_EPS * span, NOISE_ULPS * sys.float_info.epsilon * max_abs)
+    maxima: list[float] = []
+    minima: list[float] = []
+    for seg in segs:
+        ys = [y for _, y in seg]
+        for i in range(1, len(seg) - 1):
+            if ys[i] - max(ys[i - 1], ys[i + 1]) > tol:
+                maxima.append(round(seg[i][0], 2))
+            elif min(ys[i - 1], ys[i + 1]) - ys[i] > tol:
+                minima.append(round(seg[i][0], 2))
+    return maxima, minima
+
+
+def _zero_crossings(segs: list[list[tuple[float, float]]]) -> list[float]:
+    """x where the curve crosses zero inside one segment, rounded to 2 dp.
+
+    Two cases: a sign change between two nonzero samples is interpolated; a
+    sample that is exactly 0 is a crossing when the nearest nonzero samples on
+    each side have opposite signs, and a touch (same sign both sides, or the
+    segment ending there) when they do not. Returns all of them.
+    """
+    out: list[float] = []
+    for seg in segs:
+        prev: tuple[float, float] | None = None  # last nonzero sample
+        zeros: list[float] = []  # exact-zero samples waiting for a right neighbour
+        for x, y in seg:
+            if y == 0:
+                zeros.append(x)
+                continue
+            if prev is not None and (prev[1] < 0) != (y < 0):
+                if zeros:
+                    out.append(round(zeros[0], 2))
+                else:
+                    xa, ya = prev
+                    out.append(round(xa - ya * (x - xa) / (y - ya), 2))
+            zeros = []
+            prev = (x, y)
+    return out
+
+
+def _x_list(xs: list[float]) -> str:
+    return ", ".join(f"{x:g}" for x in xs)
+
+
+def _extremum_text(name: str, xs: list[float]) -> str:
+    """``name`` is "maxima" or "minima"; one extremum gets its singular form."""
+    if not xs:
+        return f"fn has no local {name} in the visible window"
+    one = {"maxima": "maximum", "minima": "minimum"}[name] if len(xs) == 1 else name
+    if len(xs) <= MAX_EXTREMA:
+        return f"fn has {len(xs)} local {one} at x = {_x_list(xs)}"
+    return f"fn has {len(xs)} local {one}, the first {MAX_EXTREMA} at x = {_x_list(xs[:MAX_EXTREMA])}"
+
+
+def _zero_text(xs: list[float]) -> str:
+    if not xs:
+        return "fn does not cross zero in the visible window"
+    if len(xs) <= MAX_ZEROS:
+        return f"fn crosses zero at x = {_x_list(xs)}"
+    return f"fn crosses zero {len(xs)} times, the first {MAX_ZEROS} at x = {_x_list(xs[:MAX_ZEROS])}"
+
+
+def _is_clipped(p: BaseModel) -> bool:
+    """True when a finite sample of fn falls more than ``CLIP_EPS`` outside y_range.
+
+    Sampled without ``y_range`` on purpose: the clipped points are the ones
+    ``clip_segments`` removes from the picture, so the unclipped sample is the
+    only place they still exist. This is a second sampling pass per call.
+    """
+    x0, x1 = p.x_range  # type: ignore[attr-defined]
+    lo, hi = p.y_range  # type: ignore[attr-defined]
+    points = [pt for seg in sample_function(parse_function(p.fn), (x0, x1), SAMPLES) for pt in seg]  # type: ignore[attr-defined]
+    return any(y < lo - CLIP_EPS or y > hi + CLIP_EPS for _, y in points)
+
+
+def unclipped_range(p: BaseModel) -> tuple[float, float] | None:
+    """Min/max of the finite ``fn`` samples over x_range, sampled WITHOUT y_range.
+
+    Same second sampling pass as :func:`_is_clipped`: the points removed from
+    the picture by ``clip_segments`` exist only in the unclipped sample, so the
+    ``range`` fact (built from clipped points) cannot be used to widen a window.
+    ``None`` means there are no finite samples to widen to.
+    """
+    x0, x1 = p.x_range  # type: ignore[attr-defined]
+    points = [pt for seg in sample_function(parse_function(p.fn), (x0, x1), SAMPLES) for pt in seg]  # type: ignore[attr-defined]
+    if not points:
+        return None
+    ys = [y for _, y in points]
+    return min(ys), max(ys)
+
+
 def nice_step(span: float, target: int = 6) -> float:
     raw = span / target
     mag = 10 ** math.floor(math.log10(raw))
@@ -160,6 +324,44 @@ class Graph(Component):
         if p.approx_fn.strip():
             parts.append(f"approx y = {p.approx_fn}")
         return " | ".join(parts)  # type: ignore[attr-defined]
+
+    # -- facts (design 5.1) ------------------------------------------------
+
+    domain: ClassVar[str] = "plain axes"
+
+    def facts(self, p: BaseModel) -> list[Fact]:
+        """What this graph draws, computed from ``_data(p)`` only."""
+        data = _data(p)
+        ys = [y for seg in data.segs for _, y in seg]
+        facts: list[Fact] = []
+        if ys:
+            lo, hi = round(min(ys), 3), round(max(ys), 3)
+            facts.append(
+                Fact(
+                    "range",
+                    "fn",
+                    (lo, hi),
+                    f"fn ranges from {lo:g} to {hi:g} over the visible window",
+                )
+            )
+        maxima, minima = _local_extrema(data.segs)
+        facts.append(Fact("extremum", "fn", tuple(maxima), _extremum_text("maxima", maxima)))
+        facts.append(Fact("extremum", "fn", tuple(minima), _extremum_text("minima", minima)))
+        zeros = _zero_crossings(data.segs)
+        facts.append(Fact("zero", "fn", tuple(zeros), _zero_text(zeros)))
+        clipped = _is_clipped(p)
+        facts.append(
+            Fact(
+                "clipped",
+                "fn",
+                clipped,
+                "fn leaves the visible y range; part of the curve is cut off"
+                if clipped
+                else "fn stays inside the visible y range",
+            )
+        )
+        facts.append(Fact("domain", "component", self.domain, DOMAIN_TEXT))
+        return facts
 
     def _range_clipped(self, fn_expr: str, x0: float, x1: float, y0: float, y1: float) -> bool:
         """Return True if the function's boundary values fall outside [y0, y1],
@@ -319,16 +521,10 @@ class Graph(Component):
         prepare(scene, colors)
         (x0, x1), (y0, y1) = p.x_range, p.y_range
         try:
-            segs = clip_segments(
-                sample_function(parse_function(p.fn), (x0, x1), SAMPLES, y_range=(y0, y1)), (y0, y1)
-            )
+            data = _data(p)
+            segs, approx_segs = data.segs, data.approx_segs
             if not segs:
                 raise ValueError("no visible points inside the y range")
-            approx_segs = []
-            if p.approx_fn.strip():
-                approx_segs = clip_segments(
-                    sample_function(parse_function(p.approx_fn), (x0, x1), SAMPLES, y_range=(y0, y1)), (y0, y1)
-                )
         except Exception as exc:  # degrade, never abort the video
             warn(scene, f"graph: could not draw {p.fn!r} ({type(exc).__name__}: {exc}); showing plain text")
             text_card(scene, self.fallback_text(p), colors, DURATION)
