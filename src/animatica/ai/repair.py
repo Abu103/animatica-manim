@@ -1,13 +1,16 @@
 """Provider-based storyboard generation with a repair loop."""
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Any
 
 from pydantic import BaseModel, Field, ValidationError
 
 from animatica.ai.base import AIProvider, StoryboardGenerationError, extract_json
+from animatica.ai.debug_dump import dump_parse_failure
 from animatica.ai.prompt import build_fill_prompt, build_outline_prompt, build_prompt
 from animatica.components.registry import ComponentRegistry
+from animatica.storyboard.clamp import clamp_lengths
 from animatica.storyboard.models import MAX_BEATS, MAX_SCENES, Scene, Storyboard
 from animatica.verify.facts import try_facts
 
@@ -18,6 +21,10 @@ def generate_storyboard(
     registry: ComponentRegistry,
     max_retries: int = 2,
     narrate: bool = False,
+    *,
+    debug: bool = False,
+    out_dir: Path | None = None,
+    notes: list[str] | None = None,
 ) -> Storyboard:
     """Ask `provider` for a storyboard, repairing parse/validation failures.
 
@@ -29,12 +36,17 @@ def generate_storyboard(
     current_prompt = build_prompt(prompt, registry, narrate=narrate)
     last_errors: list[str] = []
 
-    for _ in range(max_retries + 1):
+    for attempt in range(1, max_retries + 2):
         text = provider.generate(current_prompt, schema)
+        pending_notes: list[str] = []
         try:
             data = extract_json(text)
+            data, clamps = clamp_lengths(data)
+            pending_notes.extend(clamps)
             sb = Storyboard.model_validate(data)
         except ValidationError as exc:  # well-formed JSON, wrong shape -> repair
+            dump_parse_failure(text, out_dir=out_dir, stage="storyboard", scene=0,
+                               attempt=attempt, error=exc, debug=debug)
             last_errors = [
                 "parse error: field '{}': {}".format(".".join(str(x) for x in e["loc"]) or "storyboard", e["msg"])
                 for e in exc.errors()
@@ -42,12 +54,16 @@ def generate_storyboard(
             current_prompt = build_prompt(prompt, registry, last_errors, narrate=narrate)
             continue
         except Exception as exc:  # not JSON at all -> repair
+            dump_parse_failure(text, out_dir=out_dir, stage="storyboard", scene=0,
+                               attempt=attempt, error=exc, debug=debug)
             last_errors = [f"parse error: {' '.join(str(exc).split())[:200]}"]
             current_prompt = build_prompt(prompt, registry, last_errors, narrate=narrate)
             continue
 
         errors = registry.validate(sb)
         if not errors:
+            if notes is not None:
+                notes.extend(pending_notes)
             return sb
         last_errors = errors
         current_prompt = build_prompt(prompt, registry, errors, narrate=narrate)
@@ -85,6 +101,8 @@ def repair_with_facts(
     *,
     narrate: bool = False,
     max_verify_retries: int = 2,
+    debug: bool = False,
+    out_dir: Path | None = None,
 ) -> tuple[Storyboard, dict]:
     """Generate -> lint -> verify -> fixes -> send back -> degrade, for models.
 
@@ -99,11 +117,12 @@ def repair_with_facts(
     from animatica.verify.fix import apply_fixes  # noqa: PLC0415
 
     sb, fix_records = apply_fixes(sb, registry)
+    clamps_all: list[str] = []
     sent_back = 0
     errors: list[str] = []
     extra_errors: list[str] = []  # parse failures from a repair call, for the next prompt
     repair_error = ""
-    for _ in range(max_verify_retries + 1):
+    for attempt in range(1, max_verify_retries + 2):
         result = verify_storyboard(sb, registry)
         real_errors = [_finding_error(sb, f, registry) for f in result.findings
                        if f.severity == "error"]
@@ -118,8 +137,12 @@ def repair_with_facts(
             repair_error = f"repair error from {provider.name}: {type(exc).__name__}: {exc}"
             break
         try:
-            candidate = Storyboard.model_validate(extract_json(text))
+            candidate_data = extract_json(text)
+            candidate_data, clamps = clamp_lengths(candidate_data)
+            candidate = Storyboard.model_validate(candidate_data)
         except Exception as exc:  # parse/validation failure: retry with the error text
+            dump_parse_failure(text, out_dir=out_dir, stage="repair", scene=0,
+                               attempt=attempt, error=exc, debug=debug)
             extra_errors.append(f"parse error: {' '.join(str(exc).split())[:200]}")
             repair_error = f"repair error from {provider.name}: {type(exc).__name__}: {exc}"
             continue
@@ -127,6 +150,7 @@ def repair_with_facts(
         repair_error = ""
         if registry.validate(candidate):
             continue
+        clamps_all.extend(clamps)
         sb = candidate
         sb, more = apply_fixes(sb, registry)
         fix_records.extend(more)
@@ -144,6 +168,11 @@ def repair_with_facts(
             if beat.narration:
                 beat.narration = ""
                 degraded.append([f.beat[0], f.beat[1]])
+        # A clamp note for narration that has now been blanked describes a
+        # change that no longer exists: drop it from the report.
+        for si, bi in degraded:
+            prefix = f"scene {si} beat {bi} narration:"
+            clamps_all = [note for note in clamps_all if not note.startswith(prefix)]
 
     return sb, {
         "verify": verify_storyboard(sb, registry),
@@ -152,6 +181,7 @@ def repair_with_facts(
         "degraded": degraded,
         "errors": errors,
         "repair_error": repair_error,
+        "clamps": clamps_all,
     }
 
 
@@ -231,6 +261,10 @@ def generate_storyboard_two_stage(
     registry: ComponentRegistry,
     max_retries: int = 2,
     narrate: bool = False,
+    *,
+    debug: bool = False,
+    out_dir: Path | None = None,
+    notes: list[str] | None = None,
 ) -> Storyboard:
     """Stage 1: outline (component+intent per beat). Stage 2: fill params per scene,
     each fill validated and retried alone. Raises StoryboardGenerationError with the
@@ -239,14 +273,18 @@ def generate_storyboard_two_stage(
     outline_prompt = build_outline_prompt(prompt, registry)
     last_errors: list[str] = []
     outline: _Outline | None = None
-    for _ in range(max_retries + 1):
+    for attempt in range(1, max_retries + 2):
         text = provider.generate(outline_prompt, registry.json_schema())
         try:
             outline = _Outline.model_validate(_fit_outline(extract_json(text)))
             errs = _outline_errors(outline, registry)
         except ValidationError as exc:
+            dump_parse_failure(text, out_dir=out_dir, stage="outline", scene=0,
+                               attempt=attempt, error=exc, debug=debug)
             errs = [f"parse error: field '{'.'.join(str(x) for x in e['loc']) or 'outline'}': {e['msg']}" for e in exc.errors()]
         except Exception as exc:
+            dump_parse_failure(text, out_dir=out_dir, stage="outline", scene=0,
+                               attempt=attempt, error=exc, debug=debug)
             errs = [f"parse error: {' '.join(str(exc).split())[:200]}"]
         if not errs:
             break
@@ -264,18 +302,27 @@ def generate_storyboard_two_stage(
     for si, oscene in enumerate(outline.scenes, 1):
         scene_prompt = build_fill_prompt(prompt, registry, oscene.model_dump(), narrate=narrate)
         scene: Scene | None = None
-        for _ in range(max_retries + 1):
+        for attempt in range(1, max_retries + 2):
             text = provider.generate(scene_prompt, registry.json_schema())
+            pending_notes: list[str] = []
             try:
                 data = extract_json(text)
+                data, clamps = clamp_lengths(data, scene_offset=si - 1)
+                pending_notes.extend(clamps)
                 sb = Storyboard.model_validate(data)
                 errs = registry.validate(sb)
             except ValidationError as exc:
+                dump_parse_failure(text, out_dir=out_dir, stage="fill", scene=si,
+                                   attempt=attempt, error=exc, debug=debug)
                 errs = [f"parse error: field '{'.'.join(str(x) for x in e['loc']) or 'storyboard'}': {e['msg']}" for e in exc.errors()]
             except Exception as exc:
+                dump_parse_failure(text, out_dir=out_dir, stage="fill", scene=si,
+                                   attempt=attempt, error=exc, debug=debug)
                 errs = [f"parse error: {' '.join(str(exc).split())[:200]}"]
             if not errs and len(sb.scenes) == 1:
                 scene = sb.scenes[0]
+                if notes is not None:
+                    notes.extend(pending_notes)
                 break
             if not errs:
                 errs = [f"fill must return exactly one scene, got {len(sb.scenes)}"]

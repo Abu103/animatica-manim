@@ -937,6 +937,7 @@ def make(
             theme=theme,
             narrate=narrate,
             voice=voice,
+            debug=debug,
             verify=verify,
             strict=strict,
             on_progress=reporter,

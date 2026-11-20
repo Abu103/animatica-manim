@@ -4,6 +4,8 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from pydantic import ValidationError
+
 from animatica.ai.router import get_provider
 from animatica.ai.template import TemplateMatcher
 from animatica.ai.repair import generate_storyboard, generate_storyboard_two_stage
@@ -211,6 +213,7 @@ def make_video(
     theme: str | None = None,
     narrate: bool = False,
     voice: str | None = None,
+    debug: bool = False,
     verify: bool = True,
     strict: bool = False,
     on_progress: ProgressFn | None = None,
@@ -238,8 +241,17 @@ def make_video(
     cache = None
     key = None
     fresh_model = False  # only a fresh model answer may be sent back / degraded
+    generation_notes: list[str] = []
     if storyboard_path is not None:
-        sb = load_storyboard(Path(storyboard_path))
+        try:
+            sb = load_storyboard(Path(storyboard_path))
+            clamp_notes: list[str] = []
+        except ValidationError:
+            # Over-long text is fixed locally instead of failing the run.
+            from animatica.storyboard.clamp import load_storyboard_clamped  # noqa: PLC0415
+
+            sb, clamp_notes = load_storyboard_clamped(Path(storyboard_path))
+        warnings.extend(clamp_notes)
         provider_used = "none (--from storyboard.json)"
     else:
         if not prompt or not str(prompt).strip():
@@ -271,13 +283,18 @@ def make_video(
             if sb is not None:
                 provider_used = f"{prov.name} (cached)"
             else:
-                sb = (generate_storyboard_two_stage(prompt, prov, registry, narrate=narrate) if two_stage
-                      else generate_storyboard(prompt, prov, registry, narrate=narrate))
+                sb = (generate_storyboard_two_stage(prompt, prov, registry, narrate=narrate,
+                                                    debug=debug, out_dir=out_dir,
+                                                    notes=generation_notes) if two_stage
+                      else generate_storyboard(prompt, prov, registry, narrate=narrate,
+                                               debug=debug, out_dir=out_dir,
+                                               notes=generation_notes))
                 fresh_model = True  # cache the final storyboard only after verify/repair
 
     if storyboard_path is None and not provider_used.startswith("template"):
         sb, lint_notes = lint_storyboard(sb)  # model output only; never touch a hand-written --from file
         warnings.extend(lint_notes)
+    warnings.extend(generation_notes)  # local length fixes from provider output
 
     # Generation guidance applies to any storyboard: flag captions that
     # describe production mechanics instead of teaching, and comparisons
@@ -303,7 +320,9 @@ def make_video(
         if fresh_model and prov is not None:
             from animatica.ai.repair import repair_with_facts  # noqa: PLC0415
 
-            sb, repair_info = repair_with_facts(prompt, sb, prov, registry, narrate=narrate)
+            sb, repair_info = repair_with_facts(prompt, sb, prov, registry,
+                                                narrate=narrate, debug=debug,
+                                                out_dir=out_dir)
             verify_result = repair_info["verify"]
             fix_records = repair_info["fixes"]
             sent_back = repair_info["sent_back"]
@@ -311,6 +330,7 @@ def make_video(
             repair_error = repair_info.get("repair_error", "")
             if repair_error:
                 warnings.append(f"verify: {repair_error}")
+            warnings.extend(repair_info.get("clamps", []))
         else:
             # --from and template storyboards are never mechanically changed:
             # they are verified for warnings only, and fixed == 0 in the report.
